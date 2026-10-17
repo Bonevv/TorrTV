@@ -19,8 +19,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Android лицензи
-        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+      - uses: android-actions/setup-android@v3
 
       - uses: gradle/actions/setup-gradle@v4
 
@@ -49,6 +48,12 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          TMDB_KEY: ${{ secrets.TMDB_KEY }}
+          OS_KEY: ${{ secrets.OS_KEY }}
+          OS_USER: ${{ secrets.OS_USER }}
+          OS_PASS: ${{ secrets.OS_PASS }}
+          SUBDL_KEY: ${{ secrets.SUBDL_KEY }}
+          SUBSOURCE_KEY: ${{ secrets.SUBSOURCE_KEY }}
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon assembleRelease \
