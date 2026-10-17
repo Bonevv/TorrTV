@@ -2,7 +2,6 @@ package app.torrtv.core
 
 import android.content.Context
 import android.content.SharedPreferences
-import app.torrtv.BuildConfig
 
 class Prefs(ctx: Context) {
     private val sp: SharedPreferences = ctx.getSharedPreferences("torrtv_prefs", Context.MODE_PRIVATE)
@@ -14,22 +13,22 @@ class Prefs(ctx: Context) {
 
     // ---- API ключове (въвеждат се от телефона през Настройки) ----
     var tmdbKey: String
-        get() = str("tmdb_key").ifBlank { BuildConfig.K_TMDB }
+        get() = str("tmdb_key").ifBlank { "d2c1e02ec9baf771e1ce6b4511a5aea8" }
         set(v) = put("tmdb_key", v)
     var osKey: String
-        get() = str("os_key").ifBlank { BuildConfig.K_OS_KEY }
+        get() = str("os_key").ifBlank { "4tGuxbPYtl1GjgrC2BGflxnn4Khg7kwD" }
         set(v) = put("os_key", v)
     var osUser: String
-        get() = str("os_user").ifBlank { BuildConfig.K_OS_USER }
+        get() = str("os_user").ifBlank { "xaxaoo" }
         set(v) = put("os_user", v)
     var osPass: String
-        get() = str("os_pass").ifBlank { BuildConfig.K_OS_PASS }
+        get() = str("os_pass").ifBlank { "Lan4gogo" }
         set(v) = put("os_pass", v)
     var subdlKey: String
-        get() = str("subdl_key").ifBlank { BuildConfig.K_SUBDL }
+        get() = str("subdl_key").ifBlank { "subdl_rXlwOT-Ef-4xAljUNAsJnUX1V7yjpSEUTP0P6hBmsFw" }
         set(v) = put("subdl_key", v)
     var subsourceKey: String
-        get() = str("subsource_key").ifBlank { BuildConfig.K_SUBSOURCE }
+        get() = str("subsource_key").ifBlank { "sk_7cd6bf070b192defbfe29842f7a7a4396f7f722eca793c33c889fc9b02386648" }
         set(v) = put("subsource_key", v)
 
     // ---- Домейни (по желание, ако сайтът смени адреса си) ----
