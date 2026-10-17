@@ -14,6 +14,7 @@ import app.torrtv.data.Media
 import app.torrtv.data.MediaType
 import app.torrtv.data.Page
 import app.torrtv.data.Tmdb
+import app.torrtv.data.subs.Fit
 import app.torrtv.data.subs.Langs
 import app.torrtv.data.subs.SubRank
 import app.torrtv.data.subs.SubtitleQuery
@@ -426,6 +427,12 @@ class DetailState(val type: MediaType, val id: Int) {
     fun rankedSubs(forTorrent: TorrentResult?): List<SubtitleResult> {
         val order = Langs.choices.map { it.first }.filter { it in Graph.prefs.subLangs }.ifEmpty { listOf("bg", "en") }
         return SubRank.rank(subResults, order, forTorrent?.title)
+    }
+
+    /** Най-доброто съвпадение на намерените субтитри с този торент (за белега в списъка). */
+    fun subFit(t: TorrentResult): Fit {
+        val langs = Langs.choices.map { it.first }.filter { it in Graph.prefs.subLangs }.ifEmpty { listOf("bg", "en") }
+        return SubRank.bestFit(subResults.filter { it.lang in langs }, t.title)
     }
 
     fun playRequest(t: TorrentResult, subs: List<SubtitleResult>, player: String): StreamController.Req {

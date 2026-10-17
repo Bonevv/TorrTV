@@ -67,8 +67,8 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
 
     Box(Modifier.fillMaxSize()) {
         // фон
-        Img(Tmdb.img(d?.media?.backdropPath, "w780"), Modifier.fillMaxSize(), 780, 439)
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xCC080B12), Color(0xF5080B12), C.bg))))
+        Img(Look.img(d?.media?.backdropPath, "w780"), Modifier.fillMaxSize(), 780, 439)
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xCC07090E), Color(0xF507090E), C.bg))))
 
         if (d == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -91,7 +91,7 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
         LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 40.d)) {
             item {
                 Row(Modifier.fillMaxWidth().padding(start = 36.d, end = 36.d, top = 28.d), horizontalArrangement = Arrangement.spacedBy(22.d)) {
-                    Img(Tmdb.img(d.media.posterPath, "w342"), Modifier.width(150.d).height(225.d).clip(RoundedCornerShape(12.d)), 342, 513)
+                    Img(Look.img(d.media.posterPath, "w342"), Modifier.width(150.d).height(225.d).clip(RoundedCornerShape(12.d)), 342, 513)
                     Column(Modifier.weight(1f)) {
                         Text2(d.media.title, 30, C.text, FontWeight.ExtraBold, 2)
                         if (d.media.originalTitle.isNotBlank() && d.media.originalTitle != d.media.title)
@@ -151,7 +151,7 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
                             Focusable({ st.selectEpisode(e.number) }, Modifier.width(190.d), RoundedCornerShape(10.d), 1.06f) { f ->
                                 Column(Modifier.background(if (sel) C.cardHi else C.card)) {
                                     Box {
-                                        Img(Tmdb.img(e.stillPath, "w300"), Modifier.fillMaxWidth().height(104.d), 300, 169)
+                                        Img(Look.img(e.stillPath, "w300"), Modifier.fillMaxWidth().height(104.d), 300, 169)
                                         Box(Modifier.padding(6.d)) { Pill("Еп. ${e.number}", Color(0xCC000000), if (sel) C.accent2 else C.text) }
                                     }
                                     Column(Modifier.padding(8.d)) {
@@ -200,7 +200,10 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
                     )
                 }
             }
-            items(shown, key = { it.hash + it.source }) { t -> TorrentRow(t) { onPlay(t) } }
+            items(shown, key = { it.hash + it.source }) { t ->
+                val fit = remember(t.hash, st.subResults) { st.subFit(t) }
+                TorrentRow(t, fit) { onPlay(t) }
+            }
 
             item {
                 if (st.subResults.isNotEmpty() || st.subStatus.isNotEmpty()) {
@@ -253,7 +256,7 @@ private fun score(t: TorrentResult): Int {
 }
 
 @Composable
-fun TorrentRow(t: TorrentResult, onClick: () -> Unit) {
+fun TorrentRow(t: TorrentResult, fit: app.torrtv.data.subs.Fit, onClick: () -> Unit) {
     Focusable(onClick, Modifier.fillMaxWidth().padding(horizontal = 36.d, vertical = 3.d), RoundedCornerShape(10.d), 1.015f) { f ->
         Row(
             Modifier.fillMaxWidth().background(if (f) C.cardHi else C.card).padding(horizontal = 12.d, vertical = 8.d),
@@ -261,14 +264,26 @@ fun TorrentRow(t: TorrentResult, onClick: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(12.d)
         ) {
             Box(Modifier.width(50.d), contentAlignment = Alignment.Center) {
-                Pill(t.quality, if (t.quality == "4K" || t.quality == "1080p") C.accent else C.cardHi, C.text)
+                Pill(t.quality, if (t.quality == "4K" || t.quality == "1080p") C.accent else C.cardHi, if (t.quality == "4K" || t.quality == "1080p") C.onAccent else C.text)
             }
             Column(Modifier.weight(1f)) {
                 Text2(t.title, 13, C.text, FontWeight.SemiBold, 1)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.d), verticalAlignment = Alignment.CenterVertically) {
                     Text2(formatSize(t.size) + " · " + t.source, 11, C.dim, FontWeight.Normal, 1)
-                    t.tags.take(4).forEach { Pill(it, Color(0x22FFFFFF), if (it == "CAM") C.red else C.dim) }
+                    // Звукът, който вграденият плеър не пуска, и записът от камера се виждат първи.
+                    t.tags.sortedBy { if (it == "DTS" || it == "TrueHD" || it == "CAM") 0 else 1 }.take(4).forEach {
+                        when (it) {
+                            "CAM" -> Pill(it, Color(0x33FF5C6C), C.red)
+                            "DTS", "TrueHD" -> Pill("$it ⚠", Color(0x33FFB020), C.amber)
+                            else -> Pill(it, Color(0x22FFFFFF), C.dim)
+                        }
+                    }
                     if (t.pack) Pill("пакет", Color(0x33FFB020), C.amber)
+                    when (fit) {
+                        app.torrtv.data.subs.Fit.EXACT -> Pill("💬 ✓ точни субтитри", Color(0x333DDC84), C.green)
+                        app.torrtv.data.subs.Fit.SIMILAR -> Pill("💬 ~ подобни субтитри", Color(0x33FFB020), C.amber)
+                        else -> {}
+                    }
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {

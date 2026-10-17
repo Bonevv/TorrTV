@@ -41,6 +41,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import app.torrtv.data.Genres
 import app.torrtv.data.Media
@@ -64,10 +65,11 @@ fun Focusable(
     content: @Composable BoxScope.(Boolean) -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
-    val s by animateFloatAsState(if (focused) scale else 1f, tween(140), label = "focusScale")
+    val lite = Look.lite
+    val s by animateFloatAsState(if (focused && !lite) scale else 1f, tween(if (lite) 0 else 140), label = "focusScale")
     val interaction = remember { MutableInteractionSource() }
     val base = if (focusRequester != null) modifier.focusRequester(focusRequester) else modifier
-    val ringMod = if (focused && ring) Modifier.border(3.d, C.ring, shape) else Modifier
+    val ringMod = if (focused && ring) Modifier.border(if (lite) 3.d else 2.d, C.ring, shape) else Modifier
     Box(
         base
             .zIndex(if (focused) 2f else 0f)
@@ -116,11 +118,12 @@ fun Chip(
                         else -> C.card
                     }
                 )
+                .then(if (!f && !selected) Modifier.border(1.d, C.line, RoundedCornerShape(50)) else Modifier)
                 .padding(horizontal = 14.d, vertical = 7.d),
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text, color = if (f) C.bg else C.text, fontSize = 13.t,
+                text, color = if (f) C.bg else if (selected) C.onAccent else C.text, fontSize = 13.t,
                 fontWeight = FontWeight.SemiBold, maxLines = 1
             )
         }
@@ -144,7 +147,7 @@ fun PrimaryButton(
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text, color = if (f) C.bg else C.text, fontSize = 14.t,
+                text, color = if (f) C.bg else if (primary) C.onAccent else C.text, fontSize = 14.t,
                 fontWeight = FontWeight.Bold, maxLines = 1
             )
         }
@@ -171,8 +174,12 @@ fun Img(url: String?, modifier: Modifier, w: Int, h: Int, scale: ContentScale = 
     Box(modifier.background(C.card)) {
         if (url != null) {
             val ctx = LocalContext.current
-            val req = remember(url, w, h) {
-                ImageRequest.Builder(ctx).data(url).size(w, h).allowRgb565(true).crossfade(220).build()
+            val lite = Look.lite
+            val req = remember(url, w, h, lite) {
+                // В лек режим: по-малко пиксели в паметта и без плавно появяване.
+                val k = if (lite) 0.66f else 1f
+                ImageRequest.Builder(ctx).data(url).size((w * k).toInt(), (h * k).toInt()).allowRgb565(true)
+                    .crossfade(if (lite) 0 else 220).build()
             }
             AsyncImage(model = req, contentDescription = null, contentScale = scale, modifier = Modifier.fillMaxSize())
         }
@@ -202,10 +209,11 @@ fun Poster(
     focusRequester: FocusRequester? = null
 ) {
     Focusable(
-        onClick, modifier.width(width).height(width * 1.5f), RoundedCornerShape(10.d), 1.09f,
+        onClick, modifier.width(width).height(width * 1.5f), RoundedCornerShape(12.d), 1.09f,
         onFocus = onFocus, focusRequester = focusRequester
     ) { f ->
-        Img(Tmdb.img(media.posterPath, "w342"), Modifier.fillMaxSize(), 342, 513)
+        Img(Look.img(media.posterPath, "w342"), Modifier.fillMaxSize(), 342, 513)
+        if (!f) Box(Modifier.fillMaxSize().border(1.d, C.line, RoundedCornerShape(12.d)))
         RatingBadge(media.rating, Modifier.align(Alignment.TopEnd).padding(5.d))
         if (media.type == MediaType.TV) {
             Box(Modifier.align(Alignment.TopStart).padding(5.d)) { Pill("СЕРИАЛ", Color(0xCC000000), C.accent2) }
@@ -232,10 +240,17 @@ fun genreLine(m: Media, max: Int = 3): String =
 
 @Composable
 fun SectionTitle(text: String, modifier: Modifier = Modifier) {
-    Text(
-        text, color = C.text, fontSize = 17.t, fontWeight = FontWeight.Bold,
-        modifier = modifier.padding(horizontal = 36.d, vertical = 8.d)
-    )
+    Row(
+        modifier.padding(horizontal = 36.d, vertical = 8.d),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(Modifier.width(3.d).height(17.d).clip(RoundedCornerShape(2.d)).background(C.accent))
+        Spacer(Modifier.width(9.d))
+        Text(
+            text, color = C.text, fontSize = 17.t, fontWeight = FontWeight.Bold,
+            letterSpacing = 0.4.sp
+        )
+    }
 }
 
 @Composable

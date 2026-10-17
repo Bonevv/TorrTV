@@ -75,6 +75,7 @@ object CacheManager {
             if (!streamActive) File(c, "torrents").deleteRecursively()
             File(c, "subs").deleteRecursively()
             File(c, "updates").deleteRecursively()
+            if (!streamActive) AppLog.trim(200)
             clearImages(ctx)
             Graph.prefs.lastClean = System.currentTimeMillis()
             AppLog.d("cache", "кешът е изчистен")

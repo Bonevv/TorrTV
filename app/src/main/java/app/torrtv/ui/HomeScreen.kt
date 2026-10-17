@@ -43,26 +43,26 @@ import java.util.Locale
 @Composable
 fun HeroBanner(m: Media?, modifier: Modifier = Modifier) {
     Box(modifier.fillMaxWidth()) {
-        Crossfade(targetState = m, animationSpec = tween(350), label = "hero") { cur ->
+        Crossfade(targetState = m, animationSpec = tween(if (Look.lite) 0 else 350), label = "hero") { cur ->
             Box(Modifier.fillMaxSize()) {
                 if (cur != null) {
-                    Img(Tmdb.img(cur.backdropPath ?: cur.posterPath, "w780"), Modifier.fillMaxSize(), 780, 439)
+                    Img(Look.img(cur.backdropPath ?: cur.posterPath, "w780"), Modifier.fillMaxSize(), 780, 439)
                 }
                 Box(
                     Modifier.fillMaxSize().background(
-                        Brush.horizontalGradient(listOf(Color(0xF2080B12), Color(0x99080B12), Color.Transparent))
+                        Brush.horizontalGradient(listOf(Color(0xF207090E), Color(0x9907090E), Color.Transparent))
                     )
                 )
                 Box(
                     Modifier.fillMaxSize().background(
-                        Brush.verticalGradient(listOf(Color.Transparent, Color(0x00080B12), C.bg))
+                        Brush.verticalGradient(listOf(Color.Transparent, Color(0x0007090E), C.bg))
                     )
                 )
                 if (cur != null) {
                     Column(
                         Modifier.align(Alignment.BottomStart).padding(start = 36.d, bottom = 18.d).fillMaxWidth(0.52f)
                     ) {
-                        Text2(cur.title, 28, C.text, FontWeight.ExtraBold, 2)
+                        Text2(cur.title, 30, C.text, FontWeight.ExtraBold, 2)
                         Spacer(Modifier.height(6.d))
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.d)) {
                             if (cur.rating > 0) Text2("★ " + String.format(Locale.US, "%.1f", cur.rating), 13, C.gold, FontWeight.Bold, 1)

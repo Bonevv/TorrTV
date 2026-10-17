@@ -25,6 +25,13 @@
         <package android:name="net.gtvbox.vimuhd" />
         <package android:name="org.courville.nova" />
         <package android:name="is.xyz.mpv" />
+        <package android:name="com.bsplayer.bspandroid.free" />
+        <package android:name="com.archos.mediacenter.videoplayer" />
+        <!-- Всяко приложение, което отваря видео от интернет адрес, се показва като възможен плеър -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" android:mimeType="video/*" />
+        </intent>
     </queries>
 
     <application

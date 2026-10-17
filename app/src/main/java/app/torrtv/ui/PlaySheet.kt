@@ -1,6 +1,7 @@
 package app.torrtv.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,7 +32,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import app.torrtv.data.subs.Fit
 import app.torrtv.data.subs.Langs
+import app.torrtv.data.subs.SubRank
 import app.torrtv.data.subs.SubtitleResult
 import app.torrtv.data.torrents.TorrentResult
 import app.torrtv.state.DetailState
@@ -43,6 +46,7 @@ import app.torrtv.torrent.ExternalPlayers
 fun PlaySheet(st: DetailState, t: TorrentResult, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val ranked = remember(t, st.subResults) { st.rankedSubs(t).take(14) }
+    val fits = remember(ranked, t) { ranked.associate { it.uid to SubRank.fit(it, t.title) } }
     val installed = remember { ExternalPlayers.installed(ctx) }
     val options = remember { listOf("builtin") + installed.map { it.id } + "ask" }
     var player by remember {
@@ -60,12 +64,12 @@ fun PlaySheet(st: DetailState, t: TorrentResult, onDismiss: () -> Unit) {
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
-            Modifier.fillMaxWidth(0.72f).clip(RoundedCornerShape(18.d)).background(C.bg2).padding(22.d)
+            Modifier.fillMaxWidth(0.72f).clip(RoundedCornerShape(20.d)).background(C.bg2).border(1.d, C.line, RoundedCornerShape(20.d)).padding(22.d)
         ) {
             Text2(t.title, 14, C.text, FontWeight.Bold, 2)
             Spacer(Modifier.height(4.d))
             Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
-                Pill(t.quality, C.accent, C.text)
+                Pill(t.quality, C.accent, C.onAccent)
                 Pill("${t.seeders} сийдъра", C.card, seedColor(t.seeders))
                 Pill(app.torrtv.core.formatSize(t.size))
             }
@@ -82,9 +86,9 @@ fun PlaySheet(st: DetailState, t: TorrentResult, onDismiss: () -> Unit) {
                     Chip(ExternalPlayers.label(id), player == id, { player = id; Graph.prefs.player = id })
                 }
             }
-            if (player == "builtin") {
+            if (player == "builtin" && ("DTS" in t.tags || "TrueHD" in t.tags)) {
                 Spacer(Modifier.height(4.d))
-                Text2("Вграденият плеър не поддържа DTS звук - за такива файлове ползвай VLC / MX / Just Player.", 11, C.dim, FontWeight.Normal, 2)
+                Text2("⚠ Този файл е със звук DTS/TrueHD - във вградения плеър може да няма звук. По-добре избери торент с AAC или AC3.", 11, C.amber, FontWeight.Medium, 2)
             }
 
             Spacer(Modifier.height(14.d))
@@ -116,22 +120,33 @@ fun PlaySheet(st: DetailState, t: TorrentResult, onDismiss: () -> Unit) {
                     if (ranked.isNotEmpty()) Text2(if (subsOpen) "▲" else "▼", 13, C.dim, FontWeight.Bold, 1)
                 }
             }
+            // Дали избраният субтитър е за това издание на филма - най-важното за синхрона със звука.
+            val firstPicked = picked.firstOrNull()?.let { uid -> fits[uid] }
+            if (firstPicked != null) {
+                Spacer(Modifier.height(5.d))
+                when (firstPicked) {
+                    Fit.EXACT -> Text2("✓ Субтитрите са за това издание - трябва да са синхронни със звука.", 11, C.green, FontWeight.Medium, 2)
+                    Fit.SIMILAR -> Text2("~ Субтитрите са за подобно издание - може да има малко разминаване. В плеъра има синхрон.", 11, C.amber, FontWeight.Medium, 2)
+                    Fit.OTHER -> Text2("⚠ Субтитрите са за ДРУГО издание - вероятно ще се разминават. Избери друг субтитър/торент или ползвай синхрона в плеъра.", 11, C.amber, FontWeight.Medium, 2)
+                    Fit.UNKNOWN -> Text2("? За този субтитър няма данни за изданието. Ако се разминава, ползвай синхрона в плеъра.", 11, C.dim, FontWeight.Normal, 2)
+                }
+            }
             if (subsOpen && ranked.isNotEmpty()) {
                 Spacer(Modifier.height(6.d))
-                LazyColumn(Modifier.heightIn(max = 132.d), verticalArrangement = Arrangement.spacedBy(4.d)) {
-                    items(ranked, key = { it.uid }) { s -> SubRow(s, s.uid in picked) {
+                LazyColumn(Modifier.heightIn(max = 190.d), verticalArrangement = Arrangement.spacedBy(4.d)) {
+                    items(ranked, key = { it.uid }) { s -> SubRow(s, fits[s.uid] ?: Fit.UNKNOWN, s.uid in picked) {
                         if (s.uid in picked) picked.remove(s.uid) else if (picked.size < 4) picked.add(s.uid)
                     } }
                 }
                 Spacer(Modifier.height(4.d))
-                Text2("Може да избереш до 4 - в плеъра се превключват.", 10, C.dim, FontWeight.Normal, 1)
+                Text2("Може да избереш до 4 - в плеъра се превключват. Най-горе е най-подходящият.", 10, C.dim, FontWeight.Normal, 1)
             }
         }
     }
 }
 
 @Composable
-private fun SubRow(s: SubtitleResult, on: Boolean, toggle: () -> Unit) {
+private fun SubRow(s: SubtitleResult, fit: Fit, on: Boolean, toggle: () -> Unit) {
     Focusable(toggle, Modifier.fillMaxWidth(), RoundedCornerShape(8.d), 1.02f) { f ->
         Row(
             Modifier.fillMaxWidth().background(if (f) C.cardHi else C.card).padding(horizontal = 10.d, vertical = 6.d),
@@ -139,10 +154,22 @@ private fun SubRow(s: SubtitleResult, on: Boolean, toggle: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(8.d)
         ) {
             Text2(if (on) "☑" else "☐", 14, if (on) C.accent2 else C.dim, FontWeight.Bold, 1)
-            Pill(Langs.choices.firstOrNull { it.first == s.lang }?.second ?: s.lang.uppercase(), C.cardHi, C.text)
-            Text2(s.release.ifBlank { "(без име)" }, 12, C.text, FontWeight.Medium, 1, Modifier.weight(1f))
-            if (s.trusted) Pill("✓", Color(0x333DDC84), C.green)
-            Text2(s.providerName, 10, C.dim, FontWeight.Normal, 1)
+            Column(Modifier.weight(1f)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.d), verticalAlignment = Alignment.CenterVertically) {
+                    Pill(Langs.choices.firstOrNull { it.first == s.lang }?.second ?: s.lang.uppercase(), C.cardHi, C.text)
+                    when (fit) {
+                        Fit.EXACT -> Pill("✓ точно издание", Color(0x333DDC84), C.green)
+                        Fit.SIMILAR -> Pill("~ подобно", Color(0x33FFB020), C.amber)
+                        Fit.OTHER -> Pill("✗ друго издание", Color(0x33FF5C6C), C.red)
+                        Fit.UNKNOWN -> Pill("? неясно", C.cardHi, C.dim)
+                    }
+                    if (s.trusted) Pill("доверен", Color(0x223DDC84), C.green)
+                    if (s.hearing) Pill("за глухи", C.cardHi, C.dim)
+                    Text2(s.providerName, 10, C.dim, FontWeight.Normal, 1)
+                }
+                Spacer(Modifier.height(2.d))
+                Text2(s.release.ifBlank { "(без име на издание)" }, 11, C.text, FontWeight.Normal, 2)
+            }
         }
     }
 }

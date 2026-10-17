@@ -73,6 +73,13 @@ class Prefs(ctx: Context) {
             sp.edit().putInt("engine_mode_v2", v.coerceIn(0, 2)).apply()
         }
 
+    /** Лек режим: без анимации на фокуса и плавните преходи, по-малки картинки (за по-слаби телевизори). */
+    var lite: Boolean
+        get() = sp.getBoolean("lite_mode", false)
+        set(v) {
+            sp.edit().putBoolean("lite_mode", v).apply()
+        }
+
     var lastClean: Long
         get() = sp.getLong("last_clean", 0L)
         set(v) {

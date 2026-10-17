@@ -34,10 +34,27 @@ object AppLog {
         }
     }
 
+    private var writes = 0
+
     @Synchronized
     fun d(tag: String, msg: String) {
         try {
-            file?.appendText("${fmt.format(Date())} [$tag] $msg\n")
+            val f = file ?: return
+            f.appendText("${fmt.format(Date())} [$tag] $msg\n")
+            // На всеки 200 реда проверяваме размера - дневникът никога не расте безкрайно.
+            if (++writes % 200 == 0 && f.length() > MAX) f.writeText(f.readText().takeLast((MAX / 2).toInt()))
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Оставя само последните редове (вика се при автоматичното чистене на кеша). Следата на срива не се пипа. */
+    @Synchronized
+    fun trim(keepLines: Int = 200) {
+        try {
+            val d = dir ?: return
+            val f = File(d, MAIN)
+            if (f.exists()) f.writeText(lastLines(f, keepLines, 400).joinToString("\n") + "\n")
+            File(d, TORRENT).delete()
         } catch (_: Exception) {
         }
     }

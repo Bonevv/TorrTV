@@ -1,6 +1,7 @@
 package app.torrtv.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,7 +52,11 @@ private val fieldLabels = mapOf(
 
 @Composable
 private fun Group(title: String, content: @Composable () -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 36.d, vertical = 8.d)) {
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 36.d, vertical = 6.d)
+            .clip(RoundedCornerShape(16.d)).background(C.bg2).border(1.d, C.line, RoundedCornerShape(16.d))
+            .padding(horizontal = 16.d, vertical = 12.d)
+    ) {
         Text2(title, 16, C.text, FontWeight.ExtraBold, 1)
         Spacer(Modifier.height(8.d))
         content()
@@ -85,6 +90,7 @@ fun SettingsScreen() {
     var cleared by remember { mutableStateOf(false) }
     var cacheHours by remember { mutableStateOf(prefs.cacheHours) }
     var engineMode by remember { mutableStateOf(prefs.engineProfile) }
+    var lite by remember { mutableStateOf(prefs.lite) }
     val mem by produceState(remember { CacheManager.memory(ctx) }) {
         while (true) {
             value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { CacheManager.memory(ctx) }
@@ -265,6 +271,20 @@ fun SettingsScreen() {
                         cacheTick++
                     }
                 }, primary = false)
+            }
+        }
+
+        item {
+            Group("⚡  Лек режим") {
+                Text2(
+                    "За по-слаби телевизори: без анимации на фокуса и плавни преходи, по-малки картинки. Включи го, ако менютата се движат на пресекулки.",
+                    12, C.dim, FontWeight.Normal, 3
+                )
+                Spacer(Modifier.height(6.d))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
+                    Chip("Изключен", !lite, { lite = false; prefs.lite = false; Look.lite = false })
+                    Chip("Включен", lite, { lite = true; prefs.lite = true; Look.lite = true })
+                }
             }
         }
 

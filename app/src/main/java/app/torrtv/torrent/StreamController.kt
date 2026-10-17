@@ -13,6 +13,7 @@ import app.torrtv.core.AppLog
 import app.torrtv.core.Magnets
 import app.torrtv.data.subs.SubtitleQuery
 import app.torrtv.data.subs.SubtitleResult
+import app.torrtv.data.subs.SubShift
 import app.torrtv.data.subs.SubtitleStore
 import app.torrtv.state.Graph
 import kotlinx.coroutines.CancellationException
@@ -69,6 +70,37 @@ class StreamController(
     )
 
     class Playback(val url: String, val title: String, val subs: List<LocalSub>)
+
+    /** Субтитрите без изместване (оригиналните файлове) и текущото изместване в милисекунди. */
+    private var baseSubs: List<LocalSub> = emptyList()
+
+    @Volatile
+    var subOffsetMs = 0L
+        private set
+
+    /**
+     * Нови адреси на субтитрите, изместени с offsetMs (+ = излизат по-късно). Вика се от вградения плеър.
+     * Изместеният файл се подава от същия локален сървър; файловете на диска не се пипат.
+     */
+    fun shiftSubs(offsetMs: Long): List<LocalSub> {
+        val pb = playback ?: return emptyList()
+        subOffsetMs = offsetMs
+        val out = ArrayList<LocalSub>()
+        baseSubs.forEachIndexed { i, s ->
+            if (offsetMs == 0L) {
+                out.add(s)
+            } else {
+                val ext = s.file.extension.ifBlank { "srt" }
+                val shifted = SubShift.shift(s.file.readText(), ext, offsetMs)
+                val path = "/sub$i.o$offsetMs.$ext"
+                server.set(path, LocalServer.BytesContent(shifted.toByteArray(Charsets.UTF_8), s.mime))
+                out.add(LocalSub(s.file, s.lang, s.label, s.mime, "http://127.0.0.1:${server.port}$path"))
+            }
+        }
+        playback = Playback(pb.url, pb.title, out)
+        AppLog.d("stream", "синхрон на субтитрите: ${offsetMs} ms")
+        return out
+    }
 
     var ui by mutableStateOf(Ui())
         private set
@@ -162,6 +194,8 @@ class StreamController(
             server.set(sp, LocalServer.BytesContent(l.file.readBytes(), l.mime))
             subs.add(LocalSub(l.file, l.lang, l.label, l.mime, "http://127.0.0.1:${server.port}$sp"))
         }
+        baseSubs = subs
+        subOffsetMs = 0L
         val title = if (req.subtitle.isBlank()) req.title else "${req.title} · ${req.subtitle}"
         // Видеото идва от сървъра в торент процеса, субтитрите - от този процес.
         val pb = Playback("http://127.0.0.1:${started.port}${started.path}", title, subs)
@@ -244,6 +278,8 @@ class StreamController(
         subsJob?.cancel()
         subsJob = null
         playback = null
+        baseSubs = emptyList()
+        subOffsetMs = 0L
         client.close()
         server.clearRoutes()
         if (ui.stage != Stage.IDLE) {

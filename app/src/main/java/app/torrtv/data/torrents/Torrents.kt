@@ -78,6 +78,7 @@ object Quality {
         if (Regex("\\bhdtv\\b").containsMatchIn(t)) out.add("HDTV")
         if (Regex("\\b(atmos)\\b").containsMatchIn(t)) out.add("Atmos")
         if (Regex("\\b(dts|dts-?hd)\\b").containsMatchIn(t)) out.add("DTS")
+        if (Regex("\\btruehd\\b").containsMatchIn(t)) out.add("TrueHD")
         if (Regex("\\b(cam|hdcam|camrip|telesync|hdts|ts|telecine|tc)\\b").containsMatchIn(t)) out.add("CAM")
         return out
     }

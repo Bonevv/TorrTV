@@ -33,6 +33,8 @@ private val tabs = listOf("🏠 Начало", "🎬 Филми", "📺 Сери
 
 @Composable
 fun App() {
+    // Лекият режим се чете веднъж при старт (преди първия кадър).
+    remember { Look.lite = Graph.prefs.lite; 0 }
     var tab by remember { mutableStateOf(0) }
     val stack = remember { mutableStateListOf<DetailState>() }
     var sheet by remember { mutableStateOf<Pair<DetailState, TorrentResult>?>(null) }
@@ -91,7 +93,10 @@ fun App() {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.d)
                 ) {
-                    Text2("TorrTV", 20, C.accent, FontWeight.Black, 1)
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        androidx.compose.material3.Text("TORR", color = C.text, fontSize = 20.t, fontWeight = FontWeight.Light, letterSpacing = 2.t)
+                        androidx.compose.material3.Text("TV", color = C.accent, fontSize = 20.t, fontWeight = FontWeight.Black, letterSpacing = 1.t)
+                    }
                     Spacer(Modifier.width(14.d))
                     tabs.forEachIndexed { i, name ->
                         Chip(name, tab == i, { tab = i }, focusRequester = tabFocus[i])

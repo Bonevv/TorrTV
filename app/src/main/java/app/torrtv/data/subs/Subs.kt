@@ -41,6 +41,9 @@ data class SubtitleResult(
     val hearing: Boolean
 ) {
     val uid: String get() = "$provider|$ref"
+
+    /** Разчетеното издание (кешира се - сметка по име се прави веднъж). */
+    val fx: Release by lazy { Release.parse(release) }
 }
 
 class SubFile(val name: String, val bytes: ByteArray)
@@ -186,7 +189,9 @@ class SubtitleStore(private val cacheDir: File, private val providers: List<Subt
             "vtt" -> "text/vtt"
             else -> "application/x-subrip"
         }
-        Local(out, r.lang, "${Langs.short(r.lang)} · ${r.providerName}", mime)
+        // Името на изданието е в етикета, за да се вижда в менюто на плеъра за кой филм е всеки субтитър.
+        val rel = r.release.trim().take(40)
+        Local(out, r.lang, if (rel.isNotEmpty()) "${Langs.short(r.lang)} · $rel" else "${Langs.short(r.lang)} · ${r.providerName}", mime)
     }
 
     fun clear() {
@@ -194,16 +199,114 @@ class SubtitleStore(private val cacheDir: File, private val providers: List<Subt
     }
 }
 
-/** Подрежда субтитрите: езици по ред на предпочитание, после съвпадение с релийза, после доверени и сваляния. */
+/** Колко добре един субтитър пасва на избрания торент (по издание: източник, резолюция, група). */
+enum class Fit { EXACT, SIMILAR, OTHER, UNKNOWN }
+
+/** Отличителните части от името на изданието - те определят дали времената на субтитъра ще паснат на звука. */
+class Release(val res: String, val src: String, val codec: String, val groups: Set<String>) {
+    val facets: Int get() = listOf(res, src, codec).count { it.isNotEmpty() } + (if (groups.isNotEmpty()) 1 else 0)
+
+    companion object {
+        private val knownGroups = setOf(
+            "yts", "yify", "rarbg", "ntb", "flux", "evo", "ion10", "galaxy", "galaxytv", "psa", "sparks", "geckos",
+            "amiable", "cmrg", "fgt", "ethel", "playweb", "tgx", "mkvcinema", "tigole", "qxr", "joy", "pahe", "bone",
+            "dimension", "lol", "mixed", "avs", "kogi", "ntg", "btn", "cakes", "strife", "tepes", "edith", "smurf",
+            "hone", "ctrlhd", "decibel", "sigma", "framestor", "etrg", "megusta", "eztv", "ettv", "amzn", "nf",
+            "dsnp", "atvp", "hmax", "ion", "shortbrehd", "rbg", "ganool", "tomdoc", "kingdom", "vxt", "swty"
+        )
+        private val notGroup = setOf(
+            "x264", "x265", "h264", "h265", "hevc", "avc", "aac", "ac3", "dts", "mp4", "mkv", "avi", "srt", "sub", "subs",
+            "bg", "en", "eng", "bul", "bluray", "webrip", "webdl", "web", "hdtv", "dvdrip", "bdrip", "brrip", "remux",
+            "dl", "rip", "ray", "hdr", "dv", "atmos", "1080p", "720p", "2160p", "480p", "hdrip", "proper", "repack", "extended", "unrated", "multi", "dual"
+        )
+        private val tail = Regex("-\\s*\\[?([A-Za-z0-9]{2,12})\\]?\\s*(?:\\.[A-Za-z0-9]{2,4})?\\s*$")
+
+        fun parse(name: String): Release {
+            val n = app.torrtv.data.torrents.Relevance.norm(name)
+            val tk = n.split(' ').filter { it.isNotEmpty() }.toSet()
+            val res = when {
+                "2160p" in tk || "4k" in tk || "uhd" in tk -> "2160p"
+                "1080p" in tk || "1080i" in tk -> "1080p"
+                "720p" in tk -> "720p"
+                "480p" in tk -> "480p"
+                else -> ""
+            }
+            val src = when {
+                "cam" in tk || "hdcam" in tk || "camrip" in tk || "telesync" in tk || "hdts" in tk || "ts" in tk ||
+                    "telecine" in tk || "tc" in tk -> "cam"
+                "bluray" in tk || ("blu" in tk && "ray" in tk) || "bdrip" in tk || "brrip" in tk || "remux" in tk -> "bd"
+                "web" in tk || "webrip" in tk || "webdl" in tk || "hdrip" in tk -> "web"
+                "hdtv" in tk || "pdtv" in tk || "tvrip" in tk -> "tv"
+                "dvdrip" in tk || "dvd" in tk || "dvdscr" in tk -> "dvd"
+                else -> ""
+            }
+            val codec = when {
+                "x265" in tk || "hevc" in tk || "h265" in tk -> "hevc"
+                "x264" in tk || "h264" in tk || "avc" in tk -> "avc"
+                "av1" in tk -> "av1"
+                else -> ""
+            }
+            val groups = HashSet<String>()
+            tk.filterTo(groups) { it in knownGroups }
+            tail.find(name.trim())?.groupValues?.get(1)?.lowercase(Locale.US)?.let {
+                if (it !in notGroup && !it.all { c -> c.isDigit() }) groups.add(it)
+            }
+            return Release(res, src, codec, groups)
+        }
+    }
+}
+
+/** Подрежда субтитрите: езици по ред на предпочитание, после съвпадение с изданието, после доверени и сваляния. */
 object SubRank {
-    private fun tokens(s: String): Set<String> =
-        Relevance.norm(s).split(' ').filter { it.length >= 3 }.toSet()
+
+    fun fit(sub: Release, tor: Release): Fit {
+        if (sub.facets == 0) return Fit.UNKNOWN
+        val groupMatch = sub.groups.any { it in tor.groups }
+        val srcSame = sub.src.isNotEmpty() && sub.src == tor.src
+        val srcDiff = sub.src.isNotEmpty() && tor.src.isNotEmpty() && sub.src != tor.src
+        val resDiff = sub.res.isNotEmpty() && tor.res.isNotEmpty() && sub.res != tor.res
+        val codecDiff = sub.codec.isNotEmpty() && tor.codec.isNotEmpty() && sub.codec != tor.codec
+        if (srcDiff) return Fit.OTHER
+        if (groupMatch) return Fit.EXACT
+        // Същият вид и качество, но и двете имат група и тя е различна -> подобно, не точно.
+        val groupsDiffer = sub.groups.isNotEmpty() && tor.groups.isNotEmpty()
+        if (srcSame && !groupsDiffer && sub.res == tor.res && sub.res.isNotEmpty() && sub.codec == tor.codec && sub.codec.isNotEmpty()) return Fit.EXACT
+        if (srcSame && !resDiff && !codecDiff) return Fit.SIMILAR
+        if (sub.src.isEmpty() && sub.res.isNotEmpty() && sub.res == tor.res) return Fit.SIMILAR
+        if (srcSame) return Fit.SIMILAR
+        return Fit.OTHER
+    }
+
+    fun fit(sub: SubtitleResult, torrentTitle: String?): Fit =
+        if (torrentTitle == null) Fit.UNKNOWN else fit(sub.fx, Release.parse(torrentTitle))
+
+    /** Най-доброто съвпадение измежду субтитрите (за белега на торента в списъка). */
+    fun bestFit(subs: List<SubtitleResult>, torrentTitle: String): Fit {
+        if (subs.isEmpty()) return Fit.UNKNOWN
+        val tor = Release.parse(torrentTitle)
+        var best = Fit.UNKNOWN
+        var any = false
+        for (r in subs) {
+            val f = fit(r.fx, tor)
+            if (f == Fit.EXACT) return Fit.EXACT
+            if (f == Fit.UNKNOWN) continue
+            any = true
+            if (best == Fit.UNKNOWN || (f == Fit.SIMILAR && best == Fit.OTHER)) best = f
+        }
+        return if (any) best else Fit.UNKNOWN
+    }
 
     fun rank(all: List<SubtitleResult>, langOrder: List<String>, releaseHint: String?): List<SubtitleResult> {
-        val hint = if (releaseHint == null) emptySet() else tokens(releaseHint)
+        val tor = releaseHint?.let { Release.parse(it) }
         fun score(r: SubtitleResult): Int {
-            val match = if (hint.isEmpty()) 0 else tokens(r.release).count { it in hint }
-            return match * 50 + (if (r.trusted) 20 else 0) + minOf(r.downloads, 5000) / 100 - (if (r.hearing) 10 else 0)
+            val f = if (tor == null) Fit.UNKNOWN else fit(r.fx, tor)
+            val fitScore = when (f) {
+                Fit.EXACT -> 300
+                Fit.SIMILAR -> 120
+                Fit.UNKNOWN -> 0
+                Fit.OTHER -> -60
+            }
+            return fitScore + (if (r.trusted) 20 else 0) + minOf(r.downloads, 5000) / 100 - (if (r.hearing) 10 else 0)
         }
         return all.sortedWith(
             compareBy<SubtitleResult> {

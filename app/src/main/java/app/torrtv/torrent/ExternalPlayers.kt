@@ -15,12 +15,58 @@ object ExternalPlayers {
         P("kodi", "Kodi", listOf("org.xbmc.kodi")),
         P("vimu", "Vimu", listOf("net.gtvbox.videoplayer", "net.gtvbox.vimuhd")),
         P("nova", "Nova Video Player", listOf("org.courville.nova")),
-        P("mpv", "mpv", listOf("is.xyz.mpv"))
+        P("mpv", "mpv", listOf("is.xyz.mpv")),
+        P("bsp", "BSPlayer", listOf("com.bsplayer.bspandroid.free")),
+        P("archos", "Archos Video", listOf("com.archos.mediacenter.videoplayer"))
     )
 
+    /** Имена на намерените (непознати предварително) плеъри - за етикетите на бутоните. */
+    private val names = HashMap<String, String>()
+
+    /** Приложения, които не са плеъри, но могат да се обадят на "отвори видео" - не ги показваме. */
+    private val skip = setOf(
+        "com.android.chrome", "com.android.browser", "org.mozilla.firefox", "org.mozilla.tv.firefox",
+        "com.google.android.googlequicksearchbox", "com.google.android.apps.photos", "com.android.documentsui",
+        "com.google.android.documentsui", "com.google.android.tvlauncher", "com.google.android.youtube.tv",
+        "com.google.android.youtube", "com.amazon.cloud9", "com.amazon.cloud9.systembar"
+    )
+
+    /**
+     * Всички други приложения на устройството, които отварят видео от http адрес (Wuffy, KMPlayer, nPlayer,
+     * плеърите на производителя и т.н.). Намират се чрез системата, не от фиксиран списък.
+     */
+    private fun discovered(ctx: Context): List<P> {
+        return try {
+            val probe = Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse("http://127.0.0.1:8080/video.mkv"), "video/*")
+            val known = all.flatMap { it.packages }.toSet()
+            val pm = ctx.packageManager
+            val out = ArrayList<P>()
+            val seen = HashSet<String>()
+            for (ri in pm.queryIntentActivities(probe, 0)) {
+                val pkg = ri.activityInfo?.packageName ?: continue
+                if (pkg == ctx.packageName || pkg in known || pkg in skip || !seen.add(pkg)) continue
+                val label = try {
+                    ri.loadLabel(pm).toString().ifBlank { pkg }
+                } catch (_: Exception) {
+                    pkg
+                }
+                val id = "pkg:$pkg"
+                names[id] = label
+                out.add(P(id, label, listOf(pkg)))
+            }
+            out.sortedBy { it.label.lowercase() }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun packagesOf(ctx: Context, id: String): List<String> {
+        if (id.startsWith("pkg:")) return listOf(id.removePrefix("pkg:"))
+        return all.firstOrNull { it.id == id }?.packages ?: emptyList()
+    }
+
     fun installedPackage(ctx: Context, id: String): String? {
-        val p = all.firstOrNull { it.id == id } ?: return null
-        for (pkg in p.packages) {
+        for (pkg in packagesOf(ctx, id)) {
             try {
                 ctx.packageManager.getPackageInfo(pkg, 0)
                 return pkg
@@ -30,12 +76,12 @@ object ExternalPlayers {
         return null
     }
 
-    fun installed(ctx: Context): List<P> = all.filter { installedPackage(ctx, it.id) != null }
+    fun installed(ctx: Context): List<P> = all.filter { installedPackage(ctx, it.id) != null } + discovered(ctx)
 
     fun label(id: String): String = when (id) {
         "builtin" -> "Вграден плеър"
         "ask" -> "Питай всеки път"
-        else -> all.firstOrNull { it.id == id }?.label ?: id
+        else -> all.firstOrNull { it.id == id }?.label ?: names[id] ?: id.removePrefix("pkg:")
     }
 
     /** Връща true, ако плеърът е пуснат. */
