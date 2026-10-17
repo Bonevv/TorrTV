@@ -67,7 +67,7 @@ class TorrentEngine(private val ctx: Context) {
 
     private val lock = Any()
     private var sm: SessionManager? = null
-    private var active = 0
+    private var stopJob: kotlinx.coroutines.Job? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     val baseDir: File get() = File(ctx.cacheDir, "torrents").also { it.mkdirs() }
@@ -96,13 +96,14 @@ class TorrentEngine(private val ctx: Context) {
         withContext(Dispatchers.IO) {
             val hex = app.torrtv.core.Magnets.infoHash(magnet)
                 ?: throw IllegalArgumentException("Невалиден magnet линк")
+            // Всяка нова сесия започва на чисто: изчакваме предишната да е спряла напълно.
+            val pending = synchronized(lock) { stopJob }
+            pending?.join()
             val s = session()
             AppLog.d("torrent", "Отварям magnet $hex")
-            synchronized(lock) { active++ }
             val done = CompletableDeferred<TorrentHandle>()
             val listener = object : AlertListener {
                 override fun types(): IntArray = intArrayOf(
-                    AlertType.ADD_TORRENT.swig(),
                     AlertType.METADATA_RECEIVED.swig(),
                     AlertType.TORRENT_ERROR.swig()
                 )
@@ -114,10 +115,6 @@ class TorrentEngine(private val ctx: Context) {
                     if (!h.infoHash().toHex().equals(hex, ignoreCase = true)) return
                     when (alert.type()) {
                         AlertType.METADATA_RECEIVED -> done.complete(h)
-                        AlertType.ADD_TORRENT -> {
-                            val ti = h.torrentFile()
-                            if (ti != null && ti.isValid) done.complete(h)
-                        }
                         AlertType.TORRENT_ERROR -> done.completeExceptionally(IOException("Грешка в торента"))
                         else -> {
                         }
@@ -173,16 +170,19 @@ class TorrentEngine(private val ctx: Context) {
             } catch (e: Throwable) {
                 AppLog.e("torrent", "openMagnet", e)
                 try {
-                    val h = s.find(Sha1Hash.parseHex(hex))
-                    if (h != null && h.isValid) s.remove(h, SessionHandle.DELETE_FILES)
+                    s.removeListener(listener)
                 } catch (_: Exception) {
                 }
-                released()
+                // Не махаме отделния торент (може да е нестабилно без метаданни) - спираме цялата сесия.
+                shutdown(0)
                 if (e is kotlinx.coroutines.TimeoutCancellationException)
                     throw IOException("Няма достатъчно пиъри - не успях да получа данните за торента")
                 throw e
             } finally {
-                s.removeListener(listener)
+                try {
+                    s.removeListener(listener)
+                } catch (_: Exception) {
+                }
             }
         }
 
@@ -192,36 +192,35 @@ class TorrentEngine(private val ctx: Context) {
     }
 
     internal fun remove(meta: MetaSession) {
-        try {
-            val s = sm
-            if (s != null && s.isRunning && meta.handle.isValid) s.remove(meta.handle, SessionHandle.DELETE_FILES)
-        } catch (_: Exception) {
-        }
-        released()
+        shutdown(500)
     }
 
-    private fun released() {
-        val idle = synchronized(lock) {
-            if (active > 0) active--
-            active == 0
+    /**
+     * Спира цялата торент сесия (на заден план) и чисти свалените файлове.
+     * Една сесия = един стрийм, така няма остатъчно състояние между два опита.
+     */
+    fun shutdown(delayMs: Long) {
+        val s = synchronized(lock) {
+            val x = sm
+            sm = null
+            x
         }
-        if (idle) {
-            // Ако няма активен торент 2 минути - спираме сесията (спестява мрежа и батерия).
-            scope.launch {
-                delay(120_000)
-                val stop = synchronized(lock) { active == 0 }
-                if (stop) {
-                    val s = synchronized(lock) {
-                        val x = sm
-                        sm = null
-                        x
-                    }
-                    try {
-                        s?.stop()
-                    } catch (_: Exception) {
-                    }
-                    cleanDisk()
+        if (s == null) {
+            scope.launch { cleanDisk() }
+            return
+        }
+        synchronized(lock) {
+            val prev = stopJob
+            stopJob = scope.launch {
+                prev?.join()
+                if (delayMs > 0) delay(delayMs)
+                try {
+                    s.stop()
+                } catch (e: Throwable) {
+                    AppLog.e("torrent", "stop", e)
                 }
+                cleanDisk()
+                AppLog.d("torrent", "сесията е спряна")
             }
         }
     }
@@ -274,7 +273,10 @@ class StreamSession internal constructor(
     }
 
     private fun have(p: Int): Boolean = try {
+        if (closed) throw IOException("closed")
         h.havePiece(p)
+    } catch (e: IOException) {
+        throw e
     } catch (e: Exception) {
         throw IOException("Торентът е спрян")
     }
