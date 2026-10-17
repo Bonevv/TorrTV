@@ -2,6 +2,7 @@ package app.torrtv.core
 
 import android.content.Context
 import android.content.SharedPreferences
+import app.torrtv.BuildConfig
 
 class Prefs(ctx: Context) {
     private val sp: SharedPreferences = ctx.getSharedPreferences("torrtv_prefs", Context.MODE_PRIVATE)
@@ -13,22 +14,22 @@ class Prefs(ctx: Context) {
 
     // ---- API ключове (въвеждат се от телефона през Настройки) ----
     var tmdbKey: String
-        get() = str("tmdb_key")
+        get() = str("tmdb_key").ifBlank { BuildConfig.K_TMDB }
         set(v) = put("tmdb_key", v)
     var osKey: String
-        get() = str("os_key")
+        get() = str("os_key").ifBlank { BuildConfig.K_OS_KEY }
         set(v) = put("os_key", v)
     var osUser: String
-        get() = str("os_user")
+        get() = str("os_user").ifBlank { BuildConfig.K_OS_USER }
         set(v) = put("os_user", v)
     var osPass: String
-        get() = str("os_pass")
+        get() = str("os_pass").ifBlank { BuildConfig.K_OS_PASS }
         set(v) = put("os_pass", v)
     var subdlKey: String
-        get() = str("subdl_key")
+        get() = str("subdl_key").ifBlank { BuildConfig.K_SUBDL }
         set(v) = put("subdl_key", v)
     var subsourceKey: String
-        get() = str("subsource_key")
+        get() = str("subsource_key").ifBlank { BuildConfig.K_SUBSOURCE }
         set(v) = put("subsource_key", v)
 
     // ---- Домейни (по желание, ако сайтът смени адреса си) ----
