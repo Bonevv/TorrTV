@@ -68,9 +68,9 @@ class Prefs(ctx: Context) {
      * към следващия режим, така че следващият опит да мине по друг път в native кода.
      */
     var engineProfile: Int
-        get() = sp.getInt("engine_profile", 0).coerceIn(0, 2)
+        get() = sp.getInt("engine_mode_v2", 0).coerceIn(0, 2)
         set(v) {
-            sp.edit().putInt("engine_profile", v.coerceIn(0, 2)).apply()
+            sp.edit().putInt("engine_mode_v2", v.coerceIn(0, 2)).apply()
         }
 
     var lastClean: Long

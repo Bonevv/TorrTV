@@ -112,7 +112,7 @@ class TorrentEngine(val baseDir: File, val profile: Int = 0) {
                 ?: throw IllegalArgumentException("Невалиден magnet линк")
             val s = session()
             AppLog.d("torrent", "Отварям magnet $hex")
-            val done = CompletableDeferred<TorrentHandle>()
+            val done = CompletableDeferred<Unit>()
             val listener = object : AlertListener {
                 override fun types(): IntArray = intArrayOf(
                     AlertType.METADATA_RECEIVED.swig(),
@@ -121,11 +121,14 @@ class TorrentEngine(val baseDir: File, val profile: Int = 0) {
 
                 override fun alert(alert: Alert<*>) {
                     val ta = alert as? TorrentAlert<*> ?: return
+                    // ВАЖНО: handle() на алерта сочи към паметта на самия алерт, която се освобождава щом
+                    // този метод приключи. Ползваме го само тук; за всичко останало вземаме собствено копие
+                    // със s.find(...). Това беше причината за срива (SIGSEGV в torrent_handle::status).
                     val h = ta.handle()
                     if (!h.isValid) return
                     if (!h.infoHash().toHex().equals(hex, ignoreCase = true)) return
                     when (alert.type()) {
-                        AlertType.METADATA_RECEIVED -> done.complete(h)
+                        AlertType.METADATA_RECEIVED -> done.complete(Unit)
                         AlertType.TORRENT_ERROR -> done.completeExceptionally(IOException("Грешка в торента"))
                         else -> {
                         }
@@ -143,7 +146,7 @@ class TorrentEngine(val baseDir: File, val profile: Int = 0) {
                 )
                 AppLog.d("torrent", "торентът е добавен")
                 var ticks = 0
-                val handle = withTimeout(100_000) {
+                withTimeout(100_000) {
                     while (!done.isCompleted) {
                         try {
                             val h = s.find(Sha1Hash.parseHex(hex))
@@ -151,7 +154,7 @@ class TorrentEngine(val baseDir: File, val profile: Int = 0) {
                                 val st = h.status()
                                 onStatus(st.numPeers(), st.numSeeds())
                                 // Резервна проверка, ако предупреждението за метаданни е изпуснато
-                                if (st.hasMetadata()) done.complete(h)
+                                if (st.hasMetadata()) done.complete(Unit)
                                 if (ticks % 10 == 0) {
                                     AppLog.d("torrent", "чакам метаданни: пиъри ${st.numPeers()}, сийдъри ${st.numSeeds()}, DHT възли ${s.dhtNodes()}")
                                 }
@@ -163,6 +166,10 @@ class TorrentEngine(val baseDir: File, val profile: Int = 0) {
                     }
                     done.await()
                 }
+                // Собствено копие на handle-а (не това от алерта), което е безопасно да пазим.
+                val handle = s.find(Sha1Hash.parseHex(hex))
+                if (handle == null || !handle.isValid) throw IOException("Торентът не е намерен в сесията")
+                AppLog.d("torrent", "handle е взет със find()")
                 var tiTry = handle.torrentFile()
                 var waited = 0
                 while ((tiTry == null || !tiTry.isValid) && waited++ < 25) {
