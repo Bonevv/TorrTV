@@ -14,6 +14,7 @@ import app.torrtv.core.Magnets
 import app.torrtv.data.subs.SubtitleQuery
 import app.torrtv.data.subs.SubtitleResult
 import app.torrtv.data.subs.SubtitleStore
+import app.torrtv.state.Graph
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -93,7 +94,15 @@ class StreamController(
                 AppLog.d("stream", "торент процесът умря: $why")
                 job?.cancel()
                 job = null
-                ui = ui.copy(stage = Stage.ERROR, error = why)
+                // Следващият опит е с друг режим на двигателя - ако един от тях се срива на това устройство, друг може да мине.
+                val cur = Graph.prefs.engineProfile
+                val next = (cur + 1) % 3
+                Graph.prefs.engineProfile = next
+                AppLog.d("stream", "режим ${cur + 1} се срина; следващият опит е в режим ${next + 1}")
+                ui = ui.copy(
+                    stage = Stage.ERROR,
+                    error = "$why (режим ${cur + 1}). Натисни „Опитай пак“ - ще опитам в режим ${next + 1}. Причината е в Настройки → Дневник."
+                )
             }
         }
     }
@@ -122,7 +131,9 @@ class StreamController(
         ui = ui.copy(stage = Stage.METADATA, message = "Стартиране на торент двигателя…")
         client.connect()
         ui = ui.copy(message = "Търсене на пиъри…")
-        val files = client.open(Magnets.ensureTrackers(req.magnet)) { peers, seeds ->
+        val profile = Graph.prefs.engineProfile
+        AppLog.d("stream", "торент режим ${profile + 1}")
+        val files = client.open(Magnets.ensureTrackers(req.magnet), profile) { peers, seeds ->
             ui = ui.copy(peers = peers, seeds = seeds)
         }
         if (files.isEmpty()) throw IOException("В торента няма видео файл")

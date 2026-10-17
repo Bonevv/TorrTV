@@ -47,7 +47,12 @@ class MetaSession internal constructor(
  * се срине, пада само този процес, а приложението остава живо. Процесът се убива след всеки стрийм,
  * затова няма нужда от сложно спиране/повторно ползване на сесията.
  */
-class TorrentEngine(val baseDir: File) {
+class TorrentEngine(val baseDir: File, val profile: Int = 0) {
+
+    /** Режим 0: диск без memory-map + срокове на парчетата; 1: диск по подразбиране + приоритети; 2: диск без memory-map + приоритети. */
+    private val posixDisk: Boolean get() = profile != 1
+    internal val useDeadlines: Boolean get() = profile == 0
+
 
     companion object {
         val VIDEO_EXT = setOf("mkv", "mp4", "avi", "mov", "m4v", "ts", "m2ts", "wmv", "webm", "mpg", "mpeg", "flv")
@@ -91,8 +96,10 @@ class TorrentEngine(val baseDir: File) {
             val params = SessionParams(sp)
             // Обикновен дисков вход/изход вместо memory-mapped файлове: по-малко памет и без срив на
             // устройства с проблемни драйвери (препоръчано от самата библиотека за Android).
-            params.setPosixDiskIO()
+            if (posixDisk) params.setPosixDiskIO()
+            AppLog.d("torrent", "старт на сесията (режим $profile, posix диск=$posixDisk)")
             s.start(params)
+            AppLog.d("torrent", "сесията е стартирана")
             sm = s
             s
         }
@@ -128,10 +135,13 @@ class TorrentEngine(val baseDir: File) {
             s.addListener(listener)
             try {
                 // Последователно теглене, но НЕ теглим нищо, докато не изберем файл.
+                // Без AUTO_MANAGED: опашката на libtorrent не бива да спира/пуска торента сама.
                 s.download(
                     magnet, baseDir,
                     TorrentFlags.SEQUENTIAL_DOWNLOAD.or_(TorrentFlags.DEFAULT_DONT_DOWNLOAD)
+                        .and_(TorrentFlags.AUTO_MANAGED.inv())
                 )
+                AppLog.d("torrent", "торентът е добавен")
                 var ticks = 0
                 val handle = withTimeout(100_000) {
                     while (!done.isCompleted) {
@@ -191,14 +201,15 @@ class TorrentEngine(val baseDir: File) {
 
     fun startStream(meta: MetaSession, fileIndex: Int): StreamSession {
         val f = meta.files.first { it.index == fileIndex }
-        return StreamSession(this, meta, f)
+        return StreamSession(this, meta, f, useDeadlines)
     }
 }
 
 class StreamSession internal constructor(
     private val engine: TorrentEngine,
     private val meta: MetaSession,
-    val file: TFile
+    val file: TFile,
+    private val deadlines: Boolean
 ) : LocalServer.Content {
 
     private val h = meta.handle
@@ -218,20 +229,37 @@ class StreamSession internal constructor(
     override val length: Long get() = file.size
     override val mime: String get() = TorrentEngine.mimeFor(file.name)
 
+    /** Първите няколко извиквания пишат следа в дневника, за да се види на коя native команда е станал срив. */
+    private var traced = 0
+
+    private fun trace(step: String) {
+        if (traced < 40) {
+            traced++
+            AppLog.d("ss", step)
+        }
+    }
+
+    /** Спешно: време (deadline) или най-висок приоритет, според режима. */
+    private fun urgent(piece: Int, rank: Int) {
+        if (deadlines) h.setPieceDeadline(piece, 100 + rank * 150) else h.piecePriority(piece, Priority.TOP_PRIORITY)
+    }
+
     init {
+        trace("init: файлови приоритети")
         val prios = Array(ti.numFiles()) { Priority.IGNORE }
         prios[file.index] = Priority.DEFAULT
         h.prioritizeFiles(prios)
-        h.setFlags(TorrentFlags.SEQUENTIAL_DOWNLOAD)
-        h.resume()
+        trace("init: приоритетите са зададени")
 
         val headCount = max(2, ((TorrentEngine.HEAD_BYTES + pieceLen - 1) / pieceLen).toInt())
         val tailCount = max(1, ((TorrentEngine.TAIL_BYTES + pieceLen - 1) / pieceLen).toInt())
         head = (firstPiece..min(lastPiece, firstPiece + headCount - 1)).toList()
         tail = (max(firstPiece, lastPiece - tailCount + 1)..lastPiece).toList()
         // Началото (за старта) и краят (MP4/MKV индексите) са най-спешни.
-        head.forEachIndexed { i, p -> h.setPieceDeadline(p, 100 + i * 200) }
-        tail.forEachIndexed { i, p -> h.setPieceDeadline(p, 150 + i * 200) }
+        head.forEachIndexed { i, p -> urgent(p, i) }
+        trace("init: началото е насрочено (${head.size} парчета)")
+        tail.forEachIndexed { i, p -> urgent(p, i + 1) }
+        trace("init: краят е насрочен (${tail.size} парчета), деадлайни=$deadlines")
     }
 
     private fun have(p: Int): Boolean = try {
@@ -244,6 +272,7 @@ class StreamSession internal constructor(
     }
 
     fun isPreloaded(): Boolean = try {
+        trace("isPreloaded: havePiece")
         (head + tail).all { h.havePiece(it) }
     } catch (e: Exception) {
         false
@@ -262,12 +291,13 @@ class StreamSession internal constructor(
 
     fun stats(): EngineStats {
         return try {
+            trace("stats: status()")
             val st = h.status()
-            val prog = h.fileProgress()
-            val done = if (file.index < prog.size) prog[file.index] else 0L
+            val total = ti.totalSize()
+            trace("stats: готово")
             EngineStats(
                 st.numPeers(), st.numSeeds(), st.downloadRate().toLong(),
-                if (file.size > 0) (done * 100 / file.size).toInt() else 0, st.totalDone()
+                if (total > 0) (st.totalDone() * 100 / total).toInt() else 0, st.totalDone()
             )
         } catch (e: Exception) {
             EngineStats(0, 0, 0, 0, 0)
@@ -283,7 +313,7 @@ class StreamSession internal constructor(
             for (i in 0 until window) {
                 val p = p0 + i
                 if (p > lastPiece) break
-                if (!h.havePiece(p)) h.setPieceDeadline(p, 100 + i * 120)
+                if (!h.havePiece(p)) urgent(p, i)
             }
         } catch (_: Exception) {
         }

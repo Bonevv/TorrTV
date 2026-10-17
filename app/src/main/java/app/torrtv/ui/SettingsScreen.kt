@@ -84,6 +84,7 @@ fun SettingsScreen() {
     val diag = remember { mutableStateListOf<String>() }
     var cleared by remember { mutableStateOf(false) }
     var cacheHours by remember { mutableStateOf(prefs.cacheHours) }
+    var engineMode by remember { mutableStateOf(prefs.engineProfile) }
     val mem by produceState(remember { CacheManager.memory(ctx) }) {
         while (true) {
             value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { CacheManager.memory(ctx) }
@@ -268,6 +269,21 @@ fun SettingsScreen() {
         }
 
         item {
+            Group("⚙  Торент режим") {
+                Text2(
+                    "Ако филмът спре веднага след старта, смени режима. Приложението само сменя режима след срив, но тук можеш да го избереш и ръчно.",
+                    12, C.dim, FontWeight.Normal, 3
+                )
+                Spacer(Modifier.height(6.d))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.d)) {
+                    items(listOf(0 to "Режим 1 · стандартен", 1 to "Режим 2 · системен диск", 2 to "Режим 3 · щадящ"), key = { it.first }) { (m, label) ->
+                        Chip(label, engineMode == m, { engineMode = m; prefs.engineProfile = m })
+                    }
+                }
+            }
+        }
+
+        item {
             Group("🩺  Диагностика") {
                 Text2("Тества всеки торент сайт, доставчик на субтитри и TMDB и показва кой не работи.", 12, C.dim, FontWeight.Normal, 2)
                 Spacer(Modifier.height(6.d))
@@ -307,7 +323,7 @@ fun SettingsScreen() {
         item {
             Group("📜  Дневник (при проблем покажи го на разработчика)") {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.d)) {
-                    PrimaryButton(if (logText == null) "Покажи дневника" else "Опресни", { logText = AppLog.text(4500) }, primary = false)
+                    PrimaryButton(if (logText == null) "Покажи дневника" else "Опресни", { logText = AppLog.text() }, primary = false)
                     PrimaryButton("Изчисти дневника", { AppLog.clear(); logText = "" }, primary = false)
                 }
                 logText?.let { t ->

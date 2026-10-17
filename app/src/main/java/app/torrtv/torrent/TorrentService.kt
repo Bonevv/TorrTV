@@ -109,7 +109,7 @@ open class TorrentService : Service() {
                 client = m.replyTo
                 gen = m.arg1
                 send(Proto.S_HELLO) { putInt("pid", Process.myPid()) }
-                open(m.data.getString("magnet") ?: "")
+                open(m.data.getString("magnet") ?: "", m.data.getInt("profile"))
             }
             Proto.C_PLAY -> play(m.data.getInt("index"))
             Proto.C_BYE -> {
@@ -119,9 +119,10 @@ open class TorrentService : Service() {
         }
     }
 
-    private fun open(magnet: String) {
+    private fun open(magnet: String, profile: Int) {
         openJob?.cancel()
-        val eng = engine ?: TorrentEngine(File(cacheDir, "torrents/${Process.myPid()}")).also { engine = it }
+        AppLog.d("tsvc", "отваряне, режим $profile")
+        val eng = engine ?: TorrentEngine(File(cacheDir, "torrents/${Process.myPid()}"), profile).also { engine = it }
         openJob = scope.launch {
             try {
                 val m = eng.openMagnet(magnet) { peers, seeds ->
@@ -158,7 +159,9 @@ open class TorrentService : Service() {
         playJob?.cancel()
         playJob = scope.launch {
             try {
+                AppLog.d("tsvc", "старт на стрийма, файл №$index")
                 val s = eng.startStream(m, index)
+                AppLog.d("tsvc", "стриймът е създаден")
                 val srv = server ?: LocalServer().also {
                     it.start()
                     server = it

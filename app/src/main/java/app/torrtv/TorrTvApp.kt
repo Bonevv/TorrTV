@@ -32,7 +32,7 @@ class TorrTvApp : Application(), ImageLoaderFactory {
         AppLog.d("app", "Старт ${BuildConfig.VERSION_NAME}, Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}), ${Build.MANUFACTURER} ${Build.MODEL}")
         // Остатъци от предишна сесия (недоизтрити торенти и субтитри) - на заден план, да не бавим старта.
         thread(isDaemon = true) {
-            logLastExit()
+            app.torrtv.core.CrashInfo.logRecent(this, 6)
             try {
                 File(cacheDir, "torrents").deleteRecursively()
                 File(cacheDir, "subs").deleteRecursively()
@@ -48,48 +48,6 @@ class TorrTvApp : Application(), ImageLoaderFactory {
         } catch (_: Exception) {
             packageName
         }
-
-    private fun logLastExit() {
-        if (Build.VERSION.SDK_INT < 30) return
-        try {
-            val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-            val fmt = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
-            for (x in am.getHistoricalProcessExitReasons(packageName, 0, 4)) {
-                val why = when (x.reason) {
-                    1 -> "EXIT_SELF"
-                    2 -> "SIGNALED"
-                    3 -> "LOW_MEMORY"
-                    4 -> "CRASH"
-                    5 -> "CRASH_NATIVE"
-                    6 -> "ANR"
-                    7 -> "INITIALIZATION_FAILURE"
-                    8 -> "PERMISSION_CHANGE"
-                    9 -> "EXCESSIVE_RESOURCE_USAGE"
-                    10 -> "USER_REQUESTED"
-                    11 -> "USER_STOPPED"
-                    12 -> "DEPENDENCY_DIED"
-                    13 -> "OTHER"
-                    else -> "UNKNOWN(${x.reason})"
-                }
-                val name = x.processName.substringAfter(':', "основен")
-                AppLog.d("app", "Предишен процес [$name] ${fmt.format(java.util.Date(x.timestamp))}: $why (status ${x.status}) ${x.description ?: ""}")
-                if (x.reason == 5) logTombstone(x)
-            }
-        } catch (_: Exception) {
-        }
-    }
-
-    /** При native срив системата пази следа (tombstone) - вадим от нея имената на библиотеките/функциите. */
-    private fun logTombstone(x: android.app.ApplicationExitInfo) {
-        try {
-            val bytes = x.traceInputStream?.use { it.readBytes() } ?: return
-            val text = String(bytes, 0, minOf(bytes.size, 300_000), Charsets.ISO_8859_1)
-            Regex("[\\x20-\\x7e]{8,}").findAll(text).map { it.value }
-                .filter { it.contains(".so") || it.contains("SIG") || it.contains("bort") || it.contains("lib") }
-                .distinct().take(30).forEach { AppLog.d("срив", it.take(160)) }
-        } catch (_: Exception) {
-        }
-    }
 
     /** Картинките са най-големият консуматор на памет - държим кеша малък. */
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)

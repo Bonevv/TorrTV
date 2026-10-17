@@ -14,6 +14,7 @@ import android.os.Messenger
 import android.os.Process
 import android.os.RemoteException
 import app.torrtv.core.AppLog
+import app.torrtv.core.CrashInfo
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -112,11 +113,14 @@ class TorrentClient(private val app: Application) {
     }
 
     /** Отваря magnet линка и връща видео файловете в торента. */
-    suspend fun open(magnet: String, onStatus: (peers: Int, seeds: Int) -> Unit): List<TFile> {
+    suspend fun open(magnet: String, profile: Int, onStatus: (peers: Int, seeds: Int) -> Unit): List<TFile> {
         val d = CompletableDeferred<List<TFile>>()
         metaWait = d
         statusCb = onStatus
-        post(Proto.C_OPEN) { putString("magnet", magnet) }
+        post(Proto.C_OPEN) {
+            putString("magnet", magnet)
+            putInt("profile", profile)
+        }
         return within(130_000, "Няма отговор от торент услугата") { d.await() }
     }
 
@@ -187,13 +191,22 @@ class TorrentClient(private val app: Application) {
 
     private fun died(why: String) {
         AppLog.d("client", why)
+        // След секунда-две Android вече има причината и следата на срива; записваме ги в дневника.
+        cleanScope.launch {
+            delay(1800)
+            CrashInfo.logRecent(app, 3)
+        }
         val e = IOException(why)
-        connectedWait?.completeExceptionally(e)
-        metaWait?.completeExceptionally(e)
-        startedWait?.completeExceptionally(e)
+        val cw = connectedWait
+        val mw = metaWait
+        val sw = startedWait
         // Отвързваме веднага, за да не рестартира системата умрялата услуга.
         disconnect()
+        // Първо контролерът (състояние "грешка" + смяна на режима), после будим чакащите - те вече са отменени.
         onDied?.invoke(why)
+        cw?.completeExceptionally(e)
+        mw?.completeExceptionally(e)
+        sw?.completeExceptionally(e)
     }
 
     private fun disconnect() {

@@ -18,6 +18,7 @@ object AppLog {
     private const val MAX = 120_000L
     private const val MAIN = "torrtv.log"
     private const val TORRENT = "torrent.log"
+    private const val CRASH = "crash.log"
 
     @Synchronized
     fun init(ctx: Context, torrentProcess: Boolean = false) {
@@ -50,23 +51,52 @@ object AppLog {
         }
     }
 
-    private fun tail(f: File, n: Int): String =
+    /** Последните n реда на файла, всеки скъсен, за да се вижда повече от дневника на екрана. */
+    private fun lastLines(f: File, n: Int, width: Int = 118): List<String> =
         try {
-            if (f.exists()) f.readText().takeLast(n).trim() else ""
+            if (!f.exists()) emptyList()
+            else {
+                val len = f.length()
+                val raf = java.io.RandomAccessFile(f, "r")
+                val take = minOf(len, 60_000L).toInt()
+                val buf = ByteArray(take)
+                raf.seek(len - take)
+                raf.readFully(buf)
+                raf.close()
+                String(buf, Charsets.UTF_8).lines().filter { it.isNotBlank() }.takeLast(n).map { it.take(width) }
+            }
         } catch (e: Exception) {
-            "(грешка при четене: ${e.message})"
+            listOf("(грешка при четене: ${e.message})")
         }
 
-    /** Края на двата дневника: приложението и (ако има) торент процесът. */
+    /** Редове за следата на срива (пише ги само основният процес). Показват се първи в дневника. */
     @Synchronized
-    fun text(maxChars: Int = 6000): String {
+    fun crash(line: String) {
+        try {
+            val d = dir ?: return
+            val f = File(d, CRASH)
+            if (f.exists() && f.length() > 24_000) f.writeText(f.readText().takeLast(12_000))
+            f.appendText(line + "\n")
+        } catch (_: Exception) {
+        }
+    }
+
+    /**
+     * Екранът в Настройки показва само първите ~60 реда, затова най-важното е най-горе:
+     * 1) следата на последния срив (коя библиотека/функция), 2) краят на торент процеса, 3) краят на приложението.
+     */
+    @Synchronized
+    fun text(maxLines: Int = 58): String {
         val d = dir ?: return "(празен)"
-        val main = tail(File(d, MAIN), maxChars * 6 / 10)
-        val tor = tail(File(d, TORRENT), maxChars * 4 / 10)
+        val cr = lastLines(File(d, CRASH), 24)
+        val tor = lastLines(File(d, TORRENT), 16)
+        val room = (maxLines - cr.size - tor.size - 3).coerceAtLeast(10)
+        val main = lastLines(File(d, MAIN), room)
         val sb = StringBuilder()
-        if (main.isNotEmpty()) sb.append(main)
-        if (tor.isNotEmpty()) sb.append("\n— торент процес —\n").append(tor)
-        return if (sb.isEmpty()) "(празен)" else sb.toString()
+        if (cr.isNotEmpty()) sb.append("— следа на срива —\n").append(cr.joinToString("\n")).append('\n')
+        if (tor.isNotEmpty()) sb.append("— торент процес —\n").append(tor.joinToString("\n")).append('\n')
+        if (main.isNotEmpty()) sb.append("— приложение —\n").append(main.joinToString("\n"))
+        return if (sb.isEmpty()) "(празен)" else sb.toString().trimEnd()
     }
 
     @Synchronized
@@ -75,6 +105,7 @@ object AppLog {
             val d = dir ?: return
             File(d, MAIN).writeText("")
             File(d, TORRENT).delete()
+            File(d, CRASH).delete()
         } catch (_: Exception) {
         }
     }

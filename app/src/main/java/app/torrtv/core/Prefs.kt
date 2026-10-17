@@ -63,6 +63,16 @@ class Prefs(ctx: Context) {
             sp.edit().putInt("cache_hours", v).apply()
         }
 
+    /**
+     * Режим на торент двигателя (0, 1, 2). При срив на торент процеса приложението само превключва
+     * към следващия режим, така че следващият опит да мине по друг път в native кода.
+     */
+    var engineProfile: Int
+        get() = sp.getInt("engine_profile", 0).coerceIn(0, 2)
+        set(v) {
+            sp.edit().putInt("engine_profile", v.coerceIn(0, 2)).apply()
+        }
+
     var lastClean: Long
         get() = sp.getLong("last_clean", 0L)
         set(v) {
