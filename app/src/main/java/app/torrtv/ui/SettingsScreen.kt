@@ -1,0 +1,272 @@
+package app.torrtv.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import app.torrtv.core.Prefs
+import app.torrtv.data.subs.Langs
+import app.torrtv.state.Diagnostics
+import app.torrtv.state.Graph
+import app.torrtv.torrent.ExternalPlayers
+import app.torrtv.update.Updater
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+private val fieldLabels = mapOf(
+    "tmdb_key" to "TMDB ключ",
+    "os_key" to "OpenSubtitles ключ",
+    "os_user" to "OpenSubtitles потребител",
+    "os_pass" to "OpenSubtitles парола",
+    "subdl_key" to "Subdl ключ",
+    "subsource_key" to "SubSource ключ"
+)
+
+@Composable
+private fun Group(title: String, content: @Composable () -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 36.d, vertical = 8.d)) {
+        Text2(title, 16, C.text, FontWeight.ExtraBold, 1)
+        Spacer(Modifier.height(8.d))
+        content()
+    }
+}
+
+@Composable
+fun SettingsScreen() {
+    val ctx = LocalContext.current
+    val prefs = Graph.prefs
+    val scope = rememberCoroutineScope()
+
+    // Страницата за телефона работи само докато този екран е отворен
+    DisposableEffect(Unit) {
+        Graph.config.start()
+        onDispose { Graph.config.stop() }
+    }
+    val tick by produceState(0) {
+        while (true) { delay(1500); value += 1 }
+    }
+
+    var player by remember { mutableStateOf(prefs.player) }
+    var metaLang by remember { mutableStateOf(prefs.metaLang) }
+    var subLangs by remember { mutableStateOf(prefs.subLangs) }
+    var release by remember { mutableStateOf<Updater.Release?>(Graph.home.update) }
+    var updMsg by remember { mutableStateOf("") }
+    var progress by remember { mutableStateOf(-1f) }
+    var checking by remember { mutableStateOf(false) }
+    var diagRunning by remember { mutableStateOf(false) }
+    val diag = remember { mutableStateListOf<String>() }
+    var cleared by remember { mutableStateOf(false) }
+    val srcState = remember { mutableStateListOf<Pair<String, Boolean>>().also { l -> Graph.torrents.sources.forEach { l.add(it.id to prefs.sourceEnabled(it.id)) } } }
+
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 50.d)) {
+        item {
+            Group("📱  Въвеждане на ключовете от телефона") {
+                val addrs = remember(tick / 4) { Graph.config.addresses() }
+                val port = Graph.config.port
+                Text2("Отвори на телефона (в същата Wi-Fi мрежа) и въведи ПИН-а:", 13, C.dim, FontWeight.Normal, 2)
+                Spacer(Modifier.height(6.d))
+                if (addrs.isEmpty()) Text2("Няма Wi-Fi/LAN адрес. Свържи телевизора към мрежата.", 13, C.red, FontWeight.Medium, 2)
+                addrs.forEach { Text2("http://$it:$port", 22, C.accent2, FontWeight.ExtraBold, 1) }
+                Spacer(Modifier.height(4.d))
+                Text2("ПИН: ${Graph.config.pin}", 22, C.gold, FontWeight.ExtraBold, 1)
+                Spacer(Modifier.height(8.d))
+                // tick се чете, за да се опреснява статусът след запис от телефона
+                val ok = remember(tick) { Prefs.FIELD_NAMES.filter { fieldLabels.containsKey(it) } }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.d)) {
+                    ok.take(3).forEach { StatusPill(fieldLabels[it] ?: it, prefs.isSet(it)) }
+                }
+                Spacer(Modifier.height(4.d))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.d)) {
+                    ok.drop(3).forEach { StatusPill(fieldLabels[it] ?: it, prefs.isSet(it)) }
+                }
+            }
+        }
+
+        item {
+            Group("▶  Плеър по подразбиране") {
+                val installed = remember { ExternalPlayers.installed(ctx) }
+                val opts = listOf("builtin") + installed.map { it.id } + "ask"
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.d)) {
+                    items(opts, key = { it }) { id ->
+                        Chip(ExternalPlayers.label(id), player == id, { player = id; prefs.player = id })
+                    }
+                }
+                Spacer(Modifier.height(4.d))
+                Text2(
+                    if (installed.isEmpty()) "Външни плеъри (VLC, MX, Just Player) не са открити - инсталирай ги от магазина, ако ти трябват DTS/AC3."
+                    else "Открити външни плеъри: " + installed.joinToString { it.label },
+                    11, C.dim, FontWeight.Normal, 2
+                )
+            }
+        }
+
+        item {
+            Group("🌐  Език на описанията") {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
+                    Chip("Български", metaLang == "bg", { metaLang = "bg"; prefs.metaLang = "bg" })
+                    Chip("English", metaLang == "en", { metaLang = "en"; prefs.metaLang = "en" })
+                }
+            }
+        }
+
+        item {
+            Group("💬  Езици на субтитрите") {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.d)) {
+                    items(Langs.choices, key = { it.first }) { (code, name) ->
+                        Chip((if (code in subLangs) "✓ " else "") + name, code in subLangs, {
+                            val n = if (code in subLangs) subLangs - code else subLangs + code
+                            if (n.isNotEmpty()) {
+                                subLangs = n
+                                prefs.subLangs = n
+                            }
+                        })
+                    }
+                }
+            }
+        }
+
+        item {
+            Group("🧲  Торент източници") {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.d)) {
+                    items(Graph.torrents.sources, key = { it.id }) { s ->
+                        val on = srcState.firstOrNull { it.first == s.id }?.second ?: true
+                        Chip((if (on) "✓ " else "✗ ") + s.name, on, {
+                            val idx = srcState.indexOfFirst { it.first == s.id }
+                            if (idx >= 0) srcState[idx] = s.id to !on
+                            prefs.setSourceEnabled(s.id, !on)
+                        })
+                    }
+                }
+            }
+        }
+
+        item {
+            Group("⬆  Обновяване") {
+                Text2("Инсталирана версия: ${Graph.updater.currentVersion}", 13, C.dim, FontWeight.Medium, 1)
+                Spacer(Modifier.height(6.d))
+                val r = release
+                if (r != null) {
+                    Text2("Нова версия: ${r.name.ifBlank { r.tag }}", 15, C.green, FontWeight.Bold, 1)
+                    if (r.notes.isNotBlank()) Text2(r.notes.take(300), 11, C.dim, FontWeight.Normal, 5)
+                    Spacer(Modifier.height(6.d))
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.d), verticalAlignment = Alignment.CenterVertically) {
+                    PrimaryButton(if (checking) "Проверка…" else "Провери за обновление", {
+                        if (checking) return@PrimaryButton
+                        checking = true
+                        updMsg = ""
+                        scope.launch {
+                            try {
+                                val l = Graph.updater.latest()
+                                if (l != null && Graph.updater.isNewer(l.tag)) { release = l } else { release = null; updMsg = "Имаш последната версия ✓" }
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                updMsg = "Грешка: ${e.message}"
+                            } finally { checking = false }
+                        }
+                    }, primary = release == null)
+                    if (r != null) {
+                        PrimaryButton(if (progress in 0f..0.999f) "Сваляне ${(progress * 100).toInt()}%" else "Свали и инсталирай", {
+                            if (progress in 0f..0.999f) return@PrimaryButton
+                            progress = 0f
+                            scope.launch {
+                                try {
+                                    val f = Graph.updater.download(r) { progress = it }
+                                    progress = 1f
+                                    updMsg = Graph.updater.install(f) ?: "Стартиране на инсталатора…"
+                                } catch (e: kotlinx.coroutines.CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    progress = -1f
+                                    updMsg = "Грешка: ${e.message}"
+                                }
+                            }
+                        })
+                    }
+                }
+                if (updMsg.isNotBlank()) {
+                    Spacer(Modifier.height(6.d))
+                    Text2(updMsg, 12, C.accent2, FontWeight.Medium, 3)
+                }
+            }
+        }
+
+        item {
+            Group("🩺  Диагностика") {
+                Text2("Тества всеки торент сайт, доставчик на субтитри и TMDB и показва кой не работи.", 12, C.dim, FontWeight.Normal, 2)
+                Spacer(Modifier.height(6.d))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.d)) {
+                    PrimaryButton(if (diagRunning) "Тества се…" else "Тествай източниците", {
+                        if (diagRunning) return@PrimaryButton
+                        diagRunning = true
+                        diag.clear()
+                        scope.launch {
+                            try {
+                                Diagnostics.run { diag.add(it) }
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                diag.add("✗ ${e.message}")
+                            } finally { diagRunning = false }
+                        }
+                    }, primary = false)
+                    PrimaryButton(if (cleared) "Изчистено ✓" else "Изчисти кеша", {
+                        Graph.engine.cleanDisk()
+                        try {
+                            val il = coil.Coil.imageLoader(ctx)
+                            il.memoryCache?.clear()
+                            il.diskCache?.clear()
+                        } catch (e: Exception) {
+                        }
+                        cleared = true
+                    }, primary = false)
+                }
+                Spacer(Modifier.height(8.d))
+                diag.forEach { line ->
+                    Text2(
+                        line, 12,
+                        when {
+                            line.startsWith("✓") -> C.green
+                            line.startsWith("✗") -> C.red
+                            line.startsWith("⏱") -> C.amber
+                            line.startsWith("—") -> C.accent2
+                            else -> C.dim
+                        },
+                        if (line.startsWith("—")) FontWeight.Bold else FontWeight.Normal, 3
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatusPill(label: String, ok: Boolean) {
+    Pill((if (ok) "✓ " else "✗ ") + label, if (ok) androidx.compose.ui.graphics.Color(0x333DDC84) else androidx.compose.ui.graphics.Color(0x33FF5C6C), if (ok) C.green else C.red)
+}
