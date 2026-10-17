@@ -135,7 +135,7 @@ class PlayerActivity : AppCompatActivity() {
             stats.visibility = View.GONE
             return
         }
-        val s = try { Graph.stream.session?.stats() } catch (e: Exception) { null }
+        val s = Graph.stream.stats()
         if (s == null) {
             stats.visibility = View.GONE
             return

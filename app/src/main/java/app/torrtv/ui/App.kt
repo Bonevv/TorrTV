@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.text.font.FontWeight
+import app.torrtv.core.CacheManager
 import app.torrtv.data.Media
 import app.torrtv.data.MediaType
 import app.torrtv.data.torrents.TorrentResult
@@ -40,6 +41,21 @@ fun App() {
     val tabFocus = remember { List(tabs.size) { FocusRequester() } }
 
     LaunchedEffect(Unit) { home.checkUpdate() }
+
+    // Автоматично чистене на кеша на всеки 15 минути (по зададения интервал в Настройки) и показване на RAM.
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val ramMb by androidx.compose.runtime.produceState(0) {
+        var n = 0
+        while (true) {
+            value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { CacheManager.memory(ctx).totalMb }
+            if (n++ % 90 == 0) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    CacheManager.maybeAutoClean(ctx, Graph.stream.ui.stage != Stage.IDLE)
+                }
+            }
+            kotlinx.coroutines.delay(10_000)
+        }
+    }
 
     fun open(m: Media) {
         if (stack.size >= 8) stack.removeAt(0).cancel()
@@ -81,6 +97,7 @@ fun App() {
                         Chip(name, tab == i, { tab = i }, focusRequester = tabFocus[i])
                     }
                     Spacer(Modifier.weight(1f))
+                    if (ramMb > 0) Pill("RAM $ramMb MB", C.card, if (ramMb > 450) C.amber else C.dim)
                     if (home.update != null) {
                         PrimaryButton("⬆ Нова версия", { tab = 5 })
                     }

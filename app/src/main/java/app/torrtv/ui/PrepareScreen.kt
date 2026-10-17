@@ -41,13 +41,13 @@ fun PrepareScreen() {
 
     val live by produceState<EngineStats?>(null, ui.stage) {
         while (ui.stage == Stage.READY || ui.stage == Stage.BUFFERING) {
-            value = try { sc.session?.stats() } catch (e: Exception) { null }
+            value = sc.stats()
             delay(1000)
         }
     }
 
     Box(Modifier.fillMaxSize().background(C.bg)) {
-        Img(req?.backdrop, Modifier.fillMaxSize(), 1280, 720)
+        Img(req?.backdrop, Modifier.fillMaxSize(), 780, 439)
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xDD080B12), Color(0xF8080B12)))))
         Column(
             Modifier.align(Alignment.Center).fillMaxWidth(0.62f),

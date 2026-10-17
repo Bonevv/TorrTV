@@ -54,6 +54,7 @@ fun PlaySheet(st: DetailState, t: TorrentResult, onDismiss: () -> Unit) {
             ranked.firstOrNull()?.let { l.add(it.uid) }
         }
     }
+    var subsOpen by remember { mutableStateOf(false) }
     val startFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { startFocus.tryRequest() }
 
@@ -87,21 +88,6 @@ fun PlaySheet(st: DetailState, t: TorrentResult, onDismiss: () -> Unit) {
             }
 
             Spacer(Modifier.height(14.d))
-            Text2("Субтитри" + if (st.subSearching) " (търсят се…)" else "", 13, C.dim, FontWeight.Bold, 1)
-            Spacer(Modifier.height(6.d))
-            if (ranked.isEmpty()) {
-                Text2("Няма намерени субтитри за този епизод/филм.", 12, C.dim, FontWeight.Normal, 2)
-            } else {
-                LazyColumn(Modifier.heightIn(max = 190.d), verticalArrangement = Arrangement.spacedBy(4.d)) {
-                    items(ranked, key = { it.uid }) { s -> SubRow(s, s.uid in picked) {
-                        if (s.uid in picked) picked.remove(s.uid) else if (picked.size < 4) picked.add(s.uid)
-                    } }
-                }
-                Spacer(Modifier.height(4.d))
-                Text2("Може да избереш до 4 - в плеъра се превключват.", 10, C.dim, FontWeight.Normal, 1)
-            }
-
-            Spacer(Modifier.height(16.d))
             Row(horizontalArrangement = Arrangement.spacedBy(10.d)) {
                 PrimaryButton("▶  Пусни", {
                     val chosen = ranked.filter { it.uid in picked }
@@ -109,6 +95,36 @@ fun PlaySheet(st: DetailState, t: TorrentResult, onDismiss: () -> Unit) {
                     onDismiss()
                 }, focusRequester = startFocus)
                 PrimaryButton("Откажи", onDismiss, primary = false)
+            }
+
+            Spacer(Modifier.height(14.d))
+            val summary = when {
+                ranked.isEmpty() -> if (st.subSearching) "търсят се…" else "няма намерени"
+                picked.isEmpty() -> "без субтитри"
+                else -> ranked.filter { it.uid in picked }.joinToString(", ") {
+                    Langs.choices.firstOrNull { l -> l.first == it.lang }?.second ?: it.lang.uppercase()
+                }
+            }
+            Focusable({ subsOpen = !subsOpen }, Modifier.fillMaxWidth(), RoundedCornerShape(10.d), 1.02f) { f ->
+                Row(
+                    Modifier.fillMaxWidth().background(if (f) C.cardHi else C.card).padding(horizontal = 12.d, vertical = 9.d),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.d)
+                ) {
+                    Text2("💬 Субтитри", 13, C.text, FontWeight.Bold, 1)
+                    Text2(summary, 12, C.accent2, FontWeight.Medium, 1, Modifier.weight(1f))
+                    if (ranked.isNotEmpty()) Text2(if (subsOpen) "▲" else "▼", 13, C.dim, FontWeight.Bold, 1)
+                }
+            }
+            if (subsOpen && ranked.isNotEmpty()) {
+                Spacer(Modifier.height(6.d))
+                LazyColumn(Modifier.heightIn(max = 132.d), verticalArrangement = Arrangement.spacedBy(4.d)) {
+                    items(ranked, key = { it.uid }) { s -> SubRow(s, s.uid in picked) {
+                        if (s.uid in picked) picked.remove(s.uid) else if (picked.size < 4) picked.add(s.uid)
+                    } }
+                }
+                Spacer(Modifier.height(4.d))
+                Text2("Може да избереш до 4 - в плеъра се превключват.", 10, C.dim, FontWeight.Normal, 1)
             }
         }
     }

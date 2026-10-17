@@ -1,18 +1,13 @@
 package app.torrtv.torrent
 
-import android.content.Context
 import app.torrtv.core.AppLog
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.libtorrent4j.AlertListener
 import org.libtorrent4j.Priority
-import org.libtorrent4j.SessionHandle
 import org.libtorrent4j.SessionManager
 import org.libtorrent4j.SessionParams
 import org.libtorrent4j.SettingsPack
@@ -47,7 +42,12 @@ class MetaSession internal constructor(
     val files: List<TFile>
 )
 
-class TorrentEngine(private val ctx: Context) {
+/**
+ * Работи САМО в отделния процес на торент услугата (TorrentService): ако native кодът на libtorrent
+ * се срине, пада само този процес, а приложението остава живо. Процесът се убива след всеки стрийм,
+ * затова няма нужда от сложно спиране/повторно ползване на сесията.
+ */
+class TorrentEngine(val baseDir: File) {
 
     companion object {
         val VIDEO_EXT = setOf("mkv", "mp4", "avi", "mov", "m4v", "ts", "m2ts", "wmv", "webm", "mpg", "mpeg", "flv")
@@ -67,10 +67,10 @@ class TorrentEngine(private val ctx: Context) {
 
     private val lock = Any()
     private var sm: SessionManager? = null
-    private var stopJob: kotlinx.coroutines.Job? = null
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    val baseDir: File get() = File(ctx.cacheDir, "torrents").also { it.mkdirs() }
+    init {
+        baseDir.mkdirs()
+    }
 
     private fun session(): SessionManager = synchronized(lock) {
         val cur = sm
@@ -79,13 +79,20 @@ class TorrentEngine(private val ctx: Context) {
         } else {
             val s = SessionManager(false)
             val sp = SettingsPack()
-            sp.connectionsLimit(100)
+            sp.connectionsLimit(60)
+            sp.maxPeerlistSize(400)
+            sp.maxQueuedDiskBytes(4 * 1024 * 1024)
+            sp.uploadRateLimit(512 * 1024)
             sp.setEnableDht(true)
             sp.setDhtBootstrapNodes(
                 "dht.libtorrent.org:25401,router.bittorrent.com:6881,router.utorrent.com:6881," +
                     "dht.transmissionbt.com:6881,dht.aelitis.com:6881"
             )
-            s.start(SessionParams(sp))
+            val params = SessionParams(sp)
+            // Обикновен дисков вход/изход вместо memory-mapped файлове: по-малко памет и без срив на
+            // устройства с проблемни драйвери (препоръчано от самата библиотека за Android).
+            params.setPosixDiskIO()
+            s.start(params)
             sm = s
             s
         }
@@ -96,9 +103,6 @@ class TorrentEngine(private val ctx: Context) {
         withContext(Dispatchers.IO) {
             val hex = app.torrtv.core.Magnets.infoHash(magnet)
                 ?: throw IllegalArgumentException("Невалиден magnet линк")
-            // Всяка нова сесия започва на чисто: изчакваме предишната да е спряла напълно.
-            val pending = synchronized(lock) { stopJob }
-            pending?.join()
             val s = session()
             AppLog.d("torrent", "Отварям magnet $hex")
             val done = CompletableDeferred<TorrentHandle>()
@@ -173,8 +177,7 @@ class TorrentEngine(private val ctx: Context) {
                     s.removeListener(listener)
                 } catch (_: Exception) {
                 }
-                // Не махаме отделния торент (може да е нестабилно без метаданни) - спираме цялата сесия.
-                shutdown(0)
+                // Нищо не се чисти тук: клиентът затваря целия процес на услугата.
                 if (e is kotlinx.coroutines.TimeoutCancellationException)
                     throw IOException("Няма достатъчно пиъри - не успях да получа данните за торента")
                 throw e
@@ -189,47 +192,6 @@ class TorrentEngine(private val ctx: Context) {
     fun startStream(meta: MetaSession, fileIndex: Int): StreamSession {
         val f = meta.files.first { it.index == fileIndex }
         return StreamSession(this, meta, f)
-    }
-
-    internal fun remove(meta: MetaSession) {
-        shutdown(500)
-    }
-
-    /**
-     * Спира цялата торент сесия (на заден план) и чисти свалените файлове.
-     * Една сесия = един стрийм, така няма остатъчно състояние между два опита.
-     */
-    fun shutdown(delayMs: Long) {
-        val s = synchronized(lock) {
-            val x = sm
-            sm = null
-            x
-        }
-        if (s == null) {
-            scope.launch { cleanDisk() }
-            return
-        }
-        synchronized(lock) {
-            val prev = stopJob
-            stopJob = scope.launch {
-                prev?.join()
-                if (delayMs > 0) delay(delayMs)
-                try {
-                    s.stop()
-                } catch (e: Throwable) {
-                    AppLog.e("torrent", "stop", e)
-                }
-                cleanDisk()
-                AppLog.d("torrent", "сесията е спряна")
-            }
-        }
-    }
-
-    fun cleanDisk() {
-        try {
-            baseDir.listFiles()?.forEach { it.deleteRecursively() }
-        } catch (_: Exception) {
-        }
     }
 }
 
@@ -392,6 +354,5 @@ class StreamSession internal constructor(
             raf?.close()
         } catch (_: Exception) {
         }
-        engine.remove(meta)
     }
 }

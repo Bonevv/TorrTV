@@ -9,7 +9,6 @@ import app.torrtv.data.subs.SubtitleStore
 import app.torrtv.data.torrents.TorrentAggregator
 import app.torrtv.torrent.LocalServer
 import app.torrtv.torrent.StreamController
-import app.torrtv.torrent.TorrentEngine
 import app.torrtv.update.Updater
 import app.torrtv.web.ConfigServer
 import kotlinx.coroutines.CoroutineScope
@@ -27,9 +26,8 @@ object Graph {
     val torrents by lazy { TorrentAggregator(prefs) }
     val subs by lazy { SubtitleAggregator(prefs) }
     val subStore by lazy { SubtitleStore(app.cacheDir, subs.providers) }
-    val engine by lazy { TorrentEngine(app) }
     val server by lazy { LocalServer() }
-    val stream by lazy { StreamController(app, engine, subStore, server) }
+    val stream by lazy { StreamController(app, subStore, server) }
     val updater by lazy { Updater(app) }
     val config by lazy { ConfigServer(prefs) }
 

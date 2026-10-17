@@ -46,7 +46,7 @@ fun HeroBanner(m: Media?, modifier: Modifier = Modifier) {
         Crossfade(targetState = m, animationSpec = tween(350), label = "hero") { cur ->
             Box(Modifier.fillMaxSize()) {
                 if (cur != null) {
-                    Img(Tmdb.img(cur.backdropPath ?: cur.posterPath, "w1280"), Modifier.fillMaxSize(), 1280, 720)
+                    Img(Tmdb.img(cur.backdropPath ?: cur.posterPath, "w780"), Modifier.fillMaxSize(), 780, 439)
                 }
                 Box(
                     Modifier.fillMaxSize().background(

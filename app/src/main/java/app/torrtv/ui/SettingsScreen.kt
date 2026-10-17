@@ -30,6 +30,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import app.torrtv.core.AppLog
+import app.torrtv.core.CacheManager
 import app.torrtv.core.Prefs
 import app.torrtv.data.subs.Langs
 import app.torrtv.state.Diagnostics
@@ -82,6 +83,17 @@ fun SettingsScreen() {
     var diagRunning by remember { mutableStateOf(false) }
     val diag = remember { mutableStateListOf<String>() }
     var cleared by remember { mutableStateOf(false) }
+    var cacheHours by remember { mutableStateOf(prefs.cacheHours) }
+    val mem by produceState(remember { CacheManager.memory(ctx) }) {
+        while (true) {
+            value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { CacheManager.memory(ctx) }
+            delay(3000)
+        }
+    }
+    var cacheTick by remember { mutableStateOf(0) }
+    val sizes by produceState<CacheManager.Sizes?>(null, cacheTick, tick / 3) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { CacheManager.sizes(ctx) }
+    }
     var logText by remember { mutableStateOf<String?>(null) }
     val srcState = remember { mutableStateListOf<Pair<String, Boolean>>().also { l -> Graph.torrents.sources.forEach { l.add(it.id to prefs.sourceEnabled(it.id)) } } }
 
@@ -220,6 +232,42 @@ fun SettingsScreen() {
         }
 
         item {
+            Group("💾  Памет и кеш") {
+                Text2(
+                    "RAM на приложението: ${mem.totalMb} MB   (интерфейс ${mem.pssMb} MB" +
+                        (if (mem.torrentMb > 0) " + торент двигател ${mem.torrentMb} MB" else "") +
+                        " · Java ${mem.javaMb} MB · native ${mem.nativeMb} MB)",
+                    13, C.accent2, FontWeight.Bold, 2
+                )
+                Spacer(Modifier.height(4.d))
+                val sz = sizes
+                Text2(
+                    if (sz == null) "Кеш: изчислява се…" else
+                        "Кеш: ${CacheManager.fmt(sz.total)}  (торенти ${CacheManager.fmt(sz.torrents)} · картинки ${CacheManager.fmt(sz.images)} · субтитри ${CacheManager.fmt(sz.subs)})",
+                    12, C.dim, FontWeight.Normal, 2
+                )
+                Spacer(Modifier.height(8.d))
+                Text2("Автоматично чистене:", 12, C.dim, FontWeight.Bold, 1)
+                Spacer(Modifier.height(4.d))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.d)) {
+                    items(CacheManager.intervals, key = { it.first }) { (h, label) ->
+                        Chip(label, cacheHours == h, { cacheHours = h; prefs.cacheHours = h; prefs.lastClean = System.currentTimeMillis() })
+                    }
+                }
+                Spacer(Modifier.height(8.d))
+                PrimaryButton(if (cleared) "Изчистено ✓" else "Изчисти кеша сега", {
+                    scope.launch {
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            CacheManager.clear(ctx, Graph.stream.ui.stage != app.torrtv.torrent.StreamController.Stage.IDLE)
+                        }
+                        cleared = true
+                        cacheTick++
+                    }
+                }, primary = false)
+            }
+        }
+
+        item {
             Group("🩺  Диагностика") {
                 Text2("Тества всеки торент сайт, доставчик на субтитри и TMDB и показва кой не работи.", 12, C.dim, FontWeight.Normal, 2)
                 Spacer(Modifier.height(6.d))
@@ -237,16 +285,6 @@ fun SettingsScreen() {
                                 diag.add("✗ ${e.message}")
                             } finally { diagRunning = false }
                         }
-                    }, primary = false)
-                    PrimaryButton(if (cleared) "Изчистено ✓" else "Изчисти кеша", {
-                        Graph.engine.cleanDisk()
-                        try {
-                            val il = coil.Coil.imageLoader(ctx)
-                            il.memoryCache?.clear()
-                            il.diskCache?.clear()
-                        } catch (e: Exception) {
-                        }
-                        cleared = true
                     }, primary = false)
                 }
                 Spacer(Modifier.height(8.d))
@@ -269,7 +307,7 @@ fun SettingsScreen() {
         item {
             Group("📜  Дневник (при проблем покажи го на разработчика)") {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.d)) {
-                    PrimaryButton(if (logText == null) "Покажи дневника" else "Опресни", { logText = AppLog.text(3500) }, primary = false)
+                    PrimaryButton(if (logText == null) "Покажи дневника" else "Опресни", { logText = AppLog.text(4500) }, primary = false)
                     PrimaryButton("Изчисти дневника", { AppLog.clear(); logText = "" }, primary = false)
                 }
                 logText?.let { t ->

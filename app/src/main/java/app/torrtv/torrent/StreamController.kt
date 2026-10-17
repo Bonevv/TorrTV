@@ -17,6 +17,7 @@ import app.torrtv.data.subs.SubtitleStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -34,7 +35,6 @@ class LocalSub(val file: File, val lang: String, val label: String, val mime: St
  */
 class StreamController(
     private val app: Application,
-    private val engine: TorrentEngine,
     private val subStore: SubtitleStore,
     private val server: LocalServer
 ) {
@@ -76,14 +76,27 @@ class StreamController(
     var playback: Playback? = null
         private set
 
-    @Volatile
-    var session: StreamSession? = null
-        private set
+    /** Последната статистика от торент процеса (за екраните "Подготовка" и плеъра). */
+    fun stats(): EngineStats? = client.live?.stats
+
+    fun torrentPid(): Int = client.torrentPid
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var job: Job? = null
-    private var meta: MetaSession? = null
     private var pick: CompletableDeferred<Int>? = null
+    private var subsJob: Deferred<List<SubtitleStore.Local>>? = null
+
+    /** Торент двигателят върви в отделен процес; тук е връзката с него. */
+    private val client = TorrentClient(app).also { c ->
+        c.onDied = { why ->
+            if (ui.stage != Stage.IDLE && ui.stage != Stage.ERROR) {
+                AppLog.d("stream", "торент процесът умря: $why")
+                job?.cancel()
+                job = null
+                ui = ui.copy(stage = Stage.ERROR, error = why)
+            }
+        }
+    }
 
     fun start(req: Req) {
         close()
@@ -103,36 +116,35 @@ class StreamController(
     }
 
     private suspend fun run(req: Req) {
-        val subsJob = scope.async { prepareSubs(req) }
+        val sj = scope.async { prepareSubs(req) }
+        subsJob = sj
 
-        ui = ui.copy(stage = Stage.METADATA, message = "Търсене на пиъри…")
-        val m = engine.openMagnet(Magnets.ensureTrackers(req.magnet)) { peers, seeds ->
+        ui = ui.copy(stage = Stage.METADATA, message = "Стартиране на торент двигателя…")
+        client.connect()
+        ui = ui.copy(message = "Търсене на пиъри…")
+        val files = client.open(Magnets.ensureTrackers(req.magnet)) { peers, seeds ->
             ui = ui.copy(peers = peers, seeds = seeds)
         }
-        meta = m
-        if (m.files.isEmpty()) throw IOException("В торента няма видео файл")
+        if (files.isEmpty()) throw IOException("В торента няма видео файл")
 
-        val idx = chooseFile(req, m)
-        val s = engine.startStream(m, idx)
-        session = s
+        val idx = chooseFile(req, files)
+        val started = client.play(idx)
         server.start()
-        val ext = s.file.name.substringAfterLast('.', "mkv").lowercase()
-        val path = "/video.$ext"
-        server.set(path, s)
-
-        AppLog.d("stream", "файл: ${s.file.name} (${s.file.size / 1048576} MB)")
-        ui = ui.copy(stage = Stage.BUFFERING, fileName = s.file.name, message = "Буфериране…")
+        AppLog.d("stream", "файл: ${started.name} (${started.size / 1048576} MB)")
+        ui = ui.copy(stage = Stage.BUFFERING, fileName = started.name, message = "Буфериране…")
         val t0 = System.currentTimeMillis()
-        while (!s.isPreloaded()) {
-            val st = s.stats()
-            ui = ui.copy(peers = st.peers, seeds = st.seeds, speed = st.speed, bufferPct = s.preloadPercent())
-            if ((System.currentTimeMillis() - t0) % 4000 < 520) AppLog.d("stream", "буфер ${ui.bufferPct}%, пиъри ${st.peers}, ↓ ${st.speed / 1024} KB/s")
-            delay(500)
+        while (true) {
+            val lv = client.live
+            if (lv != null) {
+                ui = ui.copy(peers = lv.stats.peers, seeds = lv.stats.seeds, speed = lv.stats.speed, bufferPct = lv.preloadPct)
+                if (lv.preloaded) break
+            }
+            delay(400)
             if (System.currentTimeMillis() - t0 > 6 * 60_000L)
                 throw IOException("Твърде бавно теглене - няма достатъчно сийдъри. Опитай друг източник.")
         }
 
-        val locals = subsJob.await()
+        val locals = sj.await()
         val subs = ArrayList<LocalSub>()
         locals.forEachIndexed { i, l ->
             val sp = "/sub$i.${l.file.extension}"
@@ -140,7 +152,8 @@ class StreamController(
             subs.add(LocalSub(l.file, l.lang, l.label, l.mime, "http://127.0.0.1:${server.port}$sp"))
         }
         val title = if (req.subtitle.isBlank()) req.title else "${req.title} · ${req.subtitle}"
-        val pb = Playback("http://127.0.0.1:${server.port}$path", title, subs)
+        // Видеото идва от сървъра в торент процеса, субтитрите - от този процес.
+        val pb = Playback("http://127.0.0.1:${started.port}${started.path}", title, subs)
         playback = pb
         ui = ui.copy(stage = Stage.READY, message = "Готово", bufferPct = 100)
         AppLog.d("stream", "готово, пускам плеъра ${req.player}: ${pb.url}")
@@ -165,8 +178,7 @@ class StreamController(
         return out
     }
 
-    private suspend fun chooseFile(req: Req, m: MetaSession): Int {
-        val files = m.files
+    private suspend fun chooseFile(req: Req, files: List<TFile>): Int {
         if (files.size == 1) return files[0].index
         val s = req.season
         val e = req.episode
@@ -218,12 +230,10 @@ class StreamController(
         job = null
         pick?.cancel()
         pick = null
-        val s = session
-        val m = meta
-        session = null
-        meta = null
+        subsJob?.cancel()
+        subsJob = null
         playback = null
-        if (s != null) s.close() else if (m != null) engine.remove(m)
+        client.close()
         server.clearRoutes()
         if (ui.stage != Stage.IDLE) {
             ui = Ui()

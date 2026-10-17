@@ -56,6 +56,19 @@ class Prefs(ctx: Context) {
         get() = str("meta_lang", "bg")
         set(v) = put("meta_lang", v)
 
+    /** На колко часа се чисти кешът автоматично (0 = изключено). */
+    var cacheHours: Int
+        get() = sp.getInt("cache_hours", 12)
+        set(v) {
+            sp.edit().putInt("cache_hours", v).apply()
+        }
+
+    var lastClean: Long
+        get() = sp.getLong("last_clean", 0L)
+        set(v) {
+            sp.edit().putLong("last_clean", v).apply()
+        }
+
     var subLangs: Set<String>
         get() = sp.getStringSet("sub_langs", null)?.toSet() ?: setOf("bg", "en")
         set(v) {

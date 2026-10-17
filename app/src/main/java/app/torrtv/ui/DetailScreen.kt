@@ -67,7 +67,7 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
 
     Box(Modifier.fillMaxSize()) {
         // фон
-        Img(Tmdb.img(d?.media?.backdropPath, "w1280"), Modifier.fillMaxSize(), 1280, 720)
+        Img(Tmdb.img(d?.media?.backdropPath, "w780"), Modifier.fillMaxSize(), 780, 439)
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xCC080B12), Color(0xF5080B12), C.bg))))
 
         if (d == null) {

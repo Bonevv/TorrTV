@@ -62,6 +62,20 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!-- Торент двигателят върви в отделен процес: native срив там не изхвърля потребителя от приложението -->
+        <service
+            android:name=".torrent.TorrentService0"
+            android:exported="false"
+            android:process=":t0" />
+        <service
+            android:name=".torrent.TorrentService1"
+            android:exported="false"
+            android:process=":t1" />
+        <service
+            android:name=".torrent.TorrentService2"
+            android:exported="false"
+            android:process=":t2" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

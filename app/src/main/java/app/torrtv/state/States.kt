@@ -444,7 +444,7 @@ class DetailState(val type: MediaType, val id: Int) {
             subs = subs,
             subQuery = subQuery(),
             player = player,
-            backdrop = Tmdb.img(d?.media?.backdropPath, "w1280")
+            backdrop = Tmdb.img(d?.media?.backdropPath, "w780")
         )
     }
 }
