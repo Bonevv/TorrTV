@@ -1,5 +1,6 @@
 package app.torrtv.torrent
 
+import app.torrtv.core.AppLog
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.IOException
@@ -115,6 +116,7 @@ class LocalServer {
                 if (i > 0 && l.substring(0, i).equals("range", ignoreCase = true)) range = l.substring(i + 1).trim()
             }
             val c = routes[path]
+            AppLog.d("http", "$method $path range=${range ?: "-"}")
             if (c == null) {
                 simple(out, 404, "Not Found")
                 return
@@ -158,6 +160,8 @@ class LocalServer {
             val buf = ByteArray(64 * 1024)
             var pos = start
             var remain = count
+            var sent = 0L
+            try {
             while (remain > 0) {
                 val n = c.read(pos, buf, 0, min(buf.size.toLong(), remain).toInt())
                 if (n <= 0) break
@@ -165,9 +169,14 @@ class LocalServer {
                 out.flush()
                 pos += n
                 remain -= n
+                sent += n
+            }
+            } finally {
+                if (sent > 0 || remain > 0) AppLog.d("http", "край $path: изпратени ${sent / 1024} KB от ${count / 1024} KB")
             }
         } catch (e: Exception) {
             // клиентът е затворил връзката (превъртане, спиране) - нормално
+            AppLog.d("http", "връзката затворена: ${e.javaClass.simpleName} ${e.message ?: ""}")
         } finally {
             try {
                 sock.close()

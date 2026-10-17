@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import app.torrtv.core.AppLog
 import app.torrtv.core.Prefs
 import app.torrtv.data.subs.Langs
 import app.torrtv.state.Diagnostics
@@ -81,6 +82,7 @@ fun SettingsScreen() {
     var diagRunning by remember { mutableStateOf(false) }
     val diag = remember { mutableStateListOf<String>() }
     var cleared by remember { mutableStateOf(false) }
+    var logText by remember { mutableStateOf<String?>(null) }
     val srcState = remember { mutableStateListOf<Pair<String, Boolean>>().also { l -> Graph.torrents.sources.forEach { l.add(it.id to prefs.sourceEnabled(it.id)) } } }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 50.d)) {
@@ -260,6 +262,19 @@ fun SettingsScreen() {
                         },
                         if (line.startsWith("—")) FontWeight.Bold else FontWeight.Normal, 3
                     )
+                }
+            }
+        }
+
+        item {
+            Group("📜  Дневник (при проблем покажи го на разработчика)") {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.d)) {
+                    PrimaryButton(if (logText == null) "Покажи дневника" else "Опресни", { logText = AppLog.text(3500) }, primary = false)
+                    PrimaryButton("Изчисти дневника", { AppLog.clear(); logText = "" }, primary = false)
+                }
+                logText?.let { t ->
+                    Spacer(Modifier.height(8.d))
+                    Text2(if (t.isBlank()) "(празен)" else t, 10, C.dim, FontWeight.Normal, 60)
                 }
             }
         }

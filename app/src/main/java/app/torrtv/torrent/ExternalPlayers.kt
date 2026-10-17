@@ -11,7 +11,11 @@ object ExternalPlayers {
     val all = listOf(
         P("vlc", "VLC", listOf("org.videolan.vlc")),
         P("mx", "MX Player", listOf("com.mxtech.videoplayer.pro", "com.mxtech.videoplayer.ad")),
-        P("just", "Just Player", listOf("com.brouken.player"))
+        P("just", "Just Player", listOf("com.brouken.player")),
+        P("kodi", "Kodi", listOf("org.xbmc.kodi")),
+        P("vimu", "Vimu", listOf("net.gtvbox.videoplayer", "net.gtvbox.vimuhd")),
+        P("nova", "Nova Video Player", listOf("org.courville.nova")),
+        P("mpv", "mpv", listOf("is.xyz.mpv"))
     )
 
     fun installedPackage(ctx: Context, id: String): String? {

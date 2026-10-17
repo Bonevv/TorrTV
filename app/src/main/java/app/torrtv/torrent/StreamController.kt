@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import app.torrtv.PlayerActivity
 import app.torrtv.StreamService
+import app.torrtv.core.AppLog
 import app.torrtv.core.Magnets
 import app.torrtv.data.subs.SubtitleQuery
 import app.torrtv.data.subs.SubtitleResult
@@ -86,6 +87,7 @@ class StreamController(
 
     fun start(req: Req) {
         close()
+        AppLog.d("stream", "Старт: ${req.title} ${req.subtitle} плеър=${req.player} субтитри=${req.subs.size}")
         ui = Ui(stage = Stage.CONNECTING, message = "Свързване…", req = req)
         StreamService.start(app)
         job = scope.launch {
@@ -93,8 +95,9 @@ class StreamController(
                 run(req)
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: Exception) {
-                ui = ui.copy(stage = Stage.ERROR, error = e.message ?: "Неизвестна грешка")
+            } catch (e: Throwable) {
+                AppLog.e("stream", "грешка", e)
+                ui = ui.copy(stage = Stage.ERROR, error = e.message ?: e.javaClass.simpleName)
             }
         }
     }
@@ -117,11 +120,13 @@ class StreamController(
         val path = "/video.$ext"
         server.set(path, s)
 
+        AppLog.d("stream", "файл: ${s.file.name} (${s.file.size / 1048576} MB)")
         ui = ui.copy(stage = Stage.BUFFERING, fileName = s.file.name, message = "Буфериране…")
         val t0 = System.currentTimeMillis()
         while (!s.isPreloaded()) {
             val st = s.stats()
             ui = ui.copy(peers = st.peers, seeds = st.seeds, speed = st.speed, bufferPct = s.preloadPercent())
+            if ((System.currentTimeMillis() - t0) % 4000 < 520) AppLog.d("stream", "буфер ${ui.bufferPct}%, пиъри ${st.peers}, ↓ ${st.speed / 1024} KB/s")
             delay(500)
             if (System.currentTimeMillis() - t0 > 6 * 60_000L)
                 throw IOException("Твърде бавно теглене - няма достатъчно сийдъри. Опитай друг източник.")
@@ -138,6 +143,7 @@ class StreamController(
         val pb = Playback("http://127.0.0.1:${server.port}$path", title, subs)
         playback = pb
         ui = ui.copy(stage = Stage.READY, message = "Готово", bufferPct = 100)
+        AppLog.d("stream", "готово, пускам плеъра ${req.player}: ${pb.url}")
         launchPlayer(req.player, pb)
     }
 
@@ -187,7 +193,13 @@ class StreamController(
     }
 
     private fun launchPlayer(player: String, pb: Playback) {
-        val ok = player != "builtin" && ExternalPlayers.launch(app, player, pb)
+        val ok = player != "builtin" && try {
+            ExternalPlayers.launch(app, player, pb)
+        } catch (e: Throwable) {
+            AppLog.e("stream", "външен плеър", e)
+            false
+        }
+        AppLog.d("stream", "външен плеър $player пуснат=$ok")
         if (!ok) {
             val i = Intent(app, PlayerActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             app.startActivity(i)
@@ -201,6 +213,7 @@ class StreamController(
     }
 
     fun close() {
+        AppLog.d("stream", "затваряне")
         job?.cancel()
         job = null
         pick?.cancel()

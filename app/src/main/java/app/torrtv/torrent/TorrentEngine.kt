@@ -1,6 +1,7 @@
 package app.torrtv.torrent
 
 import android.content.Context
+import app.torrtv.core.AppLog
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -78,7 +79,12 @@ class TorrentEngine(private val ctx: Context) {
         } else {
             val s = SessionManager(false)
             val sp = SettingsPack()
-            sp.connectionsLimit(160)
+            sp.connectionsLimit(100)
+            sp.setEnableDht(true)
+            sp.setDhtBootstrapNodes(
+                "dht.libtorrent.org:25401,router.bittorrent.com:6881,router.utorrent.com:6881," +
+                    "dht.transmissionbt.com:6881,dht.aelitis.com:6881"
+            )
             s.start(SessionParams(sp))
             sm = s
             s
@@ -91,6 +97,7 @@ class TorrentEngine(private val ctx: Context) {
             val hex = app.torrtv.core.Magnets.infoHash(magnet)
                 ?: throw IllegalArgumentException("Невалиден magnet линк")
             val s = session()
+            AppLog.d("torrent", "Отварям magnet $hex")
             synchronized(lock) { active++ }
             val done = CompletableDeferred<TorrentHandle>()
             val listener = object : AlertListener {
@@ -124,6 +131,7 @@ class TorrentEngine(private val ctx: Context) {
                     magnet, baseDir,
                     TorrentFlags.SEQUENTIAL_DOWNLOAD.or_(TorrentFlags.DEFAULT_DONT_DOWNLOAD)
                 )
+                var ticks = 0
                 val handle = withTimeout(100_000) {
                     while (!done.isCompleted) {
                         try {
@@ -131,14 +139,26 @@ class TorrentEngine(private val ctx: Context) {
                             if (h != null && h.isValid) {
                                 val st = h.status()
                                 onStatus(st.numPeers(), st.numSeeds())
+                                // Резервна проверка, ако предупреждението за метаданни е изпуснато
+                                if (st.hasMetadata()) done.complete(h)
+                                if (ticks % 10 == 0) {
+                                    AppLog.d("torrent", "чакам метаданни: пиъри ${st.numPeers()}, сийдъри ${st.numSeeds()}, DHT възли ${s.dhtNodes()}")
+                                }
                             }
                         } catch (e: Exception) {
                         }
+                        ticks++
                         delay(500)
                     }
                     done.await()
                 }
-                val ti = handle.torrentFile() ?: throw IOException("Няма метаданни")
+                var tiTry = handle.torrentFile()
+                var waited = 0
+                while ((tiTry == null || !tiTry.isValid) && waited++ < 25) {
+                    delay(300)
+                    tiTry = handle.torrentFile()
+                }
+                val ti = tiTry ?: throw IOException("Няма метаданни (торентът не върна списък с файлове)")
                 val fs = ti.files()
                 val list = ArrayList<TFile>()
                 for (i in 0 until fs.numFiles()) {
@@ -148,8 +168,10 @@ class TorrentEngine(private val ctx: Context) {
                     if (ext !in VIDEO_EXT) continue
                     list.add(TFile(i, path, fs.fileName(i), fs.fileSize(i), fs.fileOffset(i)))
                 }
+                AppLog.d("torrent", "метаданни получени: ${list.size} видео файла")
                 MetaSession(hex, handle, ti, list)
             } catch (e: Throwable) {
+                AppLog.e("torrent", "openMagnet", e)
                 try {
                     val h = s.find(Sha1Hash.parseHex(hex))
                     if (h != null && h.isValid) s.remove(h, SessionHandle.DELETE_FILES)
@@ -294,7 +316,6 @@ class StreamSession internal constructor(
         if (p0 == lastWindow) return
         val window = max(6, min(40, ((24L * 1024 * 1024) / pieceLen).toInt()))
         try {
-            if (kotlin.math.abs(p0 - lastWindow) > window) h.clearPieceDeadlines()
             for (i in 0 until window) {
                 val p = p0 + i
                 if (p > lastPiece) break

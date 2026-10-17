@@ -78,7 +78,7 @@ fun PlaySheet(st: DetailState, t: TorrentResult, onDismiss: () -> Unit) {
             Spacer(Modifier.height(6.d))
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.d)) {
                 items(options, key = { it }) { id ->
-                    Chip(ExternalPlayers.label(id), player == id, { player = id })
+                    Chip(ExternalPlayers.label(id), player == id, { player = id; Graph.prefs.player = id })
                 }
             }
             if (player == "builtin") {

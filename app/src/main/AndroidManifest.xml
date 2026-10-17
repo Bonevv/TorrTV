@@ -20,6 +20,11 @@
         <package android:name="com.mxtech.videoplayer.ad" />
         <package android:name="com.mxtech.videoplayer.pro" />
         <package android:name="com.brouken.player" />
+        <package android:name="org.xbmc.kodi" />
+        <package android:name="net.gtvbox.videoplayer" />
+        <package android:name="net.gtvbox.vimuhd" />
+        <package android:name="org.courville.nova" />
+        <package android:name="is.xyz.mpv" />
     </queries>
 
     <application
