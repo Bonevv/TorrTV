@@ -84,7 +84,7 @@ fun HeroBanner(m: Media?, modifier: Modifier = Modifier) {
 fun Text2(text: String, size: Int, color: Color, weight: FontWeight, lines: Int, modifier: Modifier = Modifier) {
     androidx.compose.material3.Text(
         text, color = color, fontSize = size.t, fontWeight = weight, maxLines = lines,
-        overflow = TextOverflow.Ellipsis, modifier = modifier, lineHeight = (size * 1.3f).t
+        overflow = TextOverflow.Ellipsis, modifier = modifier, lineHeight = (size * 13 / 10).t
     )
 }
 
