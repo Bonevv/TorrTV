@@ -16,6 +16,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -57,9 +59,14 @@ object Look {
     }
 }
 
-/** Дизайнът е за ширина 960dp; всичко се мащабира според реалния екран на телевизора. */
+/**
+ * Дизайнът е за екран 960x540dp; всичко се мащабира според реалния екран на телевизора.
+ * Мащабът е по по-тясната страна (ширина или височина): на по-широк екран (21:9) нищо не излиза долу
+ * (панелът, диалозите и списъците са по височина), а на по-висок (4:3) просто има повече място встрани.
+ */
 @Immutable
 class Dims(val k: Float)
+
 
 val LocalDims = staticCompositionLocalOf { Dims(1f) }
 
@@ -72,8 +79,10 @@ val Int.t: TextUnit
 @Composable
 fun TorrTheme(content: @Composable () -> Unit) {
     val cfg = LocalConfiguration.current
-    val k = (cfg.screenWidthDp / 960f).coerceIn(0.8f, 2.4f)
-    CompositionLocalProvider(LocalDims provides Dims(k)) {
+    val k = uiScale(cfg.screenWidthDp, cfg.screenHeightDp)
+    // Размерът на текста идва от екрана (k), а не от системната настройка за шрифт: оформлението е изчислено за него.
+    val density = LocalDensity.current
+    CompositionLocalProvider(LocalDims provides Dims(k), LocalDensity provides Density(density.density, 1f)) {
         MaterialTheme(
             colorScheme = darkColorScheme(
                 primary = C.accent,

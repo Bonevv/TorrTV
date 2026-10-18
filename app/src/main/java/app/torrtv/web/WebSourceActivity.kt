@@ -82,6 +82,9 @@ class WebSourceActivity : AppCompatActivity() {
 
     private val density get() = resources.displayMetrics.density
 
+    /** Размери за екран с плътност 2 (1080p телевизор), пренесени към действителната плътност - като текста (sp). */
+    private fun px(v: Int): Int = (v * density / 2f).toInt()
+
     private val loadTimeout = Runnable {
         if (!pageDone) {
             AppLog.d("web", "${sources[idx].host}: не се зареди за 25 секунди")
@@ -166,22 +169,22 @@ class WebSourceActivity : AppCompatActivity() {
         bar = TextView(this).apply {
             setTextColor(Color.WHITE)
             textSize = 12f
-            setPadding(24, 10, 24, 10)
-            background = GradientDrawable().apply { cornerRadius = 40f; setColor(0xB3101521.toInt()) }
+            setPadding(px(24), px(10), px(24), px(10))
+            background = GradientDrawable().apply { cornerRadius = px(40).toFloat(); setColor(0xB3101521.toInt()) }
         }
         root.addView(bar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.START).apply {
-            setMargins(28, 24, 0, 0)
+            setMargins(px(28), px(24), 0, 0)
         })
         banner = TextView(this).apply {
             setTextColor(Color.WHITE)
             textSize = 15f
             gravity = Gravity.CENTER
-            setPadding(36, 18, 36, 18)
-            background = GradientDrawable().apply { cornerRadius = 50f; setColor(0xE6101521.toInt()) }
+            setPadding(px(36), px(18), px(36), px(18))
+            background = GradientDrawable().apply { cornerRadius = px(50).toFloat(); setColor(0xE6101521.toInt()) }
             visibility = View.GONE
         }
         root.addView(banner, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
-            setMargins(0, 0, 0, 48)
+            setMargins(0, 0, 0, px(48))
         })
 
         root.post {

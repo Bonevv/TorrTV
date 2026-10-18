@@ -3,6 +3,7 @@ package app.torrtv.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -28,6 +29,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import app.torrtv.data.Media
 import app.torrtv.state.Library
 
@@ -132,22 +134,27 @@ fun FavoritesScreen(onOpen: (Media) -> Unit) {
     }
     Column(Modifier.fillMaxSize()) {
         SectionTitle("Любими", sub = if (favs.size == 1) "1 заглавие" else "${favs.size} заглавия")
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(118.d),
-            state = FavUi.grid,
-            contentPadding = PaddingValues(start = 36.d, end = 36.d, top = 6.d, bottom = 40.d),
-            horizontalArrangement = Arrangement.spacedBy(12.d),
-            verticalArrangement = Arrangement.spacedBy(14.d)
-        ) {
-            items(favs, key = { it.key }) { m ->
-                val fr = remember { FocusRequester() }
-                if (FavUi.focusKey == m.key) {
-                    LaunchedEffect(Unit) {
-                        fr.tryRequest()
-                        FavUi.focusKey = null
+        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+            // Плакатите запълват реда точно - същото като във Филми, Сериали и Търсене.
+            val (cols, w) = gridGeometry(maxWidth.value, 36.d.value, 12.d.value, 108.d.value)
+            val pw = w.dp
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(cols),
+                state = FavUi.grid,
+                contentPadding = PaddingValues(start = 36.d, end = 36.d, top = 6.d, bottom = 40.d),
+                horizontalArrangement = Arrangement.spacedBy(12.d),
+                verticalArrangement = Arrangement.spacedBy(14.d)
+            ) {
+                items(favs, key = { it.key }) { m ->
+                    val fr = remember { FocusRequester() }
+                    if (FavUi.focusKey == m.key) {
+                        LaunchedEffect(Unit) {
+                            fr.tryRequest()
+                            FavUi.focusKey = null
+                        }
                     }
+                    Poster(m, pw, { FavUi.focusKey = m.key; onOpen(m) }, focusRequester = fr)
                 }
-                Poster(m, 112.d, { FavUi.focusKey = m.key; onOpen(m) }, focusRequester = fr)
             }
         }
     }

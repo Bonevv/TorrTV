@@ -134,15 +134,15 @@ class PlayerActivity : AppCompatActivity() {
             setTextColor(0xFFFFFFFF.toInt())
             setBackgroundColor(0x99000000.toInt())
             textSize = 12f
-            setPadding(24, 12, 24, 12)
+            setPadding(px(24), px(12), px(24), px(12))
             visibility = View.GONE
         }
         root.addView(stats, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.START).apply {
-            setMargins(32, 32, 0, 0)
+            setMargins(px(32), px(32), 0, 0)
         })
         nextInfo = overlayText(14f).apply { gravity = Gravity.CENTER }
         root.addView(nextInfo, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
-            setMargins(0, 0, 0, 150)
+            setMargins(0, 0, 0, px(150))
         })
         seekInfo = overlayText(22f).apply { gravity = Gravity.CENTER }
         root.addView(seekInfo, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
@@ -150,7 +150,7 @@ class PlayerActivity : AppCompatActivity() {
         root.addView(popInfo, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
         buildSyncBar()
         root.addView(syncBar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END).apply {
-            setMargins(0, 32, 32, 0)
+            setMargins(0, px(32), px(32), 0)
         })
         setContentView(root)
         hideBars()
@@ -345,11 +345,17 @@ class PlayerActivity : AppCompatActivity() {
         else -> null
     }
 
+    /**
+     * Размерите на наслагванията (отстъпи, ъгли) са зададени за екран с плътност 2 (1080p телевизор); тук се
+     * пренасят към действителната плътност, за да остане съотношението към текста (който е в sp) на всеки телевизор.
+     */
+    private fun px(v: Int): Int = (v * resources.displayMetrics.density / 2f).toInt()
+
     private fun overlayText(sp: Float): TextView = TextView(this).apply {
         setTextColor(0xFFFFFFFF.toInt())
         setBackgroundColor(0xB3000000.toInt())
         textSize = sp
-        setPadding(32, 16, 32, 16)
+        setPadding(px(32), px(16), px(32), px(16))
         visibility = View.GONE
     }
 
@@ -428,7 +434,7 @@ class PlayerActivity : AppCompatActivity() {
     // ---- Синхрон на субтитрите ----
 
     private fun pillBg(focused: Boolean) = GradientDrawable().apply {
-        cornerRadius = 60f
+        cornerRadius = px(60).toFloat()
         setColor(if (focused) 0xFFFFFFFF.toInt() else 0xB3101521.toInt())
     }
 
@@ -437,7 +443,7 @@ class PlayerActivity : AppCompatActivity() {
         textSize = 14f
         gravity = Gravity.CENTER
         setTextColor(0xFFFFFFFF.toInt())
-        setPadding(26, 12, 26, 12)
+        setPadding(px(26), px(12), px(26), px(12))
         background = pillBg(false)
         isFocusable = true
         setOnClickListener {
@@ -467,25 +473,25 @@ class PlayerActivity : AppCompatActivity() {
         nextBtn = pill("Следващ епизод") { goNext() }
         nextBtn.visibility = View.GONE
         topRow.addView(nextBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-            rightMargin = 16
+            rightMargin = px(16)
         })
         // Избор на друг субтитър от всички намерени.
         subsBtn = pill("Субтитри") { openSubPicker() }
         subsBtn.visibility = View.GONE
         topRow.addView(subsBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-            rightMargin = 16
+            rightMargin = px(16)
         })
         // Пауза за пуканки: 5 минути, после филмът продължава сам (или по-рано с произволен бутон).
         popBtn = pill("Пауза за пуканки") { startPopcorn() }
         topRow.addView(popBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-            rightMargin = 16
+            rightMargin = px(16)
         })
         // Таймер за заспиване: натискане сменя 30 → 60 → 90 → 120 мин → изключен.
         sleepBtn = pill("") { cycleSleep() }
         showSleep()
         topRow.addView(sleepBtn)
         syncBar.addView(topRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-            bottomMargin = 10
+            bottomMargin = px(10)
         })
         // Предупреждение, когато субтитрите не пасват по дължина на филма.
         subWarn = TextView(this).apply {
@@ -493,7 +499,7 @@ class PlayerActivity : AppCompatActivity() {
             textSize = 12f
             gravity = Gravity.END
             maxWidth = (resources.displayMetrics.widthPixels * 0.55f).toInt()
-            setPadding(0, 0, 0, 10)
+            setPadding(0, 0, 0, px(10))
             visibility = View.GONE
         }
         syncBar.addView(subWarn)
@@ -514,7 +520,7 @@ class PlayerActivity : AppCompatActivity() {
         syncValue = TextView(this).apply {
             textSize = 14f
             setTextColor(0xFFE9B44C.toInt())
-            setPadding(24, 0, 24, 0)
+            setPadding(px(24), 0, px(24), 0)
         }
         row.addView(title)
         row.addView(syncButton("−0,5", -500))
@@ -526,7 +532,7 @@ class PlayerActivity : AppCompatActivity() {
             text = "+ закъснява субтитрите, − ги избързва. Запомня се за този филм."
             textSize = 11f
             setTextColor(0xCCFFFFFF.toInt())
-            setPadding(0, 6, 0, 0)
+            setPadding(0, px(6), 0, 0)
         }
         syncPart.addView(row)
         syncPart.addView(hint)

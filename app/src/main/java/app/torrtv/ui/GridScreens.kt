@@ -3,6 +3,7 @@ package app.torrtv.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -40,6 +41,8 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import app.torrtv.data.Genres
 import app.torrtv.data.Media
 import app.torrtv.state.BrowseState
@@ -49,7 +52,10 @@ import app.torrtv.state.SearchState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** Мрежа с плакати и безкрайно зареждане (до тавана на Paged). */
+/**
+ * Мрежа с плакати и безкрайно зареждане (до тавана на Paged). Колоните се смятат от свободната широчина
+ * (виж gridGeometry), така че на всеки екран редът е пълен и нищо не е отрязано.
+ */
 @Composable
 fun PosterGrid(
     paged: Paged<Media>,
@@ -57,7 +63,10 @@ fun PosterGrid(
     getFocusKey: () -> String?,
     setFocusKey: (String?) -> Unit,
     onOpen: (Media) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    sidePad: Dp = 36.d,
+    topPad: Dp = 10.d,
+    minW: Dp = 108.d
 ) {
     val scope = rememberCoroutineScope()
     LaunchedEffect(paged) {
@@ -67,11 +76,13 @@ fun PosterGrid(
             (li.visibleItemsInfo.lastOrNull()?.index ?: 0) to li.totalItemsCount
         }.collect { (last, total) -> if (total > 0 && last >= total - 12) paged.loadNext() }
     }
-    Box(modifier.fillMaxSize()) {
+    BoxWithConstraints(modifier.fillMaxSize()) {
+        val (cols, w) = gridGeometry(maxWidth.value, sidePad.value, 12.d.value, minW.value)
+        val pw = w.dp
         LazyVerticalGrid(
-            columns = GridCells.Adaptive(118.d),
+            columns = GridCells.Fixed(cols),
             state = gridState,
-            contentPadding = PaddingValues(start = 36.d, end = 36.d, top = 10.d, bottom = 40.d),
+            contentPadding = PaddingValues(start = sidePad, end = sidePad, top = topPad, bottom = 40.d),
             horizontalArrangement = Arrangement.spacedBy(12.d),
             verticalArrangement = Arrangement.spacedBy(14.d)
         ) {
@@ -83,7 +94,7 @@ fun PosterGrid(
                         setFocusKey(null)
                     }
                 }
-                Poster(m, 112.d, { setFocusKey(m.key); onOpen(m) }, focusRequester = fr)
+                Poster(m, pw, { setFocusKey(m.key); onOpen(m) }, focusRequester = fr)
             }
             if (paged.loading) item(span = { GridItemSpan(maxLineSpan) }) {
                 Box(Modifier.fillMaxWidth().height(50.d), contentAlignment = Alignment.Center) { Spinner() }
@@ -98,25 +109,24 @@ fun PosterGrid(
     }
 }
 
+/** Филми и Сериали: вляво панел с подредба, "Аниме" и жанрове, вдясно мрежа с плакати. */
 @Composable
 fun BrowseScreen(st: BrowseState, onOpen: (Media) -> Unit) {
     val sorts = listOf("Популярни", "Най-нови", "Най-високо оценени")
-    Column(Modifier.fillMaxSize()) {
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 36.d, vertical = 4.d),
-            horizontalArrangement = Arrangement.spacedBy(8.d)
-        ) {
-            items(sorts.size, key = { "s$it" }) { i -> Chip(sorts[i], st.sort == i, { st.apply(st.genre, i) }) }
-            item(key = "anime") { Chip("Аниме", st.anime, { st.apply(st.genre, st.sort, !st.anime) }) }
+    // Пролуката е малка, защото мрежата има свой отстъп (12): блясъкът на фокусирания плакат не се отрязва.
+    Row(Modifier.fillMaxSize().padding(start = 36.d, end = 36.d, bottom = 14.d), horizontalArrangement = Arrangement.spacedBy(6.d)) {
+        SidePanel {
+            items(sorts.size, key = { "s$it" }) { i -> SideTab(sorts[i], "", st.sort == i) { st.apply(st.genre, i) } }
+            panelDivider("adiv")
+            item(key = "anime") { SideTab("Аниме", if (st.anime) "вкл." else "", st.anime) { st.apply(st.genre, st.sort, !st.anime) } }
+            panelDivider("gdiv")
+            item(key = "all") { SideTab("Всички жанрове", "", st.genre == null) { st.apply(null, st.sort) } }
+            items(Genres.forType(st.type), key = { "g" + it.id }) { g -> SideTab(g.name, "", st.genre == g.id) { st.apply(g.id, st.sort) } }
         }
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 36.d, vertical = 4.d),
-            horizontalArrangement = Arrangement.spacedBy(8.d)
-        ) {
-            item(key = "all") { Chip("Всички жанрове", st.genre == null, { st.apply(null, st.sort) }) }
-            items(Genres.forType(st.type), key = { it.id }) { g -> Chip(g.name, st.genre == g.id, { st.apply(g.id, st.sort) }) }
-        }
-        PosterGrid(st.paged, st.gridState, { st.focusKey }, { st.focusKey = it }, onOpen)
+        PosterGrid(
+            st.paged, st.gridState, { st.focusKey }, { st.focusKey = it }, onOpen,
+            Modifier.weight(1f), sidePad = 12.d, topPad = 0.d, minW = 100.d
+        )
     }
 }
 

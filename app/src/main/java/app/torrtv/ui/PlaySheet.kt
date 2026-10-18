@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -29,7 +31,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -88,9 +92,12 @@ fun PlaySheet(st: DetailState, t: TorrentResult, resumeMs: Long = 0L, onSwitch: 
         begin(from)
     }
 
+    // На нисък екран с предупреждения и отворен списък със субтитри съдържанието е по-високо от екрана: скролира се.
+    val maxH = (LocalConfiguration.current.screenHeightDp * 0.94f).dp
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
-            Modifier.fillMaxWidth(0.72f).clip(RoundedCornerShape(20.d)).background(C.bg2).border(1.d, C.line, RoundedCornerShape(20.d)).padding(22.d)
+            Modifier.fillMaxWidth(0.72f).heightIn(max = maxH).clip(RoundedCornerShape(20.d)).background(C.bg2)
+                .border(1.d, C.line, RoundedCornerShape(20.d)).verticalScroll(rememberScrollState()).padding(22.d)
         ) {
             Text2(t.title, 14, C.text, FontWeight.Bold, 2)
             Spacer(Modifier.height(4.d))

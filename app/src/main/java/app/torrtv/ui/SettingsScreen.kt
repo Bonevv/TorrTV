@@ -9,11 +9,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -55,21 +57,49 @@ private val fieldLabels = mapOf(
     "subsource_key" to "SubSource ключ"
 )
 
+/** Раздели на панела: основните първо, после "Разширени". Ключът е същият като в SettingsPane. */
+private val BASIC_TABS = listOf(
+    "phone" to "Телефон", "player" to "Плеър", "lang" to "Езици", "subs" to "Субтитри",
+    "src" to "Откъде се гледа", "upd" to "Обновяване"
+)
+private val ADV_TABS = listOf(
+    "disk" to "Диск и скорост", "mem" to "Памет и кеш", "lite" to "Лек режим", "engine" to "Торент режим",
+    "trk" to "Тракери", "diag" to "Диагностика", "log" to "Дневник"
+)
+
+/** Един раздел: заглавие и карта със съдържанието. Стои вдясно от панела, затова няма странични отстъпи. */
 @Composable
 private fun Group(title: String, content: @Composable () -> Unit) {
-    Column(
-        Modifier.fillMaxWidth().padding(horizontal = 36.d, vertical = 6.d)
-            .clip(RoundedCornerShape(16.d)).background(C.bg2).border(1.d, C.line, RoundedCornerShape(16.d))
-            .padding(horizontal = 16.d, vertical = 12.d)
-    ) {
-        Text2(title, 16, C.text, FontWeight.ExtraBold, 1)
+    Column(Modifier.fillMaxWidth().padding(bottom = 4.d)) {
+        PaneTitle(title)
         Spacer(Modifier.height(8.d))
-        content()
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.d)).background(C.bg2).border(1.d, C.line, RoundedCornerShape(16.d))
+                .padding(horizontal = 16.d, vertical = 12.d)
+        ) { content() }
     }
 }
 
 @Composable
 fun SettingsScreen() {
+    // Ако има нова версия, отваря се направо разделът за обновяване.
+    var section by remember { mutableStateOf(if (Graph.home.update != null) "upd" else "phone") }
+    Row(Modifier.fillMaxSize().padding(start = 36.d, end = 36.d, bottom = 14.d), horizontalArrangement = Arrangement.spacedBy(18.d)) {
+        SidePanel {
+            items(BASIC_TABS, key = { it.first }) { (id, label) ->
+                SideTab(label, if (id == "upd" && Graph.home.update != null) "нова" else "", section == id) { section = id }
+            }
+            panelDivider("adiv")
+            panelCaption("acap", "Разширени")
+            items(ADV_TABS, key = { it.first }) { (id, label) -> SideTab(label, "", section == id) { section = id } }
+        }
+        SettingsPane(section, Modifier.weight(1f).fillMaxHeight())
+    }
+}
+
+/** Съдържанието на избрания раздел. Състоянието на всички полета е тук, за да се пази при смяна на раздела. */
+@Composable
+private fun SettingsPane(section: String, modifier: Modifier) {
     val ctx = LocalContext.current
     val prefs = Graph.prefs
     val scope = rememberCoroutineScope()
@@ -103,7 +133,6 @@ fun SettingsScreen() {
     var streamWindow by remember { mutableStateOf(prefs.streamWindowMb) }
     var engineMode by remember { mutableStateOf(prefs.engineProfile) }
     var liteChoice by remember { mutableStateOf(prefs.liteChoice) }
-    var advanced by remember { mutableStateOf(false) }
     var webOn by remember { mutableStateOf(prefs.webEnabled) }
     var webHandoff by remember { mutableStateOf(prefs.webHandoff) }
     var cacheTick by remember { mutableStateOf(0) }
@@ -111,8 +140,9 @@ fun SettingsScreen() {
     var logText by remember { mutableStateOf<String?>(null) }
     val srcState = remember { mutableStateListOf<Pair<String, Boolean>>().also { l -> Graph.torrents.sources.forEach { l.add(it.id to prefs.sourceEnabled(it.id)) } } }
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 50.d)) {
-        item {
+    // Всеки раздел започва отгоре: скролът не се пренася от предишния.
+    LazyColumn(modifier, state = remember(section) { LazyListState() }, contentPadding = PaddingValues(bottom = 30.d)) {
+        if (section == "phone") item(key = "phone") {
             Group("Настройка от телефона") {
                 val addrs = remember(tick / 4) { Graph.config.addresses() }
                 val port = Graph.config.port
@@ -135,7 +165,7 @@ fun SettingsScreen() {
             }
         }
 
-        item {
+        if (section == "player") item(key = "player") {
             Group("Плеър") {
                 val installed = remember { ExternalPlayers.installed(ctx) }
                 val opts = listOf("builtin") + installed.map { it.id } + "ask"
@@ -153,6 +183,24 @@ fun SettingsScreen() {
                     11, C.dim, FontWeight.Normal, 2
                 )
                 Spacer(Modifier.height(10.d))
+                Text2("Следващ епизод", 13, C.dim, FontWeight.Bold, 1)
+                Spacer(Modifier.height(4.d))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
+                    Chip("Автоматично", autoNext, { autoNext = true; prefs.autoNext = true })
+                    Chip("Само с бутон", !autoNext, { autoNext = false; prefs.autoNext = false })
+                }
+            }
+        }
+
+        if (section == "lang") item(key = "lang") {
+            Group("Езици") {
+                Text2("Описания на филмите", 13, C.dim, FontWeight.Bold, 1)
+                Spacer(Modifier.height(4.d))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
+                    Chip("Български", metaLang == "bg", { metaLang = "bg"; prefs.metaLang = "bg" })
+                    Chip("English", metaLang == "en", { metaLang = "en"; prefs.metaLang = "en" })
+                }
+                Spacer(Modifier.height(10.d))
                 Text2("Звук във вградения плеър", 13, C.dim, FontWeight.Bold, 1)
                 Spacer(Modifier.height(4.d))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
@@ -162,48 +210,6 @@ fun SettingsScreen() {
                 }
                 Spacer(Modifier.height(4.d))
                 Text2("Ако във файла няма такъв звук, пуска се стандартният.", 11, C.dim, FontWeight.Normal, 2)
-                Spacer(Modifier.height(10.d))
-                Text2("Следващ епизод", 13, C.dim, FontWeight.Bold, 1)
-                Spacer(Modifier.height(4.d))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
-                    Chip("Автоматично", autoNext, { autoNext = true; prefs.autoNext = true })
-                    Chip("Само с бутон", !autoNext, { autoNext = false; prefs.autoNext = false })
-                }
-                Spacer(Modifier.height(10.d))
-                Text2("Размер на субтитрите", 13, C.dim, FontWeight.Bold, 1)
-                Spacer(Modifier.height(4.d))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
-                    listOf("Малки", "Средни", "Големи", "Много големи").forEachIndexed { i, name ->
-                        Chip(name, subSize == i, { subSize = i; prefs.subSize = i })
-                    }
-                }
-                Spacer(Modifier.height(8.d))
-                Text2("Стил на субтитрите", 13, C.dim, FontWeight.Bold, 1)
-                Spacer(Modifier.height(4.d))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
-                    listOf("Като в системата", "Контур", "Фон", "Сянка").forEachIndexed { i, name ->
-                        Chip(name, subEdge == i, { subEdge = i; prefs.subEdge = i })
-                    }
-                }
-                Spacer(Modifier.height(8.d))
-                Text2("Място на субтитрите", 13, C.dim, FontWeight.Bold, 1)
-                Spacer(Modifier.height(4.d))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
-                    listOf("По-ниско", "Стандартно", "По-високо").forEachIndexed { i, name ->
-                        Chip(name, subLift == i, { subLift = i; prefs.subLift = i })
-                    }
-                }
-            }
-        }
-
-        item {
-            Group("Езици") {
-                Text2("Описания на филмите", 13, C.dim, FontWeight.Bold, 1)
-                Spacer(Modifier.height(4.d))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
-                    Chip("Български", metaLang == "bg", { metaLang = "bg"; prefs.metaLang = "bg" })
-                    Chip("English", metaLang == "en", { metaLang = "en"; prefs.metaLang = "en" })
-                }
                 Spacer(Modifier.height(10.d))
                 Text2("Субтитри (може няколко)", 13, C.dim, FontWeight.Bold, 1)
                 Spacer(Modifier.height(4.d))
@@ -221,7 +227,35 @@ fun SettingsScreen() {
             }
         }
 
-        item {
+        if (section == "subs") item(key = "subs") {
+            Group("Субтитри") {
+                Text2("Размер", 13, C.dim, FontWeight.Bold, 1)
+                Spacer(Modifier.height(4.d))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
+                    listOf("Малки", "Средни", "Големи", "Много големи").forEachIndexed { i, name ->
+                        Chip(name, subSize == i, { subSize = i; prefs.subSize = i })
+                    }
+                }
+                Spacer(Modifier.height(10.d))
+                Text2("Стил", 13, C.dim, FontWeight.Bold, 1)
+                Spacer(Modifier.height(4.d))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
+                    listOf("Като в системата", "Контур", "Фон", "Сянка").forEachIndexed { i, name ->
+                        Chip(name, subEdge == i, { subEdge = i; prefs.subEdge = i })
+                    }
+                }
+                Spacer(Modifier.height(10.d))
+                Text2("Място", 13, C.dim, FontWeight.Bold, 1)
+                Spacer(Modifier.height(4.d))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
+                    listOf("По-ниско", "Стандартно", "По-високо").forEachIndexed { i, name ->
+                        Chip(name, subLift == i, { subLift = i; prefs.subLift = i })
+                    }
+                }
+            }
+        }
+
+        if (section == "src") item(key = "src") {
             Group("Откъде се гледа") {
                 Text2("Торент сайтове", 13, C.dim, FontWeight.Bold, 1)
                 Spacer(Modifier.height(4.d))
@@ -264,7 +298,7 @@ fun SettingsScreen() {
             }
         }
 
-        item {
+        if (section == "upd") item(key = "upd") {
             Group("Обновяване") {
                 Text2("Версия: ${Graph.updater.currentVersion}", 13, C.dim, FontWeight.Medium, 1)
                 Spacer(Modifier.height(6.d))
@@ -316,23 +350,12 @@ fun SettingsScreen() {
             }
         }
 
-        item {
-            Focusable({ advanced = !advanced }, Modifier.fillMaxWidth().padding(horizontal = 36.d, vertical = 6.d), RoundedCornerShape(16.d), 1.01f) { f ->
-                Row(
-                    Modifier.fillMaxWidth().background(if (f) C.cardHi else C.bg2).padding(horizontal = 16.d, vertical = 14.d),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text2("Разширени", 16, C.text, FontWeight.ExtraBold, 1)
-                        Text2("Диск и кеш, лек режим, торент режим, тракери, проверка на източниците, дневник", 11, C.dim, FontWeight.Normal, 1)
-                    }
-                    Text2(if (advanced) "▲" else "▼", 14, C.dim, FontWeight.Bold, 1)
-                }
-            }
+        if (section == "upd") item(key = "sig") {
+            Box(Modifier.fillMaxWidth().padding(top = 14.d, bottom = 6.d), contentAlignment = Alignment.Center) { Signature(large = true) }
         }
 
-        if (advanced) {
-            item {
+        if (ADV_TABS.any { it.first == section }) {
+            if (section == "disk") item(key = "disk") {
                 Group("Диск и скорост") {
                     val places = remember(cacheTick) { app.torrtv.core.Storage.places(ctx) }
                     var storageId by remember { mutableStateOf(prefs.storageId) }
@@ -411,7 +434,7 @@ fun SettingsScreen() {
                 }
             }
 
-            item {
+            if (section == "mem") item(key = "mem") {
                 Group("Памет и кеш") {
                     val mem by produceState(remember { CacheManager.memory(ctx) }) {
                         while (true) {
@@ -479,7 +502,7 @@ fun SettingsScreen() {
                 }
             }
 
-            item {
+            if (section == "lite") item(key = "lite") {
                 Group("Лек режим") {
                     Text2(
                         "За слаби телевизори: без анимации и с по-малки картинки. „Сам“ го включва там, където паметта е малко.",
@@ -506,7 +529,7 @@ fun SettingsScreen() {
                 }
             }
 
-            item {
+            if (section == "engine") item(key = "engine") {
                 Group("Торент режим") {
                     Text2(
                         "Ако филмът спира веднага след като тръгне, пробвай друг режим. След срив приложението го сменя автоматично, но можеш да избереш и ръчно.",
@@ -521,7 +544,7 @@ fun SettingsScreen() {
                 }
             }
 
-            item {
+            if (section == "trk") item(key = "trk") {
                 Group("Тракери") {
                     val checkedAt = remember(trkTick) { prefs.trackersCheckedAt }
                     val dead = remember(trkTick) { prefs.deadTrackers }
@@ -581,7 +604,7 @@ fun SettingsScreen() {
                 }
             }
 
-            item {
+            if (section == "diag") item(key = "diag") {
                 Group("Диагностика") {
                     Text2("Проверява торент сайтовете, субтитрите, тракерите и TMDB и показва кое не работи.", 12, C.dim, FontWeight.Normal, 2)
                     Spacer(Modifier.height(6.d))
@@ -618,7 +641,7 @@ fun SettingsScreen() {
                 }
             }
 
-            item {
+            if (section == "log") item(key = "log") {
                 Group("Дневник") {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.d)) {
                         PrimaryButton(if (logText == null) "Покажи дневника" else "Опресни", { logText = AppLog.text() }, primary = false)
@@ -632,9 +655,6 @@ fun SettingsScreen() {
             }
         }
 
-        item {
-            Box(Modifier.fillMaxWidth().padding(top = 18.d, bottom = 6.d), contentAlignment = Alignment.Center) { Signature(large = true) }
-        }
     }
 }
 

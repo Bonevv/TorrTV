@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -37,6 +38,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import app.torrtv.core.StreamFit
 import app.torrtv.core.Storage
 import app.torrtv.core.formatSize
@@ -166,17 +168,10 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
                     add(Triple(TAB_REC, "Подобни", ""))
                 }
                 val failedSubs = st.subStatus.entries.filter { it.value.startsWith("✗") }.map { it.key }.sorted()
-                LazyColumn(
-                    Modifier.width(214.d).fillMaxHeight()
-                        .clip(RoundedCornerShape(16.d)).background(Color(0xB30A0D14)).border(1.d, C.line, RoundedCornerShape(16.d)),
-                    contentPadding = PaddingValues(8.d),
-                    verticalArrangement = Arrangement.spacedBy(2.d)
-                ) {
+                SidePanel {
                     items(tabs, key = { it.first }) { (id, label, count) -> SideTab(label, count, tab == id) { tab = id } }
                     if (tab == TAB_TOR && (qOptions.size > 1 || siteList.size > 1)) {
-                        item(key = "fdiv") {
-                            Box(Modifier.padding(horizontal = 6.d, vertical = 6.d).fillMaxWidth().height(1.d).background(C.line))
-                        }
+                        panelDivider("fdiv")
                         if (qOptions.size > 1) item(key = "fq") {
                             FilterButton(
                                 "Качество",
@@ -365,7 +360,7 @@ internal fun FilterButton(label: String, value: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun PaneTitle(text: String, sub: String = "") {
+internal fun PaneTitle(text: String, sub: String = "") {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.width(3.d).height(16.d).clip(RoundedCornerShape(2.d)).background(C.accent))
         Spacer(Modifier.width(9.d))
@@ -552,13 +547,17 @@ private fun RecsPane(st: DetailState, onOpen: (Media) -> Unit) {
             } else if (recs.started && recs.exhausted) Text2("Няма подобни заглавия.", 13, C.dim, FontWeight.Normal, 1)
             else Box(Modifier.height(120.d)) { Spinner() }
         } else {
-            LazyRow(
-                state = rowState,
-                contentPadding = PaddingValues(horizontal = 6.d, vertical = 12.d),
-                horizontalArrangement = Arrangement.spacedBy(12.d)
-            ) {
-                items(recs.items, key = { it.key }) { m -> Poster(m, 112.d, { onOpen(m) }) }
-                if (recs.loading) item { Box(Modifier.width(60.d).height(168.d), contentAlignment = Alignment.Center) { Spinner(22.d) } }
+            BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+                // Плакатите растат с височината на мястото (между 100 и 150), за да не остава празно отдолу.
+                val pw = minOf(maxOf((maxHeight.value - 24.d.value) / 1.5f, 100.d.value), 150.d.value).dp
+                LazyRow(
+                    state = rowState,
+                    contentPadding = PaddingValues(horizontal = 6.d, vertical = 12.d),
+                    horizontalArrangement = Arrangement.spacedBy(12.d)
+                ) {
+                    items(recs.items, key = { it.key }) { m -> Poster(m, pw, { onOpen(m) }) }
+                    if (recs.loading) item { Box(Modifier.width(60.d).height(pw * 1.5f), contentAlignment = Alignment.Center) { Spinner(22.d) } }
+                }
             }
         }
     }
