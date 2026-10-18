@@ -1,5 +1,7 @@
 package app.torrtv.state
 
+import app.torrtv.core.Magnets
+import app.torrtv.core.TrackerCheck
 import app.torrtv.data.MediaType
 import app.torrtv.data.subs.SubtitleQuery
 import app.torrtv.data.torrents.SearchQuery
@@ -59,6 +61,9 @@ object Diagnostics {
             }
         }
 
+        report("— Тракери —")
+        checkTrackers(report)
+
         report("— TMDB —")
         try {
             val p = Graph.tmdb.list(MediaType.MOVIE, "popular", 1)
@@ -67,6 +72,23 @@ object Diagnostics {
             throw e
         } catch (e: Exception) {
             report("✗ TMDB: ${e.message}")
+        }
+    }
+
+    /** Проверява вградените тракери, запомня мъртвите и ги изключва от линковете (виж Magnets.ensureTrackers). */
+    suspend fun checkTrackers(report: (String) -> Unit) {
+        val res = TrackerCheck.checkAll(Magnets.trackers)
+        for (r in res) {
+            val n = TrackerCheck.shortName(r.url)
+            report(if (r.ok) "✓ $n: ${r.ms} ms" else "✗ $n: ${r.note}")
+        }
+        val dead = res.filter { !it.ok }.map { it.url }.toSet()
+        Graph.prefs.saveDeadTrackers(dead)
+        Magnets.setDead(dead)
+        when {
+            dead.isEmpty() -> report("Всички тракери отговарят.")
+            dead.size >= res.size -> report("Нито един не отговори - най-вероятно няма UDP връзка. Нищо не се изключва.")
+            else -> report("Мъртвите (${dead.size}) се прескачат при пускане. Нова проверка ги връща, ако са оживели.")
         }
     }
 }

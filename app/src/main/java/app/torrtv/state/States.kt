@@ -107,6 +107,7 @@ class HomeState {
         Row("trend", "В тренда тази седмица") { p -> Graph.tmdb.trending(p) },
         Row("pop_m", "Популярни филми") { p -> Graph.tmdb.list(MediaType.MOVIE, "popular", p) },
         Row("pop_t", "Популярни сериали") { p -> Graph.tmdb.list(MediaType.TV, "popular", p) },
+        Row("soon", "Скоро по кината") { p -> Graph.tmdb.list(MediaType.MOVIE, "upcoming", p) },
         Row("top_m", "Най-високо оценени филми") { p -> Graph.tmdb.list(MediaType.MOVIE, "top_rated", p) },
         Row("top_t", "Най-добрите сериали") { p -> Graph.tmdb.list(MediaType.TV, "top_rated", p) },
         genreRow(28, "Екшън"),
@@ -198,7 +199,17 @@ class SearchState {
     var focusKey: String? = null
     private var job: Job? = null
 
-    fun onQuery(q: String) {
+    /** Последните търсения (до 8) - за бързи бутони, когато полето е празно. */
+    val recent = mutableStateListOf<String>()
+
+    /** Расте всеки път, когато от телефона дойде ново търсене (екранът го ползва, за да се отвори търсенето). */
+    var remoteStamp by mutableStateOf(0)
+
+    init {
+        recent.addAll(RecentSearches.decode(Graph.prefs.recentSearches))
+    }
+
+    fun onQuery(q: String, delayMs: Long = 450L) {
         query = q
         job?.cancel()
         val t = q.trim()
@@ -207,15 +218,47 @@ class SearchState {
             return
         }
         job = Graph.scope.launch {
-            delay(450)
+            if (delayMs > 0) delay(delayMs)
             val p = Paged<Media>(120, { page -> Graph.tmdb.search(t, page) }) { it.key }
             paged = p
             p.loadNext()
         }
     }
+
+    /** Запомня търсенето в списъка с последните (вика се при потвърждаване и при отваряне на резултат). */
+    fun commit(q: String = query) {
+        val l = RecentSearches.add(recent.toList(), q)
+        if (l == recent.toList()) return
+        recent.clear()
+        recent.addAll(l)
+        Graph.prefs.recentSearches = RecentSearches.encode(l)
+    }
+
+    fun clearRecent() {
+        recent.clear()
+        Graph.prefs.recentSearches = ""
+    }
+
+    /** Избрано от последните търсения: търси веднага. */
+    fun pick(q: String) {
+        onQuery(q, 0L)
+        commit(q)
+    }
+
+    /** Дошло от страницата на телефона. */
+    fun fromPhone(q: String) {
+        val t = RecentSearches.clean(q) ?: return
+        onQuery(t, 0L)
+        commit(t)
+        remoteStamp++
+    }
 }
 
 class DiceState {
+    /** „Зарче за двама“ (виж PairDiceState): включва се от бутона „За двама“. */
+    var pairMode by mutableStateOf(false)
+    val pair = PairDiceState()
+
     var type by mutableStateOf(MediaType.MOVIE)
     var genre by mutableStateOf<Int?>(null) // null = "Изненада ме"
     var minRating by mutableStateOf(0)
@@ -298,7 +341,11 @@ class DiceState {
     }
 }
 
-class DetailState(val type: MediaType, val id: Int) {
+/**
+ * [deferTorrents] - отворено е от „Продължи гледане“: торентът вече е известен, затова търсенето в сайтовете се
+ * отлага, докато не потрябва ([ensureTorrents]). Така продължаването не пуска излишно 5-8 заявки.
+ */
+class DetailState(val type: MediaType, val id: Int, private val deferTorrents: Boolean = false) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var torrentJob: Job? = null
     private var subJob: Job? = null
@@ -342,7 +389,7 @@ class DetailState(val type: MediaType, val id: Int) {
                     }
                     loadEpisodes()
                 }
-                loadTorrents()
+                if (!deferTorrents) loadTorrents()
                 loadSubs()
             } catch (e: CancellationException) {
                 throw e
@@ -386,8 +433,16 @@ class DetailState(val type: MediaType, val id: Int) {
         )
     }
 
+    private var torrentsRequested = false
+
+    /** Пуска търсенето на торенти, ако още не е пускано (при „Продължи“ то се отлага). */
+    fun ensureTorrents() {
+        if (!torrentsRequested && detail != null) loadTorrents()
+    }
+
     fun loadTorrents() {
         val q = searchQuery() ?: return
+        torrentsRequested = true
         torrentJob?.cancel()
         torrentUpdates.clear()
         torrentStatus.clear()
@@ -473,18 +528,21 @@ class DetailState(val type: MediaType, val id: Int) {
         return SubRank.rank(subResults, order, hint, prefer)
     }
 
-    /** Етикет на следващия епизод („S01E04 · Име“) или null: филм, последен епизод или още неизлязъл. */
-    fun nextLabel(): String? {
+    class NextTarget(val season: Int, val episode: Int, val label: String)
+
+    /** Следващият епизод (сезон, епизод, етикет „S01E04 · Име“) или null: филм, последен епизод или още неизлязъл. */
+    fun nextTarget(): NextTarget? {
         val d = detail ?: return null
         if (type != MediaType.TV) return null
         val n = NextEpisode.after(episodes.map { it.number }, episode)
         if (n != null) {
             val ep = episodes.first { it.number == n }
-            return if (NextEpisode.aired(ep.airDate, NextEpisode.today())) NextEpisode.label(season, n, ep.name) else null
+            return if (NextEpisode.aired(ep.airDate, NextEpisode.today())) NextTarget(season, n, NextEpisode.label(season, n, ep.name)) else null
         }
         val ns = NextEpisode.nextSeason(d.seasons.map { it.number }, season) ?: return null
-        return NextEpisode.label(ns, 1, "")
+        return NextTarget(ns, 1, NextEpisode.label(ns, 1, ""))
     }
+
 
     /**
      * Заявка за следващия епизод: премества избора на него (така и екранът се връща на правилния епизод),
@@ -513,12 +571,12 @@ class DetailState(val type: MediaType, val id: Int) {
     private suspend fun awaitTorrent(prev: TorrentResult?): TorrentResult? {
         val t0 = System.currentTimeMillis()
         while (System.currentTimeMillis() - t0 < 30_000) {
-            val c = NextEpisode.choose(prev, torrents)
+            val c = NextEpisode.choose(prev, torrents, Graph.prefs.player == "builtin")
             if (!searching) return c
             if (c != null && System.currentTimeMillis() - t0 > 7_000) return c
             delay(300)
         }
-        return NextEpisode.choose(prev, torrents)
+        return NextEpisode.choose(prev, torrents, Graph.prefs.player == "builtin")
     }
 
     /** Най-доброто съвпадение на намерените субтитри с този торент (за белега в списъка). */
@@ -569,7 +627,7 @@ class DetailState(val type: MediaType, val id: Int) {
             resumeMs = resumeMs,
             allSubs = all.take(40),
             fitTitle = fitTitle,
-            next = if (t != null) nextLabel()?.let { label -> StreamController.NextEp(label) { nextRequest(t) } } else null
+            next = if (t != null) nextTarget()?.let { nt -> StreamController.NextEp(nt.label, nt.season, nt.episode) { nextRequest(t) } } else null
         )
     }
 }

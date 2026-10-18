@@ -48,6 +48,7 @@ import app.torrtv.data.Genres
 import app.torrtv.data.Media
 import app.torrtv.data.MediaType
 import app.torrtv.data.Tmdb
+import app.torrtv.state.Library
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.delay
@@ -226,6 +227,8 @@ fun Poster(
         RatingBadge(media.rating, Modifier.align(Alignment.TopEnd).padding(5.d))
         if (media.type == MediaType.TV) {
             Box(Modifier.align(Alignment.TopStart).padding(5.d)) { Pill("СЕРИАЛ", Color(0xCC000000), C.accent2) }
+        } else if (Library.watched.containsKey(media.key)) {
+            Box(Modifier.align(Alignment.TopStart).padding(5.d)) { Pill("✓ гледан", Color(0xCC000000), C.green) }
         }
         if (f) {
             Box(

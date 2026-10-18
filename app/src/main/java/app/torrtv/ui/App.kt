@@ -26,6 +26,7 @@ import app.torrtv.torrent.StreamController.Stage
 
 /** Брой раздели в страничния панел (виж SideRail); 6 е "Настройки". */
 private const val TAB_COUNT = 7
+private const val TAB_SEARCH = 5
 private const val TAB_SETTINGS = 6
 
 /** Отворен диалог за пускане: за кой екран, кой торент и от коя секунда да продължи (0 = отначало). */
@@ -33,8 +34,9 @@ private class Sheet(val st: DetailState, val t: TorrentResult, val resumeMs: Lon
 
 @Composable
 fun App() {
-    // Лекият режим се чете веднъж при старт (преди първия кадър).
-    remember { Look.lite = Graph.prefs.lite; 0 }
+    // Лекият режим се чете веднъж при старт (преди първия кадър): избраното от потребителя или, по подразбиране, според устройството.
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    remember { Look.lite = Graph.prefs.liteOn(app.torrtv.core.Device.isWeak(ctx)); 0 }
     var tab by remember { mutableStateOf(0) }
     val stack = remember { mutableStateListOf<DetailState>() }
     var sheet by remember { mutableStateOf<Sheet?>(null) }
@@ -47,18 +49,17 @@ fun App() {
 
     LaunchedEffect(Unit) { home.checkUpdate() }
 
-    // Автоматично чистене на кеша на всеки 15 минути (по зададения интервал в Настройки) и показване на RAM.
-    val ctx = androidx.compose.ui.platform.LocalContext.current
-    val ramMb by androidx.compose.runtime.produceState(0) {
-        var n = 0
+    // Дума, изпратена от страницата на телефона: отваря се търсенето и се показват резултатите.
+    val remote = Graph.search.remoteStamp
+    LaunchedEffect(remote) { if (remote > 0 && stack.isEmpty()) tab = TAB_SEARCH }
+
+    // Автоматично чистене на кеша на всеки 15 минути (по зададения интервал и лимит в Настройки).
+    LaunchedEffect(Unit) {
         while (true) {
-            value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { CacheManager.memory(ctx).totalMb }
-            if (n++ % 90 == 0) {
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    CacheManager.maybeAutoClean(ctx, Graph.stream.ui.stage != Stage.IDLE)
-                }
+            kotlinx.coroutines.delay(15 * 60_000L)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                CacheManager.maybeAutoClean(ctx, Graph.stream.ui.stage != Stage.IDLE)
             }
-            kotlinx.coroutines.delay(10_000)
         }
     }
 
@@ -70,9 +71,9 @@ fun App() {
         }
     }
 
-    fun open(m: Media) {
+    fun open(m: Media, deferTorrents: Boolean = false) {
         if (stack.size >= 8) stack.removeAt(0).cancel()
-        stack.add(DetailState(m.type, m.id))
+        stack.add(DetailState(m.type, m.id, deferTorrents))
     }
 
     fun pop() {
@@ -81,9 +82,16 @@ fun App() {
     }
 
     fun resume(p: Library.Progress) {
-        open(p.media)
+        if (p.nextUp) {
+            // Следва нов епизод: отваря се страницата на сериала точно на него (виж DetailState.start).
+            open(p.media)
+            return
+        }
+        // Торентът е известен - търсенето в сайтовете се отлага, докато не потрябва.
+        open(p.media, deferTorrents = true)
         pending = p
     }
+
 
     val topDetail = stack.lastOrNull()?.detail
     LaunchedEffect(topDetail, pending) {
@@ -95,12 +103,14 @@ fun App() {
         }
     }
 
-    BackHandler(enabled = sheet != null || streaming || stack.isNotEmpty() || tab != 0) {
+    // Назад от Начало пита същото като бутона "Изход", вместо да излиза тихо и да оставя процеса в паметта.
+    BackHandler(enabled = true) {
         when {
             sheet != null -> sheet = null
             streaming -> Graph.stream.close()
             stack.isNotEmpty() -> pop()
-            else -> tab = 0
+            tab != 0 -> tab = 0
+            else -> exitAsk = true
         }
     }
 
@@ -111,13 +121,14 @@ fun App() {
         } else if (top != null) {
             DetailScreen(
                 top, onOpen = { open(it) },
-                onPlay = { t, at -> sheet = Sheet(top, t, at) }
+                onPlay = { t, at -> sheet = Sheet(top, t, at) },
+                sheetOpen = sheet != null || pending != null
             )
         } else {
             Row(Modifier.fillMaxSize()) {
                 SideRail(
                     selected = tab, settingsTab = TAB_SETTINGS, onSelect = { tab = it }, focus = tabFocus,
-                    updateReady = home.update != null, ramMb = ramMb, onExit = { exitAsk = true }
+                    updateReady = home.update != null, onExit = { exitAsk = true }
                 )
                 // Началото е с банер до горния ръб; другите екрани получават малък отстъп отгоре.
                 Box(Modifier.weight(1f).fillMaxHeight().padding(top = if (tab == 0) 0.d else 14.d).stayInContent()) {
@@ -127,7 +138,7 @@ fun App() {
                         2 -> BrowseScreen(Graph.browseTv, ::open)
                         3 -> FavoritesScreen(::open)
                         4 -> DiceScreen(Graph.dice, ::open)
-                        5 -> SearchScreen(Graph.search, ::open)
+                        TAB_SEARCH -> SearchScreen(Graph.search, ::open)
                         else -> SettingsScreen()
                     }
                 }

@@ -76,9 +76,23 @@ class TorrentAggregator(private val prefs: Prefs) {
             )
         }
 
-        /** Оценка на торент: качество, сийдъри и разумен размер. По-голямо = по-добре. */
-        fun score(r: TorrentResult): Int {
-            val q = when (r.quality) {
+        /** Звукът, който вграденият плеър на много устройства пуска без звук. */
+        fun hardAudio(r: TorrentResult): Boolean = "DTS" in r.tags || "TrueHD" in r.tags
+
+        /** Колко точки губи торент с DTS/TrueHD, когато се гледа във вградения плеър: повече от всичко друго, освен липсата на алтернатива. */
+        const val HARD_AUDIO_PENALTY = 150
+
+        /** Колко точки губи торент, за който измерените скорости казват, че ще буферира. */
+        const val SLOW_PENALTY = 50
+
+        /**
+         * Оценка на торент - една за всички места, където приложението само избира торент („Гледай“, следващ епизод).
+         * Сийдъри (до 120) плюс качество (то се брои само при поне 5 сийдъра, иначе няма да върви гладко) и минус за
+         * нереален размер. При [builtinPlayer] торентите с DTS/TrueHD се наказват силно, за да се избере такъв със звук.
+         * По-голямо = по-добре.
+         */
+        fun score(r: TorrentResult, builtinPlayer: Boolean = false): Int {
+            val q = if (r.seeders in 0..4) 0 else when (r.quality) {
                 "1080p" -> 40
                 "720p" -> 28
                 "4K" -> 18
@@ -86,7 +100,8 @@ class TorrentAggregator(private val prefs: Prefs) {
                 else -> 0
             }
             val sizeOk = if (r.size in 1..(25L * 1024 * 1024 * 1024)) 0 else -20
-            return minOf(r.seeders, 120) + q + sizeOk
+            val audio = if (builtinPlayer && hardAudio(r)) -HARD_AUDIO_PENALTY else 0
+            return minOf(r.seeders, 120) + q + sizeOk + audio
         }
     }
 }

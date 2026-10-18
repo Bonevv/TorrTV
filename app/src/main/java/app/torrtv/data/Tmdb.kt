@@ -135,7 +135,7 @@ class Tmdb(private val prefs: Prefs, diskDir: File? = null) {
     suspend fun trending(page: Int): Page<Media> =
         parsePage(call("/trending/all/week", mapOf("page" to page.toString())), null)
 
-    /** kind: popular | top_rated | now_playing | on_the_air */
+    /** kind: popular | top_rated | now_playing | on_the_air | upcoming */
     suspend fun list(type: MediaType, kind: String, page: Int): Page<Media> =
         parsePage(call("/${type.path}/$kind", mapOf("page" to page.toString())), type)
 

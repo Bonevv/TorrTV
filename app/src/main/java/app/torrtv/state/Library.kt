@@ -2,6 +2,7 @@ package app.torrtv.state
 
 import android.content.Context
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import app.torrtv.data.Media
 import app.torrtv.data.MediaType
 import app.torrtv.data.torrents.TorrentResult
@@ -30,7 +31,9 @@ object Library {
         val size: Long,
         val quality: String,
         val source: String,
-        val tags: List<String>
+        val tags: List<String>,
+        /** Истина за запис „Следва“: предишният епизод е изгледан, този още не е почнат (няма торент и позиция). */
+        val nextUp: Boolean = false
     ) {
         val fraction: Float get() = if (durMs > 0) (posMs.toFloat() / durMs).coerceIn(0f, 1f) else 0f
 
@@ -41,6 +44,7 @@ object Library {
         )
 
         fun label(): String {
+            if (nextUp) return "Следва С$season Е$episode"
             val ep = if (media.type == MediaType.TV) "С$season Е$episode · " else ""
             return ep + fmt(posMs) + if (durMs > 0) " от " + fmt(durMs) else ""
         }
@@ -48,6 +52,9 @@ object Library {
 
     val favorites = mutableStateListOf<Media>()
     val progress = mutableStateListOf<Progress>()
+
+    /** Изгледаните филми и епизоди (ключ -> кога). Виж [WatchedLog]. */
+    val watched = mutableStateMapOf<String, Long>()
 
     private const val MAX_PROGRESS = 5
     private const val MAX_FAV = 300
@@ -65,6 +72,10 @@ object Library {
             for (i in 0 until p.length()) progressFrom(p.getJSONObject(i))?.let { progress.add(it) }
             // По-старите записи над лимита (най-новите са първи) се отрязват.
             while (progress.size > MAX_PROGRESS) progress.removeAt(progress.size - 1)
+        } catch (_: Exception) {
+        }
+        try {
+            watched.putAll(WatchedLog.decode(sp().getString("watched", "") ?: ""))
         } catch (_: Exception) {
         }
     }
@@ -93,11 +104,11 @@ object Library {
     /** Вика се от вградения плеър на всеки няколко секунди и при затваряне. */
     fun saveProgress(req: StreamController.Req, posMs: Long, durMs: Long) {
         val m = req.media ?: return
-        val t = req.torrent ?: return
         if (durMs > 0 && posMs > durMs * 0.93) {
-            finish(m.key) // изгледан до края - вече не е за продължаване
+            completed(req) // изгледано до края - вече не е за продължаване
             return
         }
+        val t = req.torrent ?: return
         if (posMs < 45_000) return // първите секунди не се броят за "започнато"
         val p = Progress(
             media = m, season = req.season ?: 0, episode = req.episode ?: 0,
@@ -125,6 +136,53 @@ object Library {
         }
     }
 
+    // ---------- Изгледано ----------
+
+    fun watchedKey(m: Media, season: Int?, episode: Int?): String =
+        if (m.type == MediaType.TV) WatchedLog.epKey(m.key, season ?: 0, episode ?: 0) else m.key
+
+    fun isWatched(m: Media, season: Int? = null, episode: Int? = null): Boolean =
+        watched.containsKey(watchedKey(m, season, episode))
+
+    /** Отбелязва (или маха отметката). Връща новото състояние. */
+    fun setWatched(m: Media, season: Int?, episode: Int?, on: Boolean) {
+        val k = watchedKey(m, season, episode)
+        if (on) {
+            if (!watched.containsKey(k)) watched[k] = System.currentTimeMillis()
+            for (old in WatchedLog.overflow(watched)) watched.remove(old)
+        } else {
+            watched.remove(k)
+        }
+        saveWatched()
+    }
+
+    /**
+     * Края на филм или епизод. Отбелязва го като изгледан; за сериал оставя в „Продължи гледане“ запис „Следва ...“
+     * със следващия епизод (ако има такъв), за филм - маха записа. Безопасно е да се вика няколко пъти.
+     */
+    fun completed(req: StreamController.Req) {
+        val m = req.media ?: return
+        setWatched(m, req.season, req.episode, true)
+        val i = progress.indexOfFirst { it.media.key == m.key }
+        val nx = req.next
+        if (m.type == MediaType.TV && nx != null) {
+            val cur = progress.getOrNull(i)
+            if (cur != null && cur.nextUp && cur.season == nx.season && cur.episode == nx.episode) return
+            val p = Progress(
+                media = m, season = nx.season, episode = nx.episode, epName = nx.label, posMs = 0, durMs = 0,
+                updated = System.currentTimeMillis(), tTitle = "", magnet = "", hash = "", size = 0,
+                quality = "", source = "", tags = emptyList(), nextUp = true
+            )
+            if (i >= 0) progress.removeAt(i)
+            progress.add(0, p)
+            while (progress.size > MAX_PROGRESS) progress.removeAt(progress.size - 1)
+            saveProg()
+        } else if (i >= 0) {
+            progress.removeAt(i)
+            saveProg()
+        }
+    }
+
     fun fmt(ms: Long): String = fmtTime(ms)
 
     // ---------- Запис и четене ----------
@@ -134,6 +192,13 @@ object Library {
             val a = JSONArray()
             favorites.forEach { a.put(mediaTo(it)) }
             sp().edit().putString("fav", a.toString()).apply()
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun saveWatched() {
+        try {
+            sp().edit().putString("watched", WatchedLog.encode(watched)).apply()
         } catch (_: Exception) {
         }
     }
@@ -197,19 +262,22 @@ object Library {
         put("q", p.quality)
         put("src", p.source)
         put("tags", JSONArray(p.tags))
+        if (p.nextUp) put("nu", true)
     }
 
     internal fun progressFrom(o: JSONObject): Progress? {
         val m = mediaFrom(o.optJSONObject("m") ?: return null) ?: return null
         val magnet = o.optString("mg")
-        if (magnet.isBlank()) return null
+        val nu = o.optBoolean("nu", false)
+        if (magnet.isBlank() && !nu) return null
         val tg = o.optJSONArray("tags")
         return Progress(
             media = m, season = o.optInt("s"), episode = o.optInt("e"), epName = o.optString("en"),
             posMs = o.optLong("pos"), durMs = o.optLong("dur"), updated = o.optLong("up"),
             tTitle = o.optString("tt"), magnet = magnet, hash = o.optString("h"), size = o.optLong("sz"),
             quality = o.optString("q"), source = o.optString("src"),
-            tags = List(tg?.length() ?: 0) { tg!!.optString(it) }
+            tags = List(tg?.length() ?: 0) { tg!!.optString(it) },
+            nextUp = nu
         )
     }
 }

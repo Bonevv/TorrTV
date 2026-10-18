@@ -24,7 +24,10 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
@@ -40,8 +43,10 @@ import androidx.compose.ui.text.input.ImeAction
 import app.torrtv.data.Genres
 import app.torrtv.data.Media
 import app.torrtv.state.BrowseState
+import app.torrtv.state.Graph
 import app.torrtv.state.Paged
 import app.torrtv.state.SearchState
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** Мрежа с плакати и безкрайно зареждане (до тавана на Paged). */
@@ -119,6 +124,11 @@ fun BrowseScreen(st: BrowseState, onOpen: (Media) -> Unit) {
 fun SearchScreen(st: SearchState, onOpen: (Media) -> Unit) {
     val kb = LocalSoftwareKeyboardController.current
     val inputFocus = remember { FocusRequester() }
+    // Страницата за телефона работи и докато е отворено търсенето: оттам може да се напише думата.
+    DisposableEffect(Unit) {
+        Graph.config.start()
+        onDispose { Graph.config.stop() }
+    }
     Column(Modifier.fillMaxSize()) {
         Focusable({ inputFocus.requestFocus(); kb?.show() }, Modifier.padding(horizontal = 36.d, vertical = 8.d).fillMaxWidth(), RoundedCornerShape(14.d), 1.01f) { f ->
             Row(
@@ -134,7 +144,7 @@ fun SearchScreen(st: SearchState, onOpen: (Media) -> Unit) {
                     textStyle = TextStyle(color = C.text, fontSize = 18.t),
                     cursorBrush = SolidColor(C.accent2),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { kb?.hide() }),
+                    keyboardActions = KeyboardActions(onSearch = { kb?.hide(); st.commit() }),
                     modifier = Modifier.fillMaxWidth().focusRequesterCompat(inputFocus),
                     decorationBox = { inner ->
                         if (st.query.isEmpty()) Text2("Търси филм или сериал (OK отваря клавиатурата)", 16, C.dim, FontWeight.Normal, 1)
@@ -145,12 +155,44 @@ fun SearchScreen(st: SearchState, onOpen: (Media) -> Unit) {
         }
         val p = st.paged
         if (p == null) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text2("Въведи поне 2 букви.", 14, C.dim, FontWeight.Medium, 1)
+            Column(Modifier.fillMaxSize().padding(horizontal = 36.d, vertical = 14.d)) {
+                if (st.recent.isNotEmpty()) {
+                    Text2("Последни търсения", 13, C.dim, FontWeight.Bold, 1)
+                    Spacer(Modifier.height(6.d))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.d)) {
+                        items(st.recent.toList(), key = { it }) { s -> Chip(s, false, { st.pick(s) }) }
+                        item(key = "\u0001clear") { Chip("Изчисти", false, { st.clearRecent() }, compact = true) }
+                    }
+                    Spacer(Modifier.height(20.d))
+                }
+                PhoneSearchHint()
+                Spacer(Modifier.height(20.d))
+                Text2("Въведи поне 2 букви.", 13, C.dim, FontWeight.Medium, 1)
             }
         } else {
-            PosterGrid(p, st.gridState, { st.focusKey }, { st.focusKey = it }, onOpen)
+            PosterGrid(p, st.gridState, { st.focusKey }, { st.focusKey = it }, { st.commit(); onOpen(it) })
         }
+    }
+}
+
+/** Как да се търси от телефона: адресът на страницата и ПИН-ът. */
+@Composable
+private fun PhoneSearchHint() {
+    val tick by produceState(0) {
+        while (true) {
+            delay(1500)
+            value += 1
+        }
+    }
+    val addrs = remember(tick / 4) { Graph.config.addresses() }
+    val port = Graph.config.port
+    Text2("Или пиши от телефона", 13, C.dim, FontWeight.Bold, 1)
+    Spacer(Modifier.height(4.d))
+    if (addrs.isEmpty()) {
+        Text2("Телевизорът не е свързан към мрежа.", 12, C.dim, FontWeight.Normal, 1)
+    } else if (port != 0) {
+        Text2("Отвори на телефона (в същата Wi-Fi мрежа): http://${addrs.first()}:$port", 15, C.accent2, FontWeight.Bold, 2)
+        Text2("ПИН: ${Graph.config.pin}", 15, C.gold, FontWeight.Bold, 1)
     }
 }
 

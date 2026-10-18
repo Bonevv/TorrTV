@@ -85,9 +85,11 @@ fun ContinueCard(p: Library.Progress, onClick: () -> Unit, onFocus: () -> Unit) 
                 m.title, 12, C.text, FontWeight.Bold, 1,
                 Modifier.align(Alignment.BottomStart).padding(start = 9.d, end = 9.d, bottom = 10.d)
             )
-            // лентата за изгледаното
-            Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.d).background(Color(0x66FFFFFF))) {
-                Box(Modifier.fillMaxHeight().fillMaxWidth(p.fraction.coerceIn(0.03f, 1f)).background(C.accent))
+            // лентата за изгледаното (при „Следва“ още няма какво да се покаже)
+            if (!p.nextUp) {
+                Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.d).background(Color(0x66FFFFFF))) {
+                    Box(Modifier.fillMaxHeight().fillMaxWidth(p.fraction.coerceIn(0.03f, 1f)).background(C.accent))
+                }
             }
         }
         Spacer(Modifier.height(5.d))

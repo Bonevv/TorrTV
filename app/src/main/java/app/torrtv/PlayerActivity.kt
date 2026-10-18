@@ -36,6 +36,8 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.SubtitleView
+import app.torrtv.core.AppLog
+import app.torrtv.core.endsAtText
 import app.torrtv.core.formatSpeed
 import app.torrtv.data.subs.Fit
 import app.torrtv.data.subs.Langs
@@ -45,6 +47,7 @@ import app.torrtv.data.subs.SubShift
 import app.torrtv.data.subs.SubtitleResult
 import app.torrtv.state.Graph
 import app.torrtv.state.Library
+import app.torrtv.torrent.ExternalPlayers
 import app.torrtv.torrent.StreamController
 import app.torrtv.torrent.LocalSub
 import kotlin.concurrent.thread
@@ -70,6 +73,12 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var nextBtn: TextView
     private lateinit var nextInfo: TextView
     private lateinit var seekInfo: TextView
+    private lateinit var popInfo: TextView
+    private lateinit var popBtn: TextView
+    /** Докога трае „Пауза за пуканки“ (elapsedRealtime); 0 = няма пауза. */
+    private var popcornUntil = 0L
+    private var swallowKey = -1
+    private var visible = false
     /** Кой стрийм е бил пуснат при отварянето на този плеър (виж onDestroy). */
     private var myToken = 0
     private var nextLeft = -1 // секунди до автоматичното пускане на следващия епизод; -1 = не тече
@@ -91,6 +100,7 @@ class PlayerActivity : AppCompatActivity() {
             updateStats()
             if (++tickN % 10 == 0) saveProgress()
             checkSleep()
+            checkPopcorn()
             updateNext()
             handler.postDelayed(this, 1000)
         }
@@ -136,6 +146,8 @@ class PlayerActivity : AppCompatActivity() {
         })
         seekInfo = overlayText(22f).apply { gravity = Gravity.CENTER }
         root.addView(seekInfo, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+        popInfo = overlayText(24f).apply { gravity = Gravity.CENTER }
+        root.addView(popInfo, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
         buildSyncBar()
         root.addView(syncBar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END).apply {
             setMargins(0, 32, 32, 0)
@@ -185,18 +197,14 @@ class PlayerActivity : AppCompatActivity() {
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_READY) checkSubs()
                 if (state == Player.STATE_ENDED) {
-                    // Изгледано до края - вече не е за "Продължи гледане".
+                    // Изгледано до края: отбелязва се като гледано, а за сериал в "Продължи гледане" остава следващият епизод.
                     Graph.stream.resumeFrom = 0L
-                    req?.media?.let { Library.finish(it.key) }
+                    req?.let { Library.completed(it) }
                 }
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                Toast.makeText(
-                    this@PlayerActivity,
-                    "Не може да се възпроизведе (${error.errorCodeName}). Ако е заради звука (DTS/AC3), пробвай с VLC, MX Player или Just Player.",
-                    Toast.LENGTH_LONG
-                ).show()
+                showPlayError(error)
             }
         })
         view.setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { vis ->
@@ -222,6 +230,73 @@ class PlayerActivity : AppCompatActivity() {
         handler.post(tick)
     }
 
+
+    // ---- Грешка във вградения плеър ----
+
+    private var errorShown = false
+
+    /** Потокът е предаден на външен плеър: той още чете от нашия сървър, затова при излизане не се затваря. */
+    private var handedOff = false
+
+    /** Казва каква е вероятната причина и предлага външен плеър, ако на устройството има такъв. */
+    private fun showPlayError(e: PlaybackException) {
+        if (isFinishing || isDestroyed || errorShown) return
+        errorShown = true
+        AppLog.d("player", "грешка в плеъра: ${e.errorCodeName}")
+        // Кодове 3xxx-5xxx: файлът или кодекът (най-често звукът); 2xxx: връзката.
+        val codec = e.errorCode in 3000..5999
+        val ext = ExternalPlayers.installed(this)
+        val text = if (codec) {
+            "Вграденият плеър не може да пусне този файл. Най-често причината е звукът (DTS или TrueHD). " +
+                if (ext.isNotEmpty()) "Във външен плеър обикновено работи."
+                else "На това устройство няма външен плеър. VLC или MX Player се вземат от магазина за приложения."
+        } else {
+            "Възпроизвеждането спря. Провери връзката и опитай пак." +
+                if (ext.isNotEmpty()) " Може да пробваш и външен плеър." else ""
+        }
+        val b = AlertDialog.Builder(this)
+            .setTitle("Видеото не се пуска")
+            .setMessage(text)
+            .setNegativeButton("Затвори") { _, _ -> finish() }
+            .setNeutralButton("Опитай пак") { _, _ ->
+                errorShown = false
+                player?.prepare()
+            }
+            .setOnCancelListener { errorShown = false }
+        if (ext.isNotEmpty()) b.setPositiveButton("Външен плеър") { _, _ -> chooseExternal(ext) }
+        b.show()
+    }
+
+    private fun chooseExternal(list: List<ExternalPlayers.P>) {
+        if (list.size == 1) {
+            openExternal(list[0])
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Избери плеър")
+            .setItems(list.map { it.label }.toTypedArray()) { _, i -> openExternal(list[i]) }
+            .setOnCancelListener { errorShown = false }
+            .show()
+    }
+
+    /** Подава същия поток на външния плеър, от мястото докъдето е стигнато, и затваря вградения плеър. */
+    private fun openExternal(p: ExternalPlayers.P) {
+        val pb = Graph.stream.playback
+        val pos = (player?.currentPosition ?: 0L).coerceAtLeast(0L)
+        val ok = pb != null && try {
+            ExternalPlayers.launch(this, p.id, pb, if (pos > 10_000) pos else 0L)
+        } catch (e: Exception) {
+            false
+        }
+        if (ok) {
+            Graph.stream.resumeFrom = pos
+            handedOff = true
+            finish()
+        } else {
+            errorShown = false
+            Toast.makeText(this, "${p.label} не се отвори.", Toast.LENGTH_LONG).show()
+        }
+    }
 
     private fun buildItem(url: String, subsList: List<LocalSub>, defaultIdx: Int): MediaItem {
         val subs = subsList.mapIndexed { i, s ->
@@ -400,6 +475,11 @@ class PlayerActivity : AppCompatActivity() {
         topRow.addView(subsBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             rightMargin = 16
         })
+        // Пауза за пуканки: 5 минути, после филмът продължава сам (или по-рано с произволен бутон).
+        popBtn = pill("Пауза за пуканки") { startPopcorn() }
+        topRow.addView(popBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            rightMargin = 16
+        })
         // Таймер за заспиване: натискане сменя 30 → 60 → 90 → 120 мин → изключен.
         sleepBtn = pill("") { cycleSleep() }
         showSleep()
@@ -454,6 +534,37 @@ class PlayerActivity : AppCompatActivity() {
         showOffset()
     }
 
+    // ---- Пауза за пуканки ----
+
+    private val popcornMs = 5 * 60_000L
+
+    private fun startPopcorn() {
+        val p = player ?: return
+        p.pause()
+        popcornUntil = SystemClock.elapsedRealtime() + popcornMs
+        showPopcorn()
+        // След клика на бутона лентата с контролите се показва пак - махаме я, за да остане само надписът.
+        handler.post { view.hideController() }
+    }
+
+    private fun showPopcorn() {
+        val left = ((popcornUntil - SystemClock.elapsedRealtime() + 999) / 1000).coerceAtLeast(0)
+        popInfo.text = "Пауза за пуканки\nФилмът продължава след ${left / 60}:${String.format("%02d", left % 60)}\nНатисни произволен бутон, за да продължи веднага"
+        popInfo.visibility = View.VISIBLE
+    }
+
+    /** Приключва паузата. [resume] - дали филмът да продължи (не, ако приложението е излязло от екрана). */
+    private fun endPopcorn(resume: Boolean) {
+        popcornUntil = 0L
+        popInfo.visibility = View.GONE
+        if (resume) player?.play()
+    }
+
+    private fun checkPopcorn() {
+        if (popcornUntil == 0L) return
+        if (SystemClock.elapsedRealtime() >= popcornUntil) endPopcorn(visible) else showPopcorn()
+    }
+
     // ---- Таймер за заспиване ----
 
     private val sleepSteps = intArrayOf(0, 30, 60, 90, 120)
@@ -500,6 +611,16 @@ class PlayerActivity : AppCompatActivity() {
 
     /** Всеки бутон в последната минута удължава таймера с 30 минути. */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // Докато трае паузата за пуканки, първият бутон само я прекратява (и не прави нищо друго).
+        if (popcornUntil != 0L && event.action == KeyEvent.ACTION_DOWN) {
+            swallowKey = event.keyCode
+            endPopcorn(true)
+            return true
+        }
+        if (event.action == KeyEvent.ACTION_UP && event.keyCode == swallowKey) {
+            swallowKey = -1
+            return true
+        }
         if (event.action == KeyEvent.ACTION_DOWN && sleepAt != 0L && event.repeatCount == 0) {
             val left = sleepAt - SystemClock.elapsedRealtime()
             if (left in 1..60_000L) {
@@ -710,16 +831,22 @@ class PlayerActivity : AppCompatActivity() {
             stats.visibility = View.GONE
             return
         }
+        // Кога ще свърши филмът (само докато се вижда лентата с контролите).
+        val endsLine = if (p.duration != C.TIME_UNSET && p.duration > 0 && view.isControllerFullyVisible)
+            endsAtText(System.currentTimeMillis(), p.duration - p.currentPosition) else ""
         val web = Graph.stream.playback?.webHost.orEmpty()
         if (web.isNotEmpty()) {
             // Поток от уеб сайт: няма пиъри и сийдъри - показваме откъде идва.
-            stats.text = "Сайт: $web" + if (buffering) " · буферира…" else ""
+            stats.text = "Сайт: $web" + (if (buffering) " · буферира…" else "") + (if (endsLine.isNotEmpty()) "\n$endsLine" else "")
             stats.visibility = View.VISIBLE
             return
         }
         val s = Graph.stream.stats()
         if (s == null) {
-            stats.visibility = View.GONE
+            if (endsLine.isNotEmpty()) {
+                stats.text = endsLine
+                stats.visibility = View.VISIBLE
+            } else stats.visibility = View.GONE
             return
         }
         var t = "Пиъри ${s.peers} · сийдъри ${s.seeds} · ↓ ${formatSpeed(s.speed)}"
@@ -727,6 +854,7 @@ class PlayerActivity : AppCompatActivity() {
         if (buffering && now - bufferingSince > 10_000 && (s.seeds < 3 || s.speed < 150_000)) {
             t += "\nТози торент има малко сийдъри. Натисни Назад и избери друг торент или сайт."
         }
+        if (endsLine.isNotEmpty()) t += "\n$endsLine"
         stats.text = t
         stats.visibility = View.VISIBLE
     }
@@ -746,8 +874,14 @@ class PlayerActivity : AppCompatActivity() {
         return super.onKeyDown(keyCode, event)
     }
 
+    override fun onStart() {
+        super.onStart()
+        visible = true
+    }
+
     override fun onStop() {
         super.onStop()
+        visible = false
         saveProgress()
         player?.pause()
     }
@@ -761,6 +895,6 @@ class PlayerActivity : AppCompatActivity() {
         player = null
         super.onDestroy()
         // Потокът се затваря само ако не е сменен със следващия епизод (или вече не е пуснат нов).
-        if (isFinishing && !Graph.stream.switching && Graph.stream.token == myToken) Graph.stream.close()
+        if (isFinishing && !handedOff && !Graph.stream.switching && Graph.stream.token == myToken) Graph.stream.close()
     }
 }

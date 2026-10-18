@@ -88,18 +88,24 @@ object CacheManager {
         }
     }
 
-    /** Чисти кеша. Файловете на активния стрийм не се пипат. */
-    fun clear(ctx: Context, streamActive: Boolean) {
+    /**
+     * Чисти кеша. Файловете на активния стрийм не се пипат.
+     * [all] = false (автоматичното чистене): само торенти, субтитри и свалени обновления. Описанията от TMDB и
+     * картинките имат свои лимити и сами си се подмятат, затова се трият само от бутона в Настройки.
+     */
+    fun clear(ctx: Context, streamActive: Boolean, all: Boolean = true) {
         try {
             val c = ctx.cacheDir
             if (!streamActive) deleteTorrents(ctx)
             File(c, "subs").deleteRecursively()
             File(c, "updates").deleteRecursively()
-            File(c, "tmdb").deleteRecursively()
+            if (all) {
+                File(c, "tmdb").deleteRecursively()
+                clearImages(ctx)
+            }
             if (!streamActive) AppLog.trim(200)
-            clearImages(ctx)
             Graph.prefs.lastClean = System.currentTimeMillis()
-            AppLog.d("cache", "кешът е изчистен")
+            AppLog.d("cache", if (all) "кешът е изчистен" else "автоматично чистене (торенти и субтитри)")
         } catch (e: Exception) {
             AppLog.d("cache", "грешка при чистене: ${e.message}")
         }
@@ -111,10 +117,12 @@ object CacheManager {
         // По размер: щом кешът надхвърли лимита, чисти се веднага (не чака часовете).
         val limit = Graph.prefs.cacheLimitMb
         if (limit > 0) {
-            val total = size(ctx.cacheDir) + externalTorrents(ctx)
+            // Само това, което автоматичното чистене може да изтрие (картинките и TMDB си имат собствен таван).
+            val c = ctx.cacheDir
+            val total = size(File(c, "torrents")) + size(File(c, "subs")) + size(File(c, "updates")) + externalTorrents(ctx)
             if (total > limit * 1048576L) {
                 AppLog.d("cache", "кешът е ${fmt(total)} (лимит $limit MB) - чистя")
-                clear(ctx, false)
+                clear(ctx, false, all = false)
                 return true
             }
         }
@@ -127,7 +135,7 @@ object CacheManager {
             return false
         }
         if (now - last < hours * 3_600_000L) return false
-        clear(ctx, streamActive)
+        clear(ctx, streamActive, all = false)
         return true
     }
 

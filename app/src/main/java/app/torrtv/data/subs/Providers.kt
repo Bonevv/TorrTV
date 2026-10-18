@@ -216,8 +216,8 @@ class SubSource(private val prefs: Prefs) : SubtitleProvider {
                 val release = o.flat("releaseInfo").ifBlank { o.flat("release_info") }
                     .ifBlank { o.flat("releases") }.ifBlank { o.str("name") }
                 if (q.type == MediaType.TV && q.season != null && q.episode != null) {
-                    val re = Regex("(?i)s0*${q.season} ?e0*${q.episode}(?!\\d)|\\b${q.season}x0*${q.episode}(?!\\d)")
-                    val packRe = Regex("(?i)\\bs0*${q.season}\\b(?! ?e\\d)|season ?0*${q.season}\\b")
+                    val re = app.torrtv.core.cachedRegex("(?i)s0*${q.season} ?e0*${q.episode}(?!\\d)|\\b${q.season}x0*${q.episode}(?!\\d)")
+                    val packRe = app.torrtv.core.cachedRegex("(?i)\\bs0*${q.season}\\b(?! ?e\\d)|season ?0*${q.season}\\b")
                     if (!re.containsMatchIn(release) && !packRe.containsMatchIn(release)) continue
                 }
                 out.add(

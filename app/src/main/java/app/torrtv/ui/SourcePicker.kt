@@ -52,7 +52,10 @@ fun SourcePicker(
     // По подразбиране са торентите; уеб сайтовете се избират със стрелките наляво/надясно.
     var tab by remember { mutableStateOf(0) }
     val tabFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { tabFocus.tryRequest() }
+    LaunchedEffect(Unit) {
+        st.ensureTorrents() // при „Продължи“ търсенето е отложено до тук
+        tabFocus.tryRequest()
+    }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(

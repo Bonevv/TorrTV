@@ -134,7 +134,7 @@ object Archives {
         if (files.isEmpty()) return null
         if (files.size == 1) return files[0]
         if (season != null && episode != null) {
-            val re = Regex("(?i)s0*$season ?e0*$episode(?!\\d)|\\b${season}x0*$episode(?!\\d)|[ ._-]0*$episode[ ._-]")
+            val re = app.torrtv.core.cachedRegex("(?i)s0*$season ?e0*$episode(?!\\d)|\\b${season}x0*$episode(?!\\d)|[ ._-]0*$episode[ ._-]")
             files.firstOrNull { re.containsMatchIn(it.name) }?.let { return it }
         }
         return files.maxByOrNull { it.bytes.size }

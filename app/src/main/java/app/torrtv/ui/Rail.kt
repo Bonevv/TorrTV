@@ -84,7 +84,7 @@ internal fun Modifier.stayInContent(): Modifier = this
     }
     .focusGroup()
 
-/** Страничен панел: лого, раздели, отдолу "Изход" и заетата памет. */
+/** Страничен панел: лого, раздели и отдолу "Изход". */
 @Composable
 fun SideRail(
     selected: Int,
@@ -92,7 +92,6 @@ fun SideRail(
     onSelect: (Int) -> Unit,
     focus: List<FocusRequester>,
     updateReady: Boolean,
-    ramMb: Int,
     onExit: () -> Unit
 ) {
     // "Изход" е най-долу и затова е най-близкото нещо под съдържанието. Достъпен е само отвътре на панела.
@@ -121,10 +120,6 @@ fun SideRail(
         }
         Spacer(Modifier.weight(1f))
         RailItem("Изход", Glyph.POWER, false, false, onExit, null, enabled = railFocused)
-        if (ramMb > 0) {
-            Spacer(Modifier.height(3.d))
-            Text("RAM $ramMb MB", color = if (ramMb > 450) C.amber else Color(0xFF6E778A), fontSize = 8.t, maxLines = 1)
-        }
     }
 }
 

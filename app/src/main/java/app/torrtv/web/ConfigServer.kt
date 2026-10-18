@@ -1,5 +1,8 @@
 package app.torrtv.web
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import app.torrtv.core.Prefs
 import app.torrtv.data.torrents.StremioAddon
 import java.io.BufferedInputStream
@@ -10,14 +13,15 @@ import java.net.NetworkInterface
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.URLDecoder
+import java.security.SecureRandom
 import java.util.Collections
-import java.util.Random
 import java.util.concurrent.Executors
 
 /**
- * Малка уеб страница, която се отваря от телефона (в същата Wi-Fi мрежа), за да се въведат
- * API ключовете без писане с дистанционното. Работи само докато екранът "Настройки" е отворен
- * и изисква ПИН, показан на телевизора.
+ * Малка уеб страница, която се отваря от телефона (в същата Wi-Fi мрежа): оттам се въвеждат API ключовете и се
+ * пише търсене за телевизора, без да се чука с дистанционното. Работи само докато е отворен екранът "Настройки"
+ * или "Търсене" и изисква ПИН, показан на телевизора. ПИН-ът е един и същ, докато приложението е пуснато;
+ * след пет грешни опита се сменя и за минута не се приемат опити (виж PinGuard).
  */
 class ConfigServer(private val prefs: Prefs) {
 
@@ -25,26 +29,42 @@ class ConfigServer(private val prefs: Prefs) {
         const val PORT = 62000
     }
 
-    @Volatile
-    var port: Int = 0
+    /** Портът на страницата (0, докато сървърът не е пуснат). Състояние, за да се опресни екранът веднага щом тръгне. */
+    var port: Int by mutableStateOf(0)
         private set
 
-    @Volatile
-    var pin: String = ""
+    private val guard = PinGuard { (1000 + SecureRandom().nextInt(9000)).toString() }
+
+    /** ПИН-ът, който се показва на телевизора. Сменя се след пет грешни опита, затова е състояние на екрана. */
+    var pin: String by mutableStateOf(guard.pin)
         private set
+
+    /** Вика се, когато от телефона е изпратена дума за търсене (от нишка на сървъра). */
+    @Volatile
+    var onSearch: ((String) -> Unit)? = null
+
+    /** Последните търсения - за бързи бутони на страницата. */
+    @Volatile
+    var recent: () -> List<String> = { emptyList() }
 
     private var server: ServerSocket? = null
+    private var users = 0
     private val pool = Executors.newCachedThreadPool()
 
+    /** Всяко отваряне на екран, който го иска, вика start(), а затварянето - stop(); сървърът работи, докато има поне един. */
     @Synchronized
     fun start() {
+        users++
         if (server != null) return
-        pin = (1000 + Random().nextInt(9000)).toString()
         // Постоянен порт 62000, за да е лесно да се запомни адресът; ако е зает - друг свободен.
         val s = try {
             ServerSocket(PORT)
         } catch (e: IOException) {
-            ServerSocket(0)
+            try {
+                ServerSocket(0)
+            } catch (e2: IOException) {
+                return // няма как да се пусне; екранът просто не показва адрес, а stop() ще изравни броя
+            }
         }
         server = s
         port = s.localPort
@@ -62,6 +82,8 @@ class ConfigServer(private val prefs: Prefs) {
 
     @Synchronized
     fun stop() {
+        if (users > 0) users--
+        if (users > 0) return
         try {
             server?.close()
         } catch (e: Exception) {
@@ -114,7 +136,7 @@ class ConfigServer(private val prefs: Prefs) {
                 if (i > 0 && l.substring(0, i).equals("content-length", true)) len = l.substring(i + 1).trim().toIntOrNull() ?: 0
             }
             val html: String
-            if (method == "POST" && path == "/save") {
+            if (method == "POST" && (path == "/save" || path == "/search")) {
                 val buf = ByteArray(minOf(len, 65536))
                 var got = 0
                 while (got < buf.size) {
@@ -122,7 +144,8 @@ class ConfigServer(private val prefs: Prefs) {
                     if (n < 0) break
                     got += n
                 }
-                html = save(parseForm(String(buf, 0, got, Charsets.UTF_8)))
+                val form = parseForm(String(buf, 0, got, Charsets.UTF_8))
+                html = if (path == "/search") search(form) else save(form)
             } else {
                 html = page(null, true)
             }
@@ -156,8 +179,35 @@ class ConfigServer(private val prefs: Prefs) {
         return m
     }
 
+    /** Проверява ПИН-а; връща съобщение за грешка (за страницата) или null, ако е верен. */
+    private fun checkPin(form: Map<String, String>): String? {
+        val now = System.currentTimeMillis()
+        val r = guard.check(form["pin"], now)
+        pin = guard.pin
+        return when (r) {
+            PinGuard.Result.OK -> null
+            PinGuard.Result.WRONG -> {
+                val n = guard.triesLeft()
+                "Грешен ПИН. Провери го на екрана на телевизора. " + if (n == 1) "Остава 1 опит." else "Остават $n опита."
+            }
+            PinGuard.Result.LOCKED -> {
+                val s = guard.lockLeftSec(now)
+                "Твърде много грешни опити. ПИН-ът е сменен - виж новия на телевизора и опитай пак след $s сек."
+            }
+        }
+    }
+
+    /** Дума за търсене от телефона: праща се към телевизора, който отваря търсенето. */
+    private fun search(form: Map<String, String>): String {
+        checkPin(form)?.let { return page(it, false) }
+        val q = form["q"].orEmpty().trim()
+        if (q.length < 2) return page("Напиши поне 2 букви.", false)
+        onSearch?.invoke(q.take(80))
+        return page("Изпратено на телевизора: „${q.take(80)}“", true)
+    }
+
     private fun save(form: Map<String, String>): String {
-        if (form["pin"]?.trim() != pin) return page("Грешен ПИН. Провери го на екрана на телевизора.", false)
+        checkPin(form)?.let { return page(it, false) }
         var count = 0
         // Уеб адресите: полетата са попълнени със сегашните, затова записваме само ако нещо е променено.
         for ((name, tv) in listOf("web_movie" to false, "web_tv" to true)) {
@@ -224,6 +274,25 @@ class ConfigServer(private val prefs: Prefs) {
 
     private fun link(url: String, text: String) = "<a href='$url' target='_blank' rel='noopener'>$text</a>"
 
+    private fun attr(s: String) = esc(s).replace("'", "&#39;").replace("\"", "&quot;")
+
+    /** Полето за търсене: думата отива на телевизора и там се отварят резултатите. */
+    private fun searchForm(): String {
+        val sb = StringBuilder()
+        sb.append("<form method='post' action='/search'>")
+        sb.append("<div class='desc'>Напиши името и то се появява на телевизора. Така не се чука с дистанционното.</div>")
+        sb.append("<input id='q' name='q' autocomplete='off' autocapitalize='off' spellcheck='false' placeholder='Филм или сериал'>")
+        val last = try { recent() } catch (e: Exception) { emptyList() }
+        if (last.isNotEmpty()) {
+            sb.append("<div class='chips'>")
+            for (s in last) sb.append("<a class='chip' href='#' data-q='").append(attr(s)).append("' onclick=\"document.getElementById('q').value=this.getAttribute('data-q');return false\">").append(esc(s)).append("</a>")
+            sb.append("</div>")
+        }
+        sb.append("<label>ПИН от телевизора</label><input name='pin' inputmode='numeric' autocomplete='off' placeholder='4 цифри'>")
+        sb.append("<div style='height:12px'></div><button type='submit'>Търси на телевизора</button></form>")
+        return sb.toString()
+    }
+
     /** Сгъваема секция. more = текст, който се вижда само след „Покажи повече“. */
     private fun more(summary: String, body: String): String =
         "<details class='more'><summary>$summary</summary><div class='box'>$body</div></details>"
@@ -250,18 +319,22 @@ class ConfigServer(private val prefs: Prefs) {
         sb.append(".box{background:#141a26;border-radius:10px;padding:10px 14px;margin-top:8px;color:#c6cddd;font-size:14px}.box ol,.box ul{margin:6px 0;padding-left:20px}.box li{margin:4px 0}")
         sb.append("code{background:#1d2536;color:#f2d58f;padding:1px 6px;border-radius:6px;font-size:13px}.step{display:flex;gap:10px;margin:8px 0}.step b{flex:none;width:26px;height:26px;border-radius:50%;background:#e9b44c;color:#1a1305;text-align:center;line-height:26px}")
         sb.append(".desc{color:#98a2b8;font-size:13px;margin:0 0 6px}")
+        sb.append(".chips{margin:10px 0 0}.chip{display:inline-block;margin:0 6px 6px 0;padding:6px 12px;border-radius:50px;background:#1d2536;color:#f3f5fa;text-decoration:none;font-size:14px}")
         sb.append("</style></head><body><h1>Torr<b>TV</b></h1><div class='sub'>Настройки от телефона</div>")
         if (msg != null) sb.append("<div class='msg ").append(if (ok) "good" else "bad").append("'>").append(esc(msg)).append("</div>")
 
+        // ---------- Търсене ----------
+        sb.append(section("Търсене на филм", true, searchForm()))
+
         // ---------- Упътване ----------
         sb.append(section("Как се ползва", true,
-            "<div class='step'><b>1</b><div>На телевизора отвори <code>Настройки</code> - там е ПИН-ът от 4 цифри. Страницата работи само докато Настройките са отворени.</div></div>" +
+            "<div class='step'><b>1</b><div>На телевизора отвори <code>Настройки</code> или <code>Търсене</code> - там е ПИН-ът от 4 цифри. Страницата работи само докато единият от двата екрана е отворен.</div></div>" +
                 "<div class='step'><b>2</b><div>Попълни само полетата, които искаш да смениш. Празните не се променят.</div></div>" +
                 "<div class='step'><b>3</b><div>Напиши ПИН-а най-долу и натисни <code>Запази</code>.</div></div>" +
                 more("Ако не стане",
                     "<ul><li>Телефонът и телевизорът трябва да са на една и съща Wi-Fi мрежа.</li>" +
                         "<li>Отвори точно адреса от телевизора. Ако порт 62000 е зает, там ще пише друг порт.</li>" +
-                        "<li>Ако пише „Грешен ПИН“, виж го пак на екрана - сменя се всеки път, когато отвориш Настройки.</li>" +
+                        "<li>Ако пише „Грешен ПИН“, виж го пак на екрана. ПИН-ът е един и същ, докато приложението е пуснато; след пет грешни опита се сменя и за минута не се приема нищо.</li>" +
                         "<li>Всичко се пази само на телевизора. Ключовете се изпращат единствено към самите услуги (TMDB, OpenSubtitles и т.н.).</li></ul>")))
 
         sb.append("<form method='post' action='/save'>")
@@ -354,7 +427,13 @@ class ConfigServer(private val prefs: Prefs) {
         sb.append("</div></details>")
 
         sb.append("<div class='savebar'><label style='margin-top:0'>ПИН от телевизора</label><div class='desc'>Четирите цифри от Настройки на телевизора. Така никой друг в мрежата не може да променя нищо.</div><input name='pin' inputmode='numeric' autocomplete='off' placeholder='4 цифри'><div style='height:10px'></div><button type='submit'>Запази</button></div>")
-        sb.append("</form></body></html>")
+        sb.append("</form>")
+        // ПИН-ът се помни в самия телефон (само в този браузър), за да не се пише пак при всяко търсене.
+        sb.append("<script>try{var p=localStorage.getItem('tvpin');var f=document.querySelectorAll('input[name=pin]');")
+        sb.append("if(p){for(var i=0;i<f.length;i++)f[i].value=p}")
+        sb.append("var fs=document.querySelectorAll('form');for(var j=0;j<fs.length;j++){fs[j].addEventListener('submit',function(){")
+        sb.append("var e=this.querySelector('input[name=pin]');if(e&&e.value)localStorage.setItem('tvpin',e.value)})}}catch(x){}</script>")
+        sb.append("</body></html>")
         return sb.toString()
     }
 }

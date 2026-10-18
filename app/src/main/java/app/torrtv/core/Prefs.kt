@@ -131,12 +131,24 @@ class Prefs(ctx: Context) {
             sp.edit().putInt("cache_limit_mb", v).apply()
         }
 
-    /** Лек режим: без анимации на фокуса и плавните преходи, по-малки картинки (за по-слаби телевизори). */
-    var lite: Boolean
-        get() = sp.getBoolean("lite_mode", false)
+    /**
+     * Лек режим (без анимации на фокуса и плавните преходи, по-малки картинки): 0 = сам, според устройството;
+     * 1 = включен; 2 = изключен. Докато не е избирано нищо, ключът липсва и важи "сам".
+     */
+    var liteChoice: Int
+        get() = if (!sp.contains("lite_mode")) 0 else if (sp.getBoolean("lite_mode", false)) 1 else 2
         set(v) {
-            sp.edit().putBoolean("lite_mode", v).apply()
+            val e = sp.edit()
+            if (v == 0) e.remove("lite_mode") else e.putBoolean("lite_mode", v == 1)
+            e.apply()
         }
+
+    /** Дали лекият режим е в сила: избраното от потребителя, а при "сам" - дали устройството е слабо. */
+    fun liteOn(weakDevice: Boolean): Boolean = when (liteChoice) {
+        1 -> true
+        2 -> false
+        else -> weakDevice
+    }
 
     var lastClean: Long
         get() = sp.getLong("last_clean", 0L)
@@ -181,6 +193,28 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("auto_next", true)
         set(v) {
             sp.edit().putBoolean("auto_next", v).apply()
+        }
+
+    /** Тракери, които не са отговорили при последната проверка (валидно 7 дни, после се пробват пак). */
+    val deadTrackers: Set<String>
+        get() {
+            val at = sp.getLong("dead_trk_at", 0L)
+            if (at == 0L || System.currentTimeMillis() - at > 7L * 24 * 3_600_000) return emptySet()
+            return sp.getStringSet("dead_trk", null)?.toSet() ?: emptySet()
+        }
+
+    /** Кога е правена последната проверка на тракерите (0 = никога). */
+    val trackersCheckedAt: Long get() = sp.getLong("dead_trk_at", 0L)
+
+    fun saveDeadTrackers(dead: Set<String>) {
+        sp.edit().putStringSet("dead_trk", dead).putLong("dead_trk_at", System.currentTimeMillis()).apply()
+    }
+
+    /** Последните търсения, по един на ред (виж RecentSearches). */
+    var recentSearches: String
+        get() = sp.getString("recent_search", "") ?: ""
+        set(v) {
+            sp.edit().putString("recent_search", v).apply()
         }
 
     fun sourceEnabled(id: String): Boolean = sp.getBoolean("src_$id", true)

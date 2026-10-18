@@ -1,5 +1,6 @@
 package app.torrtv.data.torrents
 
+import app.torrtv.core.cachedRegex
 import app.torrtv.core.pad2
 import app.torrtv.core.stripAccents
 import app.torrtv.data.MediaType
@@ -62,13 +63,33 @@ interface TorrentSource {
 }
 
 object Quality {
+    private val Q_4K = Regex("2160p|\\b4k\\b|\\buhd\\b")
+    private val Q_1080 = Regex("1080[pi]")
+    private val Q_720 = Regex("720p")
+    private val Q_480 = Regex("480p|\\bdvdrip\\b|\\bxvid\\b")
+
+    // Редът е важен: така се показват етикетите.
+    private val TAGS: List<Pair<String, Regex>> = listOf(
+        "HEVC" to Regex("\\b(x265|hevc|h\\.?265)\\b"),
+        "HDR" to Regex("\\b(hdr10\\+?|hdr)\\b"),
+        "DV" to Regex("\\b(dv|dolby\\.?vision)\\b"),
+        "REMUX" to Regex("\\bremux\\b"),
+        "BluRay" to Regex("\\b(blu-?ray|bdrip|brrip)\\b"),
+        "WEB" to Regex("\\b(web-?dl|webrip|web)\\b"),
+        "HDTV" to Regex("\\bhdtv\\b"),
+        "Atmos" to Regex("\\b(atmos)\\b"),
+        "DTS" to Regex("\\b(dts|dts-?hd)\\b"),
+        "TrueHD" to Regex("\\btruehd\\b"),
+        "CAM" to Regex("\\b(cam|hdcam|camrip|telesync|hdts|ts|telecine|tc)\\b")
+    )
+
     fun of(title: String): String {
         val t = title.lowercase(Locale.US)
         return when {
-            Regex("2160p|\\b4k\\b|\\buhd\\b").containsMatchIn(t) -> "4K"
-            Regex("1080[pi]").containsMatchIn(t) -> "1080p"
-            Regex("720p").containsMatchIn(t) -> "720p"
-            Regex("480p|\\bdvdrip\\b|\\bxvid\\b").containsMatchIn(t) -> "480p"
+            Q_4K.containsMatchIn(t) -> "4K"
+            Q_1080.containsMatchIn(t) -> "1080p"
+            Q_720.containsMatchIn(t) -> "720p"
+            Q_480.containsMatchIn(t) -> "480p"
             else -> "SD"
         }
     }
@@ -76,17 +97,7 @@ object Quality {
     fun tags(title: String): List<String> {
         val t = title.lowercase(Locale.US)
         val out = ArrayList<String>()
-        if (Regex("\\b(x265|hevc|h\\.?265)\\b").containsMatchIn(t)) out.add("HEVC")
-        if (Regex("\\b(hdr10\\+?|hdr)\\b").containsMatchIn(t)) out.add("HDR")
-        if (Regex("\\b(dv|dolby\\.?vision)\\b").containsMatchIn(t)) out.add("DV")
-        if (Regex("\\bremux\\b").containsMatchIn(t)) out.add("REMUX")
-        if (Regex("\\b(blu-?ray|bdrip|brrip)\\b").containsMatchIn(t)) out.add("BluRay")
-        if (Regex("\\b(web-?dl|webrip|web)\\b").containsMatchIn(t)) out.add("WEB")
-        if (Regex("\\bhdtv\\b").containsMatchIn(t)) out.add("HDTV")
-        if (Regex("\\b(atmos)\\b").containsMatchIn(t)) out.add("Atmos")
-        if (Regex("\\b(dts|dts-?hd)\\b").containsMatchIn(t)) out.add("DTS")
-        if (Regex("\\btruehd\\b").containsMatchIn(t)) out.add("TrueHD")
-        if (Regex("\\b(cam|hdcam|camrip|telesync|hdts|ts|telecine|tc)\\b").containsMatchIn(t)) out.add("CAM")
+        for ((name, re) in TAGS) if (re.containsMatchIn(t)) out.add(name)
         return out
     }
 
@@ -118,13 +129,15 @@ object Quality {
 
 object Relevance {
     private val yearRe = Regex("\\b(19|20)\\d{2}\\b")
+    private val nonAlnum = Regex("[^a-z0-9]+")
+    private val anyEp = Regex("\\bs0*\\d+ ?e0*\\d+\\b|\\b\\d+x\\d+\\b")
 
     fun norm(s: String): String =
         stripAccents(s).lowercase(Locale.US)
             .replace("&", " and ")
             .replace("'", "")
             .replace("’", "")
-            .replace(Regex("[^a-z0-9]+"), " ")
+            .replace(nonAlnum, " ")
             .trim()
 
     private fun names(q: SearchQuery): List<String> =
@@ -136,11 +149,11 @@ object Relevance {
         val e = q.episode
         val t = norm(title)
         if (e != null) {
-            val epRe = Regex("\\bs0*$s ?e0*$e\\b|\\b${s}x0*$e\\b")
+            val epRe = cachedRegex("\\bs0*$s ?e0*$e\\b|\\b${s}x0*$e\\b")
             if (epRe.containsMatchIn(t)) return 1
-            if (Regex("\\bs0*\\d+ ?e0*\\d+\\b|\\b\\d+x\\d+\\b").containsMatchIn(t)) return 0
+            if (anyEp.containsMatchIn(t)) return 0
         }
-        val seasonRe = Regex("\\bs0*$s\\b|\\bseason ?0*$s\\b|\\bcomplete\\b")
+        val seasonRe = cachedRegex("\\bs0*$s\\b|\\bseason ?0*$s\\b|\\bcomplete\\b")
         return if (seasonRe.containsMatchIn(t)) 2 else 0
     }
 

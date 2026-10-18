@@ -14,6 +14,7 @@ import app.torrtv.web.ConfigServer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /** Единно място за всички дълготрайни обекти на приложението. */
 object Graph {
@@ -29,7 +30,13 @@ object Graph {
     val server by lazy { LocalServer() }
     val stream by lazy { StreamController(app, subStore, server) }
     val updater by lazy { Updater(app) }
-    val config by lazy { ConfigServer(prefs) }
+    val config by lazy {
+        ConfigServer(prefs).also { c ->
+            c.recent = { RecentSearches.decode(prefs.recentSearches) }
+            // Търсене от телефона: идва от нишка на сървъра, а състоянието на екраните се пипа само от главната.
+            c.onSearch = { q -> scope.launch { search.fromPhone(q) } }
+        }
+    }
 
     // Състояние на екраните (живее колкото приложението; размерите са ограничени)
     val home by lazy { HomeState() }

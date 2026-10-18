@@ -21,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -40,6 +41,7 @@ import app.torrtv.data.torrents.TorrentResult
 import app.torrtv.state.DetailState
 import app.torrtv.state.Graph
 import app.torrtv.torrent.ExternalPlayers
+import kotlinx.coroutines.delay
 
 /** Диалог преди пускане: избор на плеър и субтитри за този конкретен торент. */
 @Composable
@@ -62,6 +64,29 @@ fun PlaySheet(st: DetailState, t: TorrentResult, resumeMs: Long = 0L, onSwitch: 
     var pickOpen by remember { mutableStateOf(false) }
     val startFocus = remember { FocusRequester() }
     LaunchedEffect(t) { startFocus.tryRequest() }
+
+    // Субтитрите често са още на път, когато натиснеш „Пусни“. Чака се до 6 секунди; втори натиск пуска веднага.
+    val rankedNow by rememberUpdatedState(ranked)
+    val pickedNow by rememberUpdatedState(picked)
+    val playerNow by rememberUpdatedState(player)
+    var waitFrom by remember { mutableStateOf(-1L) }
+    val started = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
+    fun begin(from: Long) {
+        if (!started.compareAndSet(false, true)) return
+        val chosen = rankedNow.filter { it.uid in pickedNow }
+        Graph.stream.start(st.playRequest(t, chosen, playerNow, from))
+        onDismiss()
+    }
+    fun go(from: Long) {
+        if (waitFrom < 0 && st.subSearching && rankedNow.isEmpty()) waitFrom = from else begin(from)
+    }
+    LaunchedEffect(waitFrom) {
+        if (waitFrom < 0) return@LaunchedEffect
+        val from = waitFrom
+        val t0 = System.currentTimeMillis()
+        while (st.subSearching && rankedNow.isEmpty() && System.currentTimeMillis() - t0 < 6000L) delay(120)
+        begin(from)
+    }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
@@ -101,16 +126,15 @@ fun PlaySheet(st: DetailState, t: TorrentResult, resumeMs: Long = 0L, onSwitch: 
 
             Spacer(Modifier.height(14.d))
             Row(horizontalArrangement = Arrangement.spacedBy(10.d)) {
-                PrimaryButton(if (resumeMs > 0) "▶  Продължи от ${app.torrtv.state.Library.fmt(resumeMs)}" else "▶  Пусни", {
-                    val chosen = ranked.filter { it.uid in picked }
-                    Graph.stream.start(st.playRequest(t, chosen, player, resumeMs))
-                    onDismiss()
-                }, focusRequester = startFocus)
-                if (resumeMs > 0) PrimaryButton("От началото", {
-                    val chosen = ranked.filter { it.uid in picked }
-                    Graph.stream.start(st.playRequest(t, chosen, player, 0L))
-                    onDismiss()
-                }, primary = false)
+                PrimaryButton(
+                    when {
+                        waitFrom >= 0 -> "Търсят се субтитри…"
+                        resumeMs > 0 -> "▶  Продължи от ${app.torrtv.state.Library.fmt(resumeMs)}"
+                        else -> "▶  Пусни"
+                    },
+                    { go(resumeMs) }, focusRequester = startFocus
+                )
+                if (resumeMs > 0) PrimaryButton("От началото", { begin(0L) }, primary = false)
                 if (t.seeders !in 0..4) PrimaryButton("Откъде?", { pickOpen = true }, primary = false)
                 PrimaryButton("Откажи", onDismiss, primary = false)
             }

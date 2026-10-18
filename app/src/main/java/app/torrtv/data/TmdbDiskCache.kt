@@ -134,6 +134,6 @@ class TmdbDiskCache(
             else -> 24 * HOUR
         }
 
-        private val LISTS = listOf("popular", "top_rated", "now_playing", "on_the_air")
+        private val LISTS = listOf("popular", "top_rated", "now_playing", "on_the_air", "upcoming")
     }
 }

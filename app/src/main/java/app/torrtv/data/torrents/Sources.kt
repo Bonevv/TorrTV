@@ -4,6 +4,7 @@ import app.torrtv.core.Http
 import app.torrtv.core.Magnets
 import app.torrtv.core.Prefs
 import app.torrtv.core.baseUrl
+import app.torrtv.core.cachedRegex
 import app.torrtv.core.enc
 import app.torrtv.core.intOr
 import app.torrtv.core.long
@@ -21,8 +22,13 @@ import java.util.Locale
 
 private fun numeric(imdb: String?): String? = imdb?.removePrefix("tt")?.takeIf { it.isNotBlank() }
 
+private val SIZE_RE = Regex("([0-9.,]+)\\s*([KMGT]?i?B)", RegexOption.IGNORE_CASE)
+private val SPACES_RE = Regex("\\s+")
+private val BATCH_RE = Regex("\\b(batch|complete|season)\\b")
+private val NOISE_RE = Regex("\\b\\d{3,4}p\\b|\\bx26[45]\\b|\\b(19|20)\\d{2}\\b|\\b\\d{3,4}x\\d{3,4}\\b")
+
 internal fun parseSize(s: String): Long {
-    val m = Regex("([0-9.,]+)\\s*([KMGT]?i?B)", RegexOption.IGNORE_CASE).find(s) ?: return 0L
+    val m = SIZE_RE.find(s) ?: return 0L
     val n = m.groupValues[1].replace(",", "").toDoubleOrNull() ?: return 0L
     val mult = when (m.groupValues[2].uppercase(Locale.US).take(1)) {
         "K" -> 1024.0
@@ -95,7 +101,7 @@ class Yts(private val prefs: Prefs) : TorrentSource {
                         val hash = t.str("hash")
                         if (hash.isBlank()) continue
                         val quality = t.str("quality")
-                        val title = "$titleLong $quality ${t.str("type").uppercase(Locale.US)} ${t.str("video_codec")} YTS".replace(Regex("\\s+"), " ")
+                        val title = "$titleLong $quality ${t.str("type").uppercase(Locale.US)} ${t.str("video_codec")} YTS".replace(SPACES_RE, " ")
                         out.add(
                             Quality.make(
                                 q, title, hash, Magnets.build(hash, title),
@@ -212,11 +218,11 @@ class Nyaa(private val prefs: Prefs) : TorrentSource {
     private fun acceptTitle(q: SearchQuery, title: String): Boolean {
         val ep = q.episode ?: return true
         val t = Relevance.norm(title)
-        if (Regex("\\b(batch|complete|season)\\b").containsMatchIn(t)) return true
-        if (Regex("\\bs0*\\d+ ?e0*$ep\\b").containsMatchIn(t)) return true
+        if (BATCH_RE.containsMatchIn(t)) return true
+        if (cachedRegex("\\bs0*\\d+ ?e0*$ep\\b").containsMatchIn(t)) return true
         // "[Group] Name - 05 (1080p)": махаме резолюции и години, за да не ги вземем за номер
-        val cleaned = t.replace(Regex("\\b\\d{3,4}p\\b|\\bx26[45]\\b|\\b(19|20)\\d{2}\\b|\\b\\d{3,4}x\\d{3,4}\\b"), " ")
-        return Regex("(?<!\\d)0*$ep(?!\\d)").containsMatchIn(cleaned)
+        val cleaned = t.replace(NOISE_RE, " ")
+        return cachedRegex("(?<!\\d)0*$ep(?!\\d)").containsMatchIn(cleaned)
     }
 }
 

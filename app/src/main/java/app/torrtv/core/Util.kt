@@ -30,8 +30,43 @@ fun formatSpeed(bytesPerSec: Long): String = formatSize(bytesPerSec).replace("�
 
 fun pad2(n: Int): String = n.toString().padStart(2, '0')
 
+/** "Свършва в 22:41": кога ще свърши филмът, ако се гледа без спиране оттук нататък. Празно, ако не се знае колко остава. */
+fun endsAtText(nowMs: Long, leftMs: Long, zone: java.util.TimeZone = java.util.TimeZone.getDefault()): String {
+    if (leftMs <= 0) return ""
+    val c = java.util.Calendar.getInstance(zone)
+    c.timeInMillis = nowMs + leftMs
+    return "Свършва в " + pad2(c.get(java.util.Calendar.HOUR_OF_DAY)) + ":" + pad2(c.get(java.util.Calendar.MINUTE))
+}
+
+/** Колко отдавна е станало нещо: "току-що", "преди 5 мин.", "преди 3 ч.", "вчера", "преди 4 дни". */
+fun agoText(ms: Long): String {
+    val m = (ms / 60_000L).coerceAtLeast(0L)
+    return when {
+        m < 1 -> "току-що"
+        m < 60 -> "преди $m мин."
+        m < 24 * 60 -> "преди ${m / 60} ч."
+        else -> {
+            val d = m / (24 * 60)
+            if (d == 1L) "вчера" else "преди $d дни"
+        }
+    }
+}
+
+private val ACCENTS = Regex("\\p{Mn}+")
+private val BTIH = Regex("xt=urn:btih:([A-Za-z0-9]+)")
+private val regexMemo = java.util.concurrent.ConcurrentHashMap<String, Regex>()
+
 fun stripAccents(s: String): String =
-    Normalizer.normalize(s, Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "")
+    Normalizer.normalize(s, Normalizer.Form.NFD).replace(ACCENTS, "")
+
+/**
+ * Регулярен израз, който зависи от сезон / епизод. Един и същ се ползва за всички резултати от търсенето,
+ * вместо да се компилира наново за всеки от тях.
+ */
+fun cachedRegex(pattern: String): Regex {
+    if (regexMemo.size > 80) regexMemo.clear()
+    return regexMemo.getOrPut(pattern) { Regex(pattern) }
+}
 
 /** Нормализира домейн, въведен от потребителя (с или без https://). */
 fun baseUrl(raw: String, default: String): String {
@@ -64,17 +99,53 @@ object Magnets {
         return sb.toString()
     }
 
-    /** Добавя стандартни тракери, ако magnet линкът няма такива. */
+    /**
+     * Тракери, които проверката в Диагностика е намерила за мъртви. Задава се при старт и след всяка проверка;
+     * [ensureTrackers] ги маха от линка. Ако не отговарят всички, няма UDP връзка и не се изключва нищо.
+     */
+    @Volatile
+    var dead: Set<String> = emptySet()
+        private set
+
+    fun setDead(urls: Set<String>) {
+        dead = if (urls.size >= trackers.size) emptySet() else urls.map { norm(it) }.toSet()
+    }
+
+    private fun norm(u: String) = u.trim().trimEnd('/').lowercase(Locale.US)
+
+    /**
+     * Подготвя линка за торент двигателя: маха познатите мъртви тракери и добавя нашите, които още ги няма
+     * (без повторения). Много линкове идват с един-два тракера, често умрели - така пиърите се намират по-бързо.
+     */
     fun ensureTrackers(magnet: String): String {
-        if (magnet.contains("&tr=") || magnet.contains("?tr=")) return magnet
-        val sb = StringBuilder(magnet)
-        for (t in trackers) sb.append("&tr=").append(enc(t))
-        return sb.toString()
+        val q = magnet.indexOf('?')
+        if (q < 0) return magnet
+        val skip = dead
+        val keep = ArrayList<String>()
+        val have = HashSet<String>()
+        for (p in magnet.substring(q + 1).split('&')) {
+            if (p.isEmpty()) continue
+            if (p.startsWith("tr=")) {
+                val u = try {
+                    java.net.URLDecoder.decode(p.substring(3), "UTF-8")
+                } catch (e: Exception) {
+                    p.substring(3)
+                }
+                val n = norm(u)
+                if (n in skip || !have.add(n)) continue
+            }
+            keep.add(p)
+        }
+        for (t in trackers) {
+            val n = norm(t)
+            if (n !in skip && have.add(n)) keep.add("tr=" + enc(t))
+        }
+        return magnet.substring(0, q + 1) + keep.joinToString("&")
     }
 
     /** Връща info hash като 40 hex символа (малки букви) или null. */
     fun infoHash(magnet: String): String? {
-        val m = Regex("xt=urn:btih:([A-Za-z0-9]+)").find(magnet) ?: return null
+        val m = BTIH.find(magnet) ?: return null
         val h = m.groupValues[1]
         return when (h.length) {
             40 -> h.lowercase(Locale.US)

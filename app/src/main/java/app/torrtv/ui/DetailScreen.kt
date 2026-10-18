@@ -40,6 +40,7 @@ import app.torrtv.core.formatSize
 import app.torrtv.data.Media
 import app.torrtv.data.MediaType
 import app.torrtv.data.Tmdb
+import app.torrtv.data.torrents.TorrentAggregator
 import app.torrtv.data.torrents.TorrentResult
 import app.torrtv.state.DetailState
 import app.torrtv.state.Graph
@@ -55,7 +56,7 @@ fun seedColor(n: Int): Color = when {
 }
 
 @Composable
-fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResult, Long) -> Unit) {
+fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResult, Long) -> Unit, sheetOpen: Boolean = false) {
     val d = st.detail
     val scope = rememberCoroutineScope()
     var quality by remember(st) { mutableStateOf("all") }
@@ -68,6 +69,8 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
 
     LaunchedEffect(st) { if (st.detail == null) st.start() }
     LaunchedEffect(d != null) { if (d != null) playFocus.tryRequest() }
+    // При „Продължи“ търсенето на торенти е отложено: пуска се, щом диалогът за пускане не е отворен.
+    LaunchedEffect(d != null, sheetOpen) { if (d != null && !sheetOpen) st.ensureTorrents() }
     LaunchedEffect(st) {
         // Автоматично зареждане на предложения, когато потребителят стигне до края
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
@@ -110,6 +113,7 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
         // Свободно място на избраното място и измерени скорости - за етикетите „събира се“ и „гладко“.
         val place = remember { Storage.chosen(ctx, Graph.prefs.storageId) }
         val freeBytes = remember(place, st.torrents.size) { Storage.free(place) }
+        val builtinPlayer = Graph.prefs.player == "builtin"
         val netMbps = Graph.prefs.netMbps.toDouble()
         val diskMBps = Graph.prefs.diskMBps.toDouble()
         val runtimeMin = if (d.media.type == MediaType.TV) st.episodes.firstOrNull { it.number == st.episode }?.runtime?.takeIf { it > 0 } ?: d.runtime else d.runtime
@@ -148,10 +152,13 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
                         Spacer(Modifier.height(12.d))
                         val best = st.torrents.filter { !it.isCam }.let { l ->
                             l.filter { rowFit(it).first != StreamFit.Level.BAD }.ifEmpty { l }
-                        }.maxByOrNull { score(it) - if (rowFit(it).second == StreamFit.Level.BAD) 1500 else 0 } ?: st.torrents.firstOrNull()
+                        }.maxByOrNull {
+                            TorrentAggregator.score(it, builtinPlayer) -
+                                if (rowFit(it).second == StreamFit.Level.BAD) TorrentAggregator.SLOW_PENALTY else 0
+                        } ?: st.torrents.firstOrNull()
                         // Започнато ли е вече? За сериал - само ако е избран същият епизод.
                         val pr = Library.progressOf(d.media.key)?.takeIf {
-                            d.media.type == MediaType.MOVIE || (it.season == st.season && it.episode == st.episode)
+                            !it.nextUp && (d.media.type == MediaType.MOVIE || (it.season == st.season && it.episode == st.episode))
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(12.d), verticalAlignment = Alignment.CenterVertically) {
                             if (pr != null) {
@@ -190,6 +197,17 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
                                 primary = false
                             )
                             PrimaryButton("Търси пак", { st.loadTorrents(); st.loadSubs() }, primary = false)
+                            val isTv = d.media.type == MediaType.TV
+                            val seen = Library.isWatched(d.media, if (isTv) st.season else null, if (isTv) st.episode else null)
+                            PrimaryButton(
+                                when {
+                                    seen -> if (isTv) "✓ Епизодът е гледан" else "✓ Изгледан"
+                                    isTv -> "Отбележи епизода като гледан"
+                                    else -> "Отбележи като изгледан"
+                                },
+                                { Library.setWatched(d.media, if (isTv) st.season else null, if (isTv) st.episode else null, !seen) },
+                                primary = false
+                            )
                         }
                         Spacer(Modifier.height(5.d))
                         if (best != null && best.seeders in 0..4 && pr == null) {
@@ -230,6 +248,9 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
                                     Box {
                                         Img(Look.img(e.stillPath, "w300"), Modifier.fillMaxWidth().height(104.d))
                                         Box(Modifier.padding(6.d)) { Pill("Еп. ${e.number}", Color(0xCC000000), if (sel) C.accent2 else C.text) }
+                                        if (Library.isWatched(d.media, st.season, e.number)) {
+                                            Box(Modifier.align(Alignment.TopEnd).padding(6.d)) { Pill("✓", Color(0xCC000000), C.green) }
+                                        }
                                     }
                                     Column(Modifier.padding(8.d)) {
                                         Text2(e.name.ifBlank { "Епизод ${e.number}" }, 12, C.text, FontWeight.Bold, 1)
@@ -398,12 +419,6 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
             }
         }
     }
-}
-
-private fun score(t: TorrentResult): Int {
-    val q = when (t.quality) { "4K" -> 3; "1080p" -> 4; "720p" -> 2; else -> 0 }
-    val seeds = minOf(t.seeders, 200)
-    return (if (t.seeders >= 5) q * 1000 else 0) + seeds * 3
 }
 
 @Composable
