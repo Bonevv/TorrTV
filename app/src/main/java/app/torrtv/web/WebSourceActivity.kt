@@ -129,7 +129,7 @@ class WebSourceActivity : AppCompatActivity() {
             WebView(this)
         } catch (e: Throwable) {
             AppLog.e("web", "няма WebView", e)
-            Toast.makeText(this, "Тази телевизия няма WebView - уеб сайтовете не могат да се отворят.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Този телевизор няма WebView, затова уеб сайтовете не могат да се отворят.", Toast.LENGTH_LONG).show()
             finish()
             return
         }
@@ -197,7 +197,7 @@ class WebSourceActivity : AppCompatActivity() {
                     customView != null -> chrome.onHideCustomView()
                     countdown > 0 -> {
                         cancelCountdown()
-                        showBanner("Остани в страницата. Задръж OK за менюто → „Пусни във вградения плеър“.", 5000)
+                        showBanner("Остани в страницата. Задръж OK за менюто и избери „Пусни във вградения плеър“.", 5000)
                     }
                     else -> finish()
                 }
@@ -205,7 +205,7 @@ class WebSourceActivity : AppCompatActivity() {
         })
 
         load()
-        showBanner("Стрелки = курсор · OK = клик · задръж OK = меню (друг сайт, вграден плеър) · Назад = изход", 7000)
+        showBanner("Стрелките движат курсора, OK е клик. Задръж OK за меню (друг сайт, вграден плеър). Назад затваря.", 7000)
     }
 
     // ---------- Зареждане и смяна на сайт ----------
@@ -238,7 +238,7 @@ class WebSourceActivity : AppCompatActivity() {
     }
 
     private fun updateBar(state: String) {
-        bar.text = "🌐 ${sources[idx].host}  (${idx + 1}/${sources.size})  ·  $state"
+        bar.text = "${sources[idx].host}  (${idx + 1}/${sources.size})  ·  $state"
     }
 
     // ---------- Клиент на страницата ----------
@@ -391,7 +391,7 @@ class WebSourceActivity : AppCompatActivity() {
             1 -> startCountdown()
             2 -> if (!hinted) {
                 hinted = true
-                showBanner("▶ Намерих видео поток. Ако искаш вградения плеър: задръж OK → „Пусни във вградения плеър“.", 6000)
+                showBanner("Видеото е намерено. За вградения плеър задръж OK и избери „Пусни във вградения плеър“.", 6000)
             }
             else -> ask()
         }
@@ -401,15 +401,15 @@ class WebSourceActivity : AppCompatActivity() {
         if (asked || handedOff) return
         asked = true
         val stay = {
-            showBanner("Оставаш на сайта. Задръж OK → меню → „Пусни във вградения плеър“, когато поискаш.", 6000)
+            showBanner("Оставаш на сайта. Когато поискаш, задръж OK и избери „Пусни във вградения плеър“.", 6000)
         }
         AlertDialog.Builder(this)
-            .setTitle("Намерих видео поток")
+            .setTitle("Видеото е намерено")
             .setMessage(
-                "От ${sources[idx].host}.\n\nДа го пусна ли във вградения плеър? Там няма реклами, слагат се твоите субтитри " +
-                    "(с избор и синхрон) и има таймер за заспиване."
+                "От ${sources[idx].host}.\n\nДа се пусне ли във вградения плеър? Там няма реклами, има твоите субтитри " +
+                    "(с избор и синхрон) и таймер за заспиване."
             )
-            .setPositiveButton("▶  Вграден плеър") { _, _ -> handOff() }
+            .setPositiveButton("Вграден плеър") { _, _ -> handOff() }
             .setNegativeButton("Остани на сайта") { _, _ -> stay() }
             .setOnCancelListener { stay() }
             .show()
@@ -424,7 +424,7 @@ class WebSourceActivity : AppCompatActivity() {
     }
 
     private fun showCountdown() {
-        showBanner("▶ Намерих видео потока. Пускам във вградения плеър след $countdown с  ·  Назад = остани в страницата", 0)
+        showBanner("Видеото е намерено. Пуска се във вградения плеър след $countdown с  ·  Назад - остани в страницата", 0)
     }
 
     private fun cancelCountdown() {
@@ -438,7 +438,7 @@ class WebSourceActivity : AppCompatActivity() {
         val c = captured
         val p = pending
         if (c == null || p == null || handedOff) {
-            Toast.makeText(this, "Още няма намерен поток - пусни видеото в страницата.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Още не е намерено видео - пусни го в самата страница.", Toast.LENGTH_LONG).show()
             return
         }
         handedOff = true
@@ -460,13 +460,13 @@ class WebSourceActivity : AppCompatActivity() {
 
     private fun showMenu() {
         val items = ArrayList<String>()
-        items.add(if (captured != null) "▶  Пусни във вградения плеър" else "▶  Вграден плеър (още няма намерен поток)")
-        items.add("⏭  Следващ сайт")
-        items.add("🔄  Презареди")
+        items.add(if (captured != null) "Пусни във вградения плеър" else "Вграден плеър (още няма намерено видео)")
+        items.add("Следващ сайт")
+        items.add("Презареди")
         sources.forEachIndexed { i, s -> items.add((if (i == idx) "●  " else "○  ") + s.host) }
-        items.add("✕  Затвори")
+        items.add("Затвори")
         AlertDialog.Builder(this)
-            .setTitle("Уеб източник")
+            .setTitle("Уеб сайт")
             .setItems(items.toTypedArray()) { _, which ->
                 when {
                     which == 0 -> handOff()

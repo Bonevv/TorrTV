@@ -104,7 +104,7 @@ class WeeklyRow(val type: MediaType, val title: String) {
             val list = read(week, lang) ?: WeeklyLogic.choose(fetchPool(), week, type.ordinal).also {
                 if (it.isNotEmpty()) write(week, lang, it)
             }
-            if (list.isEmpty()) error = "Няма достатъчно заглавия за подбор."
+            if (list.isEmpty()) error = "Няма достатъчно заглавия."
             items.clear()
             items.addAll(list)
         } catch (e: CancellationException) {

@@ -120,7 +120,7 @@ fun App() {
                     updateReady = home.update != null, ramMb = ramMb, onExit = { exitAsk = true }
                 )
                 // Началото е с банер до горния ръб; другите екрани получават малък отстъп отгоре.
-                Box(Modifier.weight(1f).fillMaxHeight().padding(top = if (tab == 0) 0.d else 14.d)) {
+                Box(Modifier.weight(1f).fillMaxHeight().padding(top = if (tab == 0) 0.d else 14.d).stayInContent()) {
                     when (tab) {
                         0 -> HomeScreen(home, ::open, ::resume)
                         1 -> BrowseScreen(Graph.browseMovies, ::open)

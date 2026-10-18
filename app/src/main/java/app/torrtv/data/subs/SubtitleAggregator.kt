@@ -33,7 +33,7 @@ class SubtitleAggregator(private val prefs: Prefs) {
             launch {
                 val u = try {
                     val r = withTimeoutOrNull(25_000) { p.search(q) }
-                    if (r == null) Update(p.name, emptyList(), "времето изтече")
+                    if (r == null) Update(p.name, emptyList(), "не отговори навреме")
                     else Update(p.name, r.take(25), null)
                 } catch (e: CancellationException) {
                     throw e

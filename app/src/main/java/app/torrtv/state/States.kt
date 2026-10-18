@@ -70,6 +70,9 @@ class Paged<T>(
             for (x in p.items) if (seen.add(keyOf(x))) items.add(x)
             if (p.page >= p.totalPages || items.size >= maxItems) exhausted = true
         } catch (e: CancellationException) {
+            // Екранът е излязъл по средата на зареждането. Ако още няма нищо, следващото показване да почне отначало,
+            // иначе редът остава празен и въртящ се завинаги.
+            if (items.isEmpty()) started = false
             throw e
         } catch (e: Exception) {
             error = e.message ?: e.javaClass.simpleName
@@ -122,6 +125,23 @@ class HomeState {
     var heroTarget by mutableStateOf<Media?>(null)
     var focusKey: String? = null
     var update by mutableStateOf<Updater.Release?>(null)
+
+    /**
+     * Зарежда редовете малко преди да се стигне до тях. Иначе от последния видим ред няма накъде да се слезе -
+     * редът отдолу още е празен и не може да получи фокус. Върви в общия обхват на приложението, за да не се
+     * прекъсва, когато някой ред излезе от екрана. [lastVisibleRow] е номерът на най-долния видим ред (-1 = няма).
+     */
+    fun warm(lastVisibleRow: Int) {
+        val count = RowWarmUp.count(lastVisibleRow, rows.size)
+        Graph.scope.launch { for (w in picks) if (w.items.isEmpty() && !w.loading && w.error == null) w.load() }
+        Graph.scope.launch {
+            for (i in 0 until count) {
+                val d = rows[i].data
+                if (d.items.isEmpty() && !d.loading && d.error == null && !d.exhausted) d.loadNext()
+            }
+        }
+    }
+
     private var updateChecked = false
 
     suspend fun checkUpdate() {
@@ -136,6 +156,12 @@ class HomeState {
             // без интернет или без издание - пропускаме тихо
         }
     }
+}
+
+/** Колко реда да са готови: всички до най-долния видим и още [AHEAD] под него. */
+object RowWarmUp {
+    const val AHEAD = 3
+    fun count(lastVisibleRow: Int, total: Int): Int = minOf(total, maxOf(lastVisibleRow, -1) + 1 + AHEAD)
 }
 
 class BrowseState(val type: MediaType) {

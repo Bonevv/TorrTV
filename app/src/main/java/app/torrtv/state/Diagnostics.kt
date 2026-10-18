@@ -32,7 +32,7 @@ object Diagnostics {
             }
             try {
                 val r = withTimeoutOrNull(30_000) { src.search(q) }
-                if (r == null) report("⏱ ${src.name}: времето изтече")
+                if (r == null) report("⏱ ${src.name}: не отговори навреме")
                 else report("✓ ${src.name}: ${r.size} резултата ($label, най-много ${r.maxOfOrNull { it.seeders } ?: 0} сийдъра)")
             } catch (e: CancellationException) {
                 throw e
@@ -50,7 +50,7 @@ object Diagnostics {
             }
             try {
                 val r = withTimeoutOrNull(30_000) { p.search(sq) }
-                if (r == null) report("⏱ ${p.name}: времето изтече")
+                if (r == null) report("⏱ ${p.name}: не отговори навреме")
                 else report("✓ ${p.name}: ${r.size} субтитъра (BG: ${r.count { it.lang == "bg" }})")
             } catch (e: CancellationException) {
                 throw e

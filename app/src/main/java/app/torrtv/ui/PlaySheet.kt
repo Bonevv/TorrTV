@@ -81,8 +81,8 @@ fun PlaySheet(st: DetailState, t: TorrentResult, resumeMs: Long = 0L, onSwitch: 
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.d)
                 ) {
-                    Text2("⚠ Този торент няма достатъчно сийдъри. Гледай от:", 12, C.amber, FontWeight.Bold, 2, Modifier.weight(1f))
-                    PrimaryButton("▾ Откъде?", { pickOpen = true })
+                    Text2("Този торент има малко сийдъри. Гледай от:", 12, C.amber, FontWeight.Bold, 2, Modifier.weight(1f))
+                    PrimaryButton("Откъде?", { pickOpen = true })
                 }
             }
 
@@ -96,7 +96,7 @@ fun PlaySheet(st: DetailState, t: TorrentResult, resumeMs: Long = 0L, onSwitch: 
             }
             if (player == "builtin" && ("DTS" in t.tags || "TrueHD" in t.tags)) {
                 Spacer(Modifier.height(4.d))
-                Text2("⚠ Този файл е със звук DTS/TrueHD - във вградения плеър може да няма звук. По-добре избери торент с AAC или AC3.", 11, C.amber, FontWeight.Medium, 2)
+                Text2("Файлът е със звук DTS/TrueHD и във вградения плеър може да няма звук. Избери торент с AAC или AC3 или пусни външен плеър.", 11, C.amber, FontWeight.Medium, 2)
             }
 
             Spacer(Modifier.height(14.d))
@@ -111,7 +111,7 @@ fun PlaySheet(st: DetailState, t: TorrentResult, resumeMs: Long = 0L, onSwitch: 
                     Graph.stream.start(st.playRequest(t, chosen, player, 0L))
                     onDismiss()
                 }, primary = false)
-                if (t.seeders !in 0..4) PrimaryButton("▾ Откъде?", { pickOpen = true }, primary = false)
+                if (t.seeders !in 0..4) PrimaryButton("Откъде?", { pickOpen = true }, primary = false)
                 PrimaryButton("Откажи", onDismiss, primary = false)
             }
 
@@ -129,7 +129,7 @@ fun PlaySheet(st: DetailState, t: TorrentResult, resumeMs: Long = 0L, onSwitch: 
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.d)
                 ) {
-                    Text2("💬 Субтитри", 13, C.text, FontWeight.Bold, 1)
+                    Text2("Субтитри", 13, C.text, FontWeight.Bold, 1)
                     Text2(summary, 12, C.accent2, FontWeight.Medium, 1, Modifier.weight(1f))
                     if (ranked.isNotEmpty()) Text2(if (subsOpen) "▲" else "▼", 13, C.dim, FontWeight.Bold, 1)
                 }
@@ -139,10 +139,10 @@ fun PlaySheet(st: DetailState, t: TorrentResult, resumeMs: Long = 0L, onSwitch: 
             if (firstPicked != null) {
                 Spacer(Modifier.height(5.d))
                 when (firstPicked) {
-                    Fit.EXACT -> Text2("✓ Субтитрите са за това издание - трябва да са синхронни със звука.", 11, C.green, FontWeight.Medium, 2)
-                    Fit.SIMILAR -> Text2("~ Субтитрите са за подобно издание - може да има малко разминаване. В плеъра има синхрон.", 11, C.amber, FontWeight.Medium, 2)
-                    Fit.OTHER -> Text2("⚠ Субтитрите са за ДРУГО издание - вероятно ще се разминават. Избери друг субтитър/торент или ползвай синхрона в плеъра.", 11, C.amber, FontWeight.Medium, 2)
-                    Fit.UNKNOWN -> Text2("? За този субтитър няма данни за изданието. Ако се разминава, ползвай синхрона в плеъра.", 11, C.dim, FontWeight.Normal, 2)
+                    Fit.EXACT -> Text2("Субтитрите са за това издание и трябва да пасват.", 11, C.green, FontWeight.Medium, 2)
+                    Fit.SIMILAR -> Text2("Субтитрите са за подобно издание и може да се разминават малко. В плеъра можеш да ги наместиш.", 11, C.amber, FontWeight.Medium, 2)
+                    Fit.OTHER -> Text2("Субтитрите са за друго издание и вероятно ще се разминават. Избери други субтитри или ги намести в плеъра.", 11, C.amber, FontWeight.Medium, 2)
+                    Fit.UNKNOWN -> Text2("Не се знае за кое издание са тези субтитри. Ако се разминават, намести ги в плеъра.", 11, C.dim, FontWeight.Normal, 2)
                 }
             }
             if (subsOpen && ranked.isNotEmpty()) {
@@ -153,7 +153,7 @@ fun PlaySheet(st: DetailState, t: TorrentResult, resumeMs: Long = 0L, onSwitch: 
                     } }
                 }
                 Spacer(Modifier.height(4.d))
-                Text2("Може да избереш до 4 - в плеъра се превключват. Най-горе е най-подходящият.", 10, C.dim, FontWeight.Normal, 1)
+                Text2("Избери до 4 - превключваш ги в плеъра. Най-подходящият е най-горе.", 10, C.dim, FontWeight.Normal, 1)
             }
         }
     }
@@ -180,10 +180,10 @@ private fun SubRow(s: SubtitleResult, fit: Fit, on: Boolean, toggle: () -> Unit)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.d), verticalAlignment = Alignment.CenterVertically) {
                     Pill(Langs.choices.firstOrNull { it.first == s.lang }?.second ?: s.lang.uppercase(), C.cardHi, C.text)
                     when (fit) {
-                        Fit.EXACT -> Pill("✓ точно издание", Color(0x333DDC84), C.green)
-                        Fit.SIMILAR -> Pill("~ подобно", Color(0x33FFB020), C.amber)
-                        Fit.OTHER -> Pill("✗ друго издание", Color(0x33FF5C6C), C.red)
-                        Fit.UNKNOWN -> Pill("? неясно", C.cardHi, C.dim)
+                        Fit.EXACT -> Pill("точно издание", Color(0x333DDC84), C.green)
+                        Fit.SIMILAR -> Pill("подобно", Color(0x33FFB020), C.amber)
+                        Fit.OTHER -> Pill("друго издание", Color(0x33FF5C6C), C.red)
+                        Fit.UNKNOWN -> Pill("неясно", C.cardHi, C.dim)
                     }
                     if (s.trusted) Pill("доверен", Color(0x223DDC84), C.green)
                     if (s.hearing) Pill("за глухи", C.cardHi, C.dim)

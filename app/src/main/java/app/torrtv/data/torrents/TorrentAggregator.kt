@@ -40,7 +40,7 @@ class TorrentAggregator(private val prefs: Prefs) {
             launch {
                 val u = try {
                     val r = withTimeoutOrNull(28_000) { src.search(q) }
-                    if (r == null) Update(src.name, emptyList(), "времето изтече")
+                    if (r == null) Update(src.name, emptyList(), "не отговори навреме")
                     else Update(src.name, r, null)
                 } catch (e: CancellationException) {
                     throw e

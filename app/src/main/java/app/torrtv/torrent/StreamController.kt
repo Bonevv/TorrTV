@@ -200,7 +200,7 @@ class StreamController(
                 AppLog.d("stream", "режим ${cur + 1} се срина; следващият опит е в режим ${next + 1}")
                 ui = ui.copy(
                     stage = Stage.ERROR,
-                    error = "$why (режим ${cur + 1}). Натисни „Опитай пак“ - ще опитам в режим ${next + 1}. Причината е в Настройки → Дневник."
+                    error = "Торент двигателят спря: $why (режим ${cur + 1}). „Опитай пак“ ще пробва режим ${next + 1}. Подробности има в Настройки → Дневник."
                 )
             }
         }
@@ -229,12 +229,12 @@ class StreamController(
         val n = cur.next ?: return false
         if (switching) return true
         switching = true
-        ui = Ui(stage = Stage.CONNECTING, message = "Търся торент за ${n.label}…", req = cur)
+        ui = Ui(stage = Stage.CONNECTING, message = "Търсене на торент за ${n.label}…", req = cur)
         scope.launch {
             try {
                 val r = n.prepare()
                 if (r != null) start(r)
-                else ui = ui.copy(stage = Stage.ERROR, error = "Не намерих торент за ${n.label}. Може още да не е излязъл - опитай по-късно.")
+                else ui = ui.copy(stage = Stage.ERROR, error = "Няма торент за ${n.label}. Може още да не е излязъл - опитай по-късно.")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -277,7 +277,7 @@ class StreamController(
         val sj = scope.async { prepareSubs(req) }
         subsJob = sj
 
-        ui = ui.copy(stage = Stage.METADATA, message = "Стартиране на торент двигателя…")
+        ui = ui.copy(stage = Stage.METADATA, message = "Стартиране на торента…")
         client.connect()
         ui = ui.copy(message = "Търсене на пиъри…")
         val profile = Graph.prefs.engineProfile
@@ -301,7 +301,7 @@ class StreamController(
             }
             delay(400)
             if (System.currentTimeMillis() - t0 > 6 * 60_000L)
-                throw IOException("Твърде бавно теглене - няма достатъчно сийдъри. Опитай друг източник.")
+                throw IOException("Тегли се много бавно - торентът няма достатъчно сийдъри. Опитай друг.")
         }
 
         val subs = registerSubs(sj, req)
@@ -334,7 +334,7 @@ class StreamController(
         token++
         resumeFrom = 0L
         AppLog.d("stream", "Уеб поток: ${req.title} ${req.subtitle} субтитри=${req.subs.size}")
-        ui = Ui(stage = Stage.CONNECTING, message = "Подготвям субтитрите…", req = req, webHost = host)
+        ui = Ui(stage = Stage.CONNECTING, message = "Подготовка на субтитрите…", req = req, webHost = host)
         StreamService.start(app)
         job = scope.launch {
             try {

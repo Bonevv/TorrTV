@@ -39,7 +39,7 @@ class Tmdb(private val prefs: Prefs, diskDir: File? = null) {
         lang: String = uiLang()
     ): JSONObject {
         val key = prefs.tmdbKey
-        if (key.isBlank()) throw IllegalStateException("Липсва TMDB ключ. Добави го от Настройки → Настройка от телефон.")
+        if (key.isBlank()) throw IllegalStateException("Липсва TMDB ключ. Добави го от Настройки → Настройка от телефона.")
         val sb = StringBuilder("$BASE$path?language=$lang&include_adult=false")
         for ((k, v) in params) sb.append('&').append(k).append('=').append(enc(v))
         // Ключът на кеша е адресът БЕЗ API ключа - той никога не се записва на диска.

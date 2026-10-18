@@ -110,7 +110,7 @@ class TorrentClient(private val app: Application) {
         }
         if (!ok) {
             conn = null
-            throw IOException("Не мога да стартирам торент услугата")
+            throw IOException("Торент услугата не може да се стартира")
         }
         within(20_000, "Торент услугата не се стартира навреме") { wait.await() }
         AppLog.d("client", "свързан с ${cls.simpleName}")

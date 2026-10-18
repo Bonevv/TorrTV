@@ -118,12 +118,12 @@ fun SettingsScreen() {
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 50.d)) {
         item {
-            Group("Въвеждане на ключовете от телефона") {
+            Group("Настройка от телефона") {
                 val addrs = remember(tick / 4) { Graph.config.addresses() }
                 val port = Graph.config.port
-                Text2("Отвори на телефона (в същата Wi-Fi мрежа) и въведи ПИН-а:", 13, C.dim, FontWeight.Normal, 2)
+                Text2("Отвори адреса на телефона си (трябва да е в същата Wi-Fi мрежа) и въведи ПИН-а:", 13, C.dim, FontWeight.Normal, 2)
                 Spacer(Modifier.height(6.d))
-                if (addrs.isEmpty()) Text2("Няма Wi-Fi/LAN адрес. Свържи телевизора към мрежата.", 13, C.red, FontWeight.Medium, 2)
+                if (addrs.isEmpty()) Text2("Телевизорът не е свързан към мрежа.", 13, C.red, FontWeight.Medium, 2)
                 addrs.forEach { Text2("http://$it:$port", 22, C.accent2, FontWeight.ExtraBold, 1) }
                 Spacer(Modifier.height(4.d))
                 Text2("ПИН: ${Graph.config.pin}", 22, C.gold, FontWeight.ExtraBold, 1)
@@ -151,8 +151,8 @@ fun SettingsScreen() {
                 }
                 Spacer(Modifier.height(4.d))
                 Text2(
-                    if (installed.isEmpty()) "Външни плеъри (VLC, MX, Just Player) не са открити - инсталирай ги от магазина, ако ти трябват DTS/AC3."
-                    else "Открити външни плеъри: " + installed.joinToString { it.label },
+                    if (installed.isEmpty()) "Няма инсталиран външен плеър (VLC, MX Player, Just Player). Вземи си някой, ако ти трябва звук DTS или AC3."
+                    else "Намерени плеъри: " + installed.joinToString { it.label },
                     11, C.dim, FontWeight.Normal, 2
                 )
             }
@@ -184,8 +184,8 @@ fun SettingsScreen() {
         }
 
         item {
-            Group("Вграден плеър: субтитри, звук, следващ епизод") {
-                Text2("Размер", 13, C.dim, FontWeight.Bold, 1)
+            Group("Вграден плеър") {
+                Text2("Размер на субтитрите", 13, C.dim, FontWeight.Bold, 1)
                 Spacer(Modifier.height(4.d))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
                     listOf("Малки", "Средни", "Големи", "Много големи").forEachIndexed { i, name ->
@@ -193,7 +193,7 @@ fun SettingsScreen() {
                     }
                 }
                 Spacer(Modifier.height(8.d))
-                Text2("Оформление", 13, C.dim, FontWeight.Bold, 1)
+                Text2("Стил на субтитрите", 13, C.dim, FontWeight.Bold, 1)
                 Spacer(Modifier.height(4.d))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
                     listOf("Като в системата", "Контур", "Фон", "Сянка").forEachIndexed { i, name ->
@@ -201,7 +201,7 @@ fun SettingsScreen() {
                     }
                 }
                 Spacer(Modifier.height(8.d))
-                Text2("Позиция", 13, C.dim, FontWeight.Bold, 1)
+                Text2("Място на субтитрите", 13, C.dim, FontWeight.Bold, 1)
                 Spacer(Modifier.height(4.d))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
                     listOf("По-ниско", "Стандартно", "По-високо").forEachIndexed { i, name ->
@@ -209,20 +209,20 @@ fun SettingsScreen() {
                     }
                 }
                 Spacer(Modifier.height(8.d))
-                Text2("Език на звука", 13, C.dim, FontWeight.Bold, 1)
+                Text2("Звук", 13, C.dim, FontWeight.Bold, 1)
                 Spacer(Modifier.height(4.d))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
-                    listOf("auto" to "Както е във файла", "orig" to "Оригинален", "bg" to "Български", "en" to "English").forEach { (code, name) ->
+                    listOf("auto" to "От файла", "orig" to "Оригинален", "bg" to "Български", "en" to "English").forEach { (code, name) ->
                         Chip(name, audioLang == code, { audioLang = code; prefs.audioLang = code })
                     }
                 }
                 Spacer(Modifier.height(4.d))
-                Text2("Ако избраният звук го няма във файла, се пуска този по подразбиране. Важи за следващото пускане.", 11, C.dim, FontWeight.Normal, 2)
+                Text2("Ако във файла няма такъв звук, пуска се стандартният.", 11, C.dim, FontWeight.Normal, 2)
                 Spacer(Modifier.height(8.d))
-                Text2("Следващ епизод при край на текущия", 13, C.dim, FontWeight.Bold, 1)
+                Text2("Следващ епизод", 13, C.dim, FontWeight.Bold, 1)
                 Spacer(Modifier.height(4.d))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
-                    Chip("Пуска се сам", autoNext, { autoNext = true; prefs.autoNext = true })
+                    Chip("Автоматично", autoNext, { autoNext = true; prefs.autoNext = true })
                     Chip("Само с бутон", !autoNext, { autoNext = false; prefs.autoNext = false })
                 }
             }
@@ -245,7 +245,7 @@ fun SettingsScreen() {
 
         item {
             Group("Обновяване") {
-                Text2("Инсталирана версия: ${Graph.updater.currentVersion}", 13, C.dim, FontWeight.Medium, 1)
+                Text2("Версия: ${Graph.updater.currentVersion}", 13, C.dim, FontWeight.Medium, 1)
                 Spacer(Modifier.height(6.d))
                 val r = release
                 if (r != null) {
@@ -261,11 +261,11 @@ fun SettingsScreen() {
                         scope.launch {
                             try {
                                 val l = Graph.updater.latest()
-                                if (l != null && Graph.updater.isNewer(l.tag)) { release = l } else { release = null; updMsg = "Имаш последната версия ✓" }
+                                if (l != null && Graph.updater.isNewer(l.tag)) { release = l } else { release = null; updMsg = "Имаш най-новата версия." }
                             } catch (e: kotlinx.coroutines.CancellationException) {
                                 throw e
                             } catch (e: Exception) {
-                                updMsg = "Грешка: ${e.message}"
+                                updMsg = "Не се получи: ${e.message}"
                             } finally { checking = false }
                         }
                     }, primary = release == null)
@@ -277,12 +277,12 @@ fun SettingsScreen() {
                                 try {
                                     val f = Graph.updater.download(r) { progress = it }
                                     progress = 1f
-                                    updMsg = Graph.updater.install(f) ?: "Стартиране на инсталатора…"
+                                    updMsg = Graph.updater.install(f) ?: "Отваря се инсталаторът…"
                                 } catch (e: kotlinx.coroutines.CancellationException) {
                                     throw e
                                 } catch (e: Exception) {
                                     progress = -1f
-                                    updMsg = "Грешка: ${e.message}"
+                                    updMsg = "Не се получи: ${e.message}"
                                 }
                             }
                         })
@@ -296,7 +296,7 @@ fun SettingsScreen() {
         }
 
         item {
-            Group("Място и скорост") {
+            Group("Диск и скорост") {
                 val places = remember(cacheTick) { app.torrtv.core.Storage.places(ctx) }
                 var storageId by remember { mutableStateOf(prefs.storageId) }
                 val cur = places.firstOrNull { it.id == storageId } ?: places.first()
@@ -306,7 +306,7 @@ fun SettingsScreen() {
                 var netBusy by remember { mutableStateOf(false) }
                 var diskBusy by remember { mutableStateOf(false) }
                 var testMsg by remember { mutableStateOf("") }
-                Text2("Къде се тегли филмът, докато се гледа:", 12, C.dim, FontWeight.Bold, 1)
+                Text2("Къде да се пази филмът, докато го гледаш:", 12, C.dim, FontWeight.Bold, 1)
                 Spacer(Modifier.height(4.d))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.d)) {
                     items(places, key = { it.id }) { p ->
@@ -318,9 +318,9 @@ fun SettingsScreen() {
                 }
                 Spacer(Modifier.height(4.d))
                 Text2(
-                    "На избраното място могат да се гледат файлове до около " + CacheManager.fmt(app.torrtv.core.StreamFit.usableBytes(free)) +
-                        ". " + (if (places.size == 1) "Външен диск (USB или SD карта) се появява тук, когато е включен. " else "") +
-                        "Работата с външен диск зависи от модела на устройството и от скоростта на самия диск - проверява се с теста на записа.",
+                    "Тук се събира файл до около " + CacheManager.fmt(app.torrtv.core.StreamFit.usableBytes(free)) + ". " +
+                        (if (places.size == 1) "Ако включиш USB диск или SD карта, ще се появи в списъка. " else "") +
+                        "На някои телевизори външните дискове са бавни - провери с теста за запис.",
                     11, C.dim, FontWeight.Normal, 4
                 )
                 Spacer(Modifier.height(8.d))
@@ -334,7 +334,7 @@ fun SettingsScreen() {
                                 diskMBps = r.toFloat()
                                 prefs.diskMBps = diskMBps
                                 testMsg = ""
-                            } else testMsg = "Тестът на записа не успя (няма достъп или място)."
+                            } else testMsg = "Тестът на записа не се получи (няма достъп или място)."
                             diskBusy = false
                         }
                     }, primary = false)
@@ -347,7 +347,7 @@ fun SettingsScreen() {
                                 netMbps = r.toFloat()
                                 prefs.netMbps = netMbps
                                 testMsg = ""
-                            } else testMsg = "Тестът на мрежата не успя - няма връзка със сървърите за измерване."
+                            } else testMsg = "Тестът на мрежата не се получи - провери връзката с интернет."
                             netBusy = false
                         }
                     }, primary = false)
@@ -364,8 +364,8 @@ fun SettingsScreen() {
                     Spacer(Modifier.height(8.d))
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.d)) {
                         Text2(
-                            "Препоръчан буфер: напред " + (if (rec >= 1000) "1 GB" else "$rec MB") +
-                                (if (netMbps < 20) " (връзката е бавна - по-голям буфер)" else ""),
+                            "Препоръчан буфер: " + (if (rec >= 1000) "1 GB" else "$rec MB") + " напред" +
+                                (if (netMbps < 20) " (връзката ти е бавна)" else ""),
                             12, C.text, FontWeight.Medium, 2, Modifier.weight(1f)
                         )
                         PrimaryButton(if (streamWindow == rec) "Зададен ✓" else "Задай", { streamWindow = rec; prefs.streamWindowMb = rec }, primary = false)
@@ -377,9 +377,8 @@ fun SettingsScreen() {
         item {
             Group("Памет и кеш") {
                 Text2(
-                    "RAM на приложението: ${mem.totalMb} MB   (интерфейс ${mem.pssMb} MB" +
-                        (if (mem.torrentMb > 0) " + торент двигател ${mem.torrentMb} MB" else "") +
-                        " · Java ${mem.javaMb} MB · native ${mem.nativeMb} MB)",
+                    "Заета памет: ${mem.totalMb} MB   (интерфейс ${mem.pssMb} MB" +
+                        (if (mem.torrentMb > 0) " + торент ${mem.torrentMb} MB" else "") + ")",
                     13, C.accent2, FontWeight.Bold, 2
                 )
                 Spacer(Modifier.height(4.d))
@@ -390,7 +389,7 @@ fun SettingsScreen() {
                     12, C.dim, FontWeight.Normal, 2
                 )
                 Spacer(Modifier.height(8.d))
-                Text2("Автоматично чистене:", 12, C.dim, FontWeight.Bold, 1)
+                Text2("Чисти кеша сам:", 12, C.dim, FontWeight.Bold, 1)
                 Spacer(Modifier.height(4.d))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.d)) {
                     items(CacheManager.intervals, key = { it.first }) { (h, label) ->
@@ -398,7 +397,7 @@ fun SettingsScreen() {
                     }
                 }
                 Spacer(Modifier.height(8.d))
-                Text2("Чисти, когато кешът надхвърли:", 12, C.dim, FontWeight.Bold, 1)
+                Text2("Чисти и когато стане повече от:", 12, C.dim, FontWeight.Bold, 1)
                 Spacer(Modifier.height(4.d))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.d)) {
                     items(CacheManager.limits, key = { it.first }) { (mb, label) ->
@@ -406,7 +405,7 @@ fun SettingsScreen() {
                     }
                 }
                 Spacer(Modifier.height(8.d))
-                Text2("Теглене при гледане:", 12, C.dim, FontWeight.Bold, 1)
+                Text2("Как да тегли, докато гледаш:", 12, C.dim, FontWeight.Bold, 1)
                 Spacer(Modifier.height(4.d))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.d)) {
                     items(listOf(0 to "Класическо", 200 to "Напред 200 MB", 500 to "Напред 500 MB", 1000 to "Напред 1 GB"), key = { it.first }) { (mb, label) ->
@@ -415,12 +414,12 @@ fun SettingsScreen() {
                 }
                 Spacer(Modifier.height(4.d))
                 Text2(
-                    "Класическо: торентът се тегли докрай, докато гледаш. Напред: тегли се само избраният размер пред мястото на гледане - " +
-                        "за дълги и големи файлове при малко свободно място. Вече изгледаното остава на диска до края на гледането. Важи от следващото пускане.",
+                    "Класическо тегли целия файл, докато гледаш. „Напред“ тегли само определено количество пред мястото, където си - " +
+                        "удобно за големи файлове, когато мястото не стига. Изгледаното остава на диска, докато не спреш филма.",
                     11, C.dim, FontWeight.Normal, 4
                 )
                 Spacer(Modifier.height(8.d))
-                PrimaryButton(if (cleared) "Изчистено ✓" else "Изчисти кеша сега", {
+                PrimaryButton(if (cleared) "Изчистено" else "Изчисти кеша сега", {
                     scope.launch {
                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                             CacheManager.clear(ctx, Graph.stream.ui.stage != app.torrtv.torrent.StreamController.Stage.IDLE)
@@ -435,7 +434,7 @@ fun SettingsScreen() {
         item {
             Group("Лек режим") {
                 Text2(
-                    "За по-слаби телевизори: без анимации на фокуса и плавни преходи, по-малки картинки. Включи го, ако менютата се движат на пресекулки.",
+                    "За слаби телевизори: без анимации и с по-малки картинки. Включи го, ако менютата се влачат.",
                     12, C.dim, FontWeight.Normal, 3
                 )
                 Spacer(Modifier.height(6.d))
@@ -449,8 +448,8 @@ fun SettingsScreen() {
         item {
             Group("Уеб сайтове") {
                 Text2(
-                    "Когато торентът няма сийдъри, филмът може да се гледа онлайн от сайт (в страницата на филма, бутон „Уеб сайтове“). Рекламите се блокират. " +
-                        "Тази част е отделна от торентите - ако не я искаш, я изключи и ще се виждат само торентите.",
+                    "Ако торентът няма сийдъри, можеш да гледаш филма онлайн от сайт - бутонът „Уеб сайтове“ е в страницата на филма. " +
+                        "Рекламите се блокират. Ако не искаш това, изключи го и ще виждаш само торентите.",
                     12, C.dim, FontWeight.Normal, 4
                 )
                 Spacer(Modifier.height(6.d))
@@ -459,18 +458,18 @@ fun SettingsScreen() {
                     Chip("Включени", webOn, { webOn = true; prefs.webEnabled = true })
                 }
                 Spacer(Modifier.height(8.d))
-                Text2("Когато сайтът пусне видеото:", 12, C.dim, FontWeight.Bold, 1)
+                Text2("Щом сайтът пусне видеото:", 12, C.dim, FontWeight.Bold, 1)
                 Spacer(Modifier.height(4.d))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.d)) {
                     items(
-                        listOf(0 to "Питай ме", 1 to "Автоматично във вградения плеър", 2 to "Остани на сайта"),
+                        listOf(0 to "Питай ме", 1 to "Във вградения плеър", 2 to "Остани на сайта"),
                         key = { it.first }
                     ) { (m, label) -> Chip(label, webHandoff == m, { webHandoff = m; prefs.webHandoff = m }) }
                 }
                 Spacer(Modifier.height(6.d))
                 Text2(
-                    "Адресите на сайтовете се сменят от телефона - същата страница като за ключовете, в раздел „Уеб сайтове“. " +
-                        "Ако един сайт спре да работи, махни реда му там.",
+                    "Списъкът със сайтове се сменя от телефона, на същата страница като ключовете (раздел „Уеб сайтове“). " +
+                        "Ако някой сайт спре да работи, махни го оттам.",
                     11, C.dim, FontWeight.Normal, 3
                 )
             }
@@ -479,7 +478,7 @@ fun SettingsScreen() {
         item {
             Group("Торент режим") {
                 Text2(
-                    "Ако филмът спре веднага след старта, смени режима. Приложението само сменя режима след срив, но тук можеш да го избереш и ръчно.",
+                    "Ако филмът спира веднага след като тръгне, пробвай друг режим. След срив приложението го сменя автоматично, но можеш да избереш и ръчно.",
                     12, C.dim, FontWeight.Normal, 3
                 )
                 Spacer(Modifier.height(6.d))
@@ -493,10 +492,10 @@ fun SettingsScreen() {
 
         item {
             Group("Диагностика") {
-                Text2("Тества всеки торент сайт, доставчик на субтитри и TMDB и показва кой не работи.", 12, C.dim, FontWeight.Normal, 2)
+                Text2("Проверява торент сайтовете, субтитрите и TMDB и показва кое не работи.", 12, C.dim, FontWeight.Normal, 2)
                 Spacer(Modifier.height(6.d))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.d)) {
-                    PrimaryButton(if (diagRunning) "Тества се…" else "Тествай източниците", {
+                    PrimaryButton(if (diagRunning) "Тества се…" else "Провери източниците", {
                         if (diagRunning) return@PrimaryButton
                         diagRunning = true
                         diag.clear()
@@ -529,7 +528,7 @@ fun SettingsScreen() {
         }
 
         item {
-            Group("Дневник (за съобщаване на проблем)") {
+            Group("Дневник") {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.d)) {
                     PrimaryButton(if (logText == null) "Покажи дневника" else "Опресни", { logText = AppLog.text() }, primary = false)
                     PrimaryButton("Изчисти дневника", { AppLog.clear(); logText = "" }, primary = false)

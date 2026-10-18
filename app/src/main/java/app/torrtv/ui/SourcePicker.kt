@@ -62,14 +62,14 @@ fun SourcePicker(
             Text2("Откъде да гледаш?", 18, C.text, FontWeight.ExtraBold, 1)
             Spacer(Modifier.height(10.d))
             Row(horizontalArrangement = Arrangement.spacedBy(10.d), verticalAlignment = Alignment.CenterVertically) {
-                Chip("🧲  Торенти (${torrents.size})", tab == 0, { tab = 0 }, onFocus = { tab = 0 }, focusRequester = tabFocus)
-                Chip("🌐  Уеб сайтове (${web.size})", tab == 1, { tab = 1 }, onFocus = { tab = 1 })
+                Chip("Торенти (${torrents.size})", tab == 0, { tab = 0 }, onFocus = { tab = 0 }, focusRequester = tabFocus)
+                Chip("Уеб сайтове (${web.size})", tab == 1, { tab = 1 }, onFocus = { tab = 1 })
                 if (st.searching) Spinner(16.d)
             }
             Spacer(Modifier.height(4.d))
             Text2(
-                if (tab == 0) "Торенти с най-много сийдъри първи. Стрелка надолу - към списъка, надясно - към уеб сайтовете."
-                else "Гледане онлайн, без торент. Стрелка надолу - към списъка, наляво - към торентите.",
+                if (tab == 0) "Първо са торентите с най-много сийдъри. Надолу е списъкът, надясно - уеб сайтовете."
+                else "Гледане онлайн, без торент. Надолу е списъкът, наляво - торентите.",
                 11, C.dim, FontWeight.Normal, 2
             )
             Spacer(Modifier.height(8.d))
@@ -78,7 +78,7 @@ fun SourcePicker(
                 if (tab == 0) {
                     if (torrents.isEmpty()) item(key = "none") {
                         Text2(
-                            if (st.searching) "Търся…" else "Няма други торенти. Пробвай уеб сайтовете (стрелка надясно).",
+                            if (st.searching) "Търсене…" else "Няма други торенти. Пробвай уеб сайтовете (надясно).",
                             12, C.dim, FontWeight.Normal, 2, Modifier.padding(start = 4.d)
                         )
                     }
@@ -95,12 +95,12 @@ fun SourcePicker(
                     }
                 } else if (web.isEmpty()) {
                     item(key = "webnone") {
-                        Text2("Няма адреси (или още се зарежда информацията за филма).", 12, C.dim, FontWeight.Normal, 2, Modifier.padding(start = 4.d))
+                        Text2("Няма адреси на сайтове (или филмът още се зарежда).", 12, C.dim, FontWeight.Normal, 2, Modifier.padding(start = 4.d))
                     }
                 } else {
                     item(key = "webnote") {
                         Text2(
-                            "Рекламите се блокират. Щом сайтът пусне видеото, можеш да го прехвърлиш във вградения плеър със субтитри. Ако не, гледаш в самата страница.",
+                            "Рекламите се блокират. Когато видеото тръгне, можеш да го прехвърлиш във вградения плеър (със субтитри) или да го гледаш в самата страница.",
                             11, C.dim, FontWeight.Normal, 3, Modifier.padding(start = 4.d, bottom = 2.d)
                         )
                     }

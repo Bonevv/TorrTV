@@ -53,7 +53,7 @@ fun ContinueRow(onResume: (Library.Progress) -> Unit, onFocusMedia: (Media) -> U
             }
             item(key = "clear") {
                 Box(Modifier.height(112.d), contentAlignment = Alignment.Center) {
-                    Chip("✕ Изчисти", false, { Library.clearProgress() })
+                    Chip("Изчисти", false, { Library.clearProgress() })
                 }
             }
         }
@@ -123,7 +123,7 @@ fun FavoritesScreen(onOpen: (Media) -> Unit) {
                 Spacer(Modifier.height(8.d))
                 Text2("Още нямаш любими.", 17, C.text, FontWeight.Bold, 1)
                 Spacer(Modifier.height(4.d))
-                Text2("Отвори филм или сериал и избери „♡ В любими“ - ще го намираш тук.", 13, C.dim, FontWeight.Normal, 2)
+                Text2("Отвори филм или сериал и избери „Добави в любими“ - ще го намериш тук.", 13, C.dim, FontWeight.Normal, 2)
             }
         }
         return

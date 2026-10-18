@@ -16,8 +16,8 @@ object SubCheck {
         fun message(): String {
             val min = abs(diffMs) / 60_000
             return when (verdict) {
-                Verdict.TOO_LONG -> "Субтитрите свършват $min мин. СЛЕД филма - може да са за друга версия."
-                Verdict.TOO_SHORT -> "Субтитрите свършват $min мин. ПРЕДИ края на филма - може да са за друга версия."
+                Verdict.TOO_LONG -> "Субтитрите свършват $min мин. след края на филма."
+                Verdict.TOO_SHORT -> "Субтитрите свършват $min мин. преди края на филма."
                 else -> ""
             }
         }

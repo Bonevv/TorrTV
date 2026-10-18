@@ -128,6 +128,12 @@ fun HomeScreen(home: HomeState, onOpen: (Media) -> Unit, onResume: (app.torrtv.s
             shown = home.heroTarget
         }
     }
+    // Докато се гледа един ред, тези под него се зареждат отнапред (виж HomeState.warm).
+    LaunchedEffect(Unit) {
+        snapshotFlow {
+            home.listState.layoutInfo.visibleItemsInfo.maxOfOrNull { v -> home.rows.indexOfFirst { it.id == v.key } } ?: -1
+        }.collect { home.warm(it) }
+    }
     Column(Modifier.fillMaxSize()) {
         val (kicker, isPick) = kickerOf(home, shown)
         HeroBanner(shown, kicker, isPick, Modifier.height(215.d))
@@ -156,7 +162,7 @@ private fun HomeRow(home: HomeState, row: HomeState.Row, onOpen: (Media) -> Unit
     val data = row.data
     val scope = rememberCoroutineScope()
     LaunchedEffect(row) {
-        if (!data.started) data.loadNext()
+        if (data.items.isEmpty() && !data.loading && data.error == null) data.loadNext()
         snapshotFlow {
             val li = row.listState.layoutInfo
             (li.visibleItemsInfo.lastOrNull()?.index ?: 0) to li.totalItemsCount
@@ -172,6 +178,8 @@ private fun HomeRow(home: HomeState, row: HomeState.Row, onOpen: (Media) -> Unit
         if (data.items.isEmpty()) {
             if (data.error != null) {
                 ErrorLine(data.error ?: "", { scope.launch { data.retry() } })
+            } else if (data.exhausted) {
+                Text2("Няма заглавия.", 12, C.dim, FontWeight.Normal, 1, Modifier.padding(horizontal = 36.d, vertical = 12.d))
             } else {
                 Box(Modifier.fillMaxWidth().height(168.d), contentAlignment = Alignment.CenterStart) {
                     Box(Modifier.padding(start = 36.d)) { Spinner() }

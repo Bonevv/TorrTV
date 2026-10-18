@@ -108,7 +108,7 @@ class PlayerActivity : AppCompatActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         // Запомнен синхрон за този филм (вече приложен върху субтитрите от контролера).
         offsetMs = Graph.stream.subOffsetMs
-        if (offsetMs != 0L) Toast.makeText(this, String.format("Синхрон на субтитрите %+.1f с (запомнен за този филм)", offsetMs / 1000.0), Toast.LENGTH_LONG).show()
+        if (offsetMs != 0L) Toast.makeText(this, String.format("Субтитрите са наместени с %+.1f с (запомнено за този филм)", offsetMs / 1000.0), Toast.LENGTH_LONG).show()
 
         val root = FrameLayout(this)
         root.setBackgroundColor(0xFF000000.toInt())
@@ -194,7 +194,7 @@ class PlayerActivity : AppCompatActivity() {
             override fun onPlayerError(error: PlaybackException) {
                 Toast.makeText(
                     this@PlayerActivity,
-                    "Грешка при възпроизвеждане: ${error.errorCodeName}. Ако е звук (DTS/AC3), пусни с VLC / MX / Just Player.",
+                    "Не може да се възпроизведе (${error.errorCodeName}). Ако е заради звука (DTS/AC3), пробвай с VLC, MX Player или Just Player.",
                     Toast.LENGTH_LONG
                 ).show()
             }
@@ -298,7 +298,7 @@ class PlayerActivity : AppCompatActivity() {
             return
         }
         if (nextLeft < 0) nextLeft = 6
-        nextInfo.text = "Следва: ${n.label}\nПуска се след $nextLeft с  ·  Назад - отказ"
+        nextInfo.text = "Следва ${n.label}\nПуска се след $nextLeft с  ·  Назад за отказ"
         nextInfo.visibility = View.VISIBLE
         if (nextLeft == 0) goNext() else nextLeft--
     }
@@ -389,13 +389,13 @@ class PlayerActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         // Следващ епизод (само за сериал, пуснат от торент).
-        nextBtn = pill("⏭  Следващ епизод") { goNext() }
+        nextBtn = pill("Следващ епизод") { goNext() }
         nextBtn.visibility = View.GONE
         topRow.addView(nextBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             rightMargin = 16
         })
         // Избор на друг субтитър от всички намерени.
-        subsBtn = pill("💬  Субтитри") { openSubPicker() }
+        subsBtn = pill("Субтитри") { openSubPicker() }
         subsBtn.visibility = View.GONE
         topRow.addView(subsBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             rightMargin = 16
@@ -427,7 +427,7 @@ class PlayerActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         val title = TextView(this).apply {
-            text = "💬 Синхрон  "
+            text = "Синхрон  "
             textSize = 13f
             setTextColor(0xFFFFFFFF.toInt())
         }
@@ -443,7 +443,7 @@ class PlayerActivity : AppCompatActivity() {
         row.addView(syncButton("+0,1", 100))
         row.addView(syncButton("+0,5", 500))
         val hint = TextView(this).apply {
-            text = "+ = субтитрите излизат по-късно · − = по-рано · запомня се за този филм"
+            text = "+ закъснява субтитрите, − ги избързва. Запомня се за този филм."
             textSize = 11f
             setTextColor(0xCCFFFFFF.toInt())
             setPadding(0, 6, 0, 0)
@@ -473,11 +473,11 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun showSleep() {
         if (sleepAt == 0L) {
-            sleepBtn.text = "⏾  Таймер за заспиване: изкл."
+            sleepBtn.text = "Таймер за заспиване: изключен"
             return
         }
         val left = ((sleepAt - SystemClock.elapsedRealtime()) / 60_000L + 1).coerceAtLeast(0)
-        sleepBtn.text = "⏾  Спира след $left мин"
+        sleepBtn.text = "Спира след $left мин"
     }
 
     private fun checkSleep() {
@@ -487,13 +487,13 @@ class PlayerActivity : AppCompatActivity() {
             // Времето изтече: пауза, запис на мястото и излизане от приложението, за да може телевизорът да заспи.
             saveProgress()
             player?.pause()
-            Toast.makeText(this, "Лека нощ 🌙", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Лека нощ", Toast.LENGTH_LONG).show()
             finishAffinity()
             return
         }
         if (left <= 60_000L && !sleepWarned) {
             sleepWarned = true
-            Toast.makeText(this, "Спира след 1 минута - натисни който и да е бутон, за да продължи", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Спира след 1 минута. Натисни произволен бутон, за да продължи.", Toast.LENGTH_LONG).show()
         }
         if (tickN % 15 == 0 || left <= 60_000L) showSleep()
     }
@@ -594,10 +594,10 @@ class PlayerActivity : AppCompatActivity() {
             subWarn.visibility = View.GONE
             return
         }
-        subWarn.text = "⚠ $msg\nМоже да се разминават - пробвай друг от „💬 Субтитри“ или ползвай синхрона."
+        subWarn.text = "$msg\nМоже да са за друга версия. Пробвай други от „Субтитри“ или ги намести със „Синхрон“."
         subWarn.visibility = View.VISIBLE
         if (warned.add(sub.uid)) {
-            Toast.makeText(this, "⚠ $msg Пробвай друг субтитър от „💬 Субтитри“.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "$msg Може да са за друга версия - пробвай други от „Субтитри“.", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -639,7 +639,7 @@ class PlayerActivity : AppCompatActivity() {
 
     /** Сваля избрания субтитър, прилага запомнения му синхрон и презарежда видеото от същото място. */
     private fun chooseSub(r: SubtitleResult) {
-        Toast.makeText(this, "Свалям субтитъра…", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Сваляне на субтитрите…", Toast.LENGTH_SHORT).show()
         thread(isDaemon = true) {
             val added = try {
                 Graph.stream.addSub(r)
@@ -647,7 +647,7 @@ class PlayerActivity : AppCompatActivity() {
                 null
             }
             if (added == null) {
-                runOnUiThread { Toast.makeText(this, "Не успях да сваля този субтитър. Пробвай друг.", Toast.LENGTH_LONG).show() }
+                runOnUiThread { Toast.makeText(this, "Субтитрите не се свалиха. Пробвай други.", Toast.LENGTH_LONG).show() }
                 return@thread
             }
             Graph.stream.rememberSubChoice(r)
@@ -713,7 +713,7 @@ class PlayerActivity : AppCompatActivity() {
         val web = Graph.stream.playback?.webHost.orEmpty()
         if (web.isNotEmpty()) {
             // Поток от уеб сайт: няма пиъри и сийдъри - показваме откъде идва.
-            stats.text = "🌐 уеб: $web" + if (buffering) " · буферира…" else ""
+            stats.text = "Сайт: $web" + if (buffering) " · буферира…" else ""
             stats.visibility = View.VISIBLE
             return
         }
@@ -725,7 +725,7 @@ class PlayerActivity : AppCompatActivity() {
         var t = "Пиъри ${s.peers} · сийдъри ${s.seeds} · ↓ ${formatSpeed(s.speed)}"
         // Дълго буфериране при малко сийдъри: подсказка какво да се направи.
         if (buffering && now - bufferingSince > 10_000 && (s.seeds < 3 || s.speed < 150_000)) {
-            t += "\n⚠ Този торент няма достатъчно сийдъри. Натисни Назад и избери друг торент или уеб сайт."
+            t += "\nТози торент има малко сийдъри. Натисни Назад и избери друг торент или сайт."
         }
         stats.text = t
         stats.visibility = View.VISIBLE

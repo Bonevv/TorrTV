@@ -176,7 +176,7 @@ class TorrentEngine(val baseDir: File, val profile: Int = 0) {
                     delay(300)
                     tiTry = handle.torrentFile()
                 }
-                val ti = tiTry ?: throw IOException("Няма метаданни (торентът не върна списък с файлове)")
+                val ti = tiTry ?: throw IOException("Торентът не върна списък с файлове")
                 val fs = ti.files()
                 val list = ArrayList<TFile>()
                 for (i in 0 until fs.numFiles()) {
@@ -196,7 +196,7 @@ class TorrentEngine(val baseDir: File, val profile: Int = 0) {
                 }
                 // Нищо не се чисти тук: клиентът затваря целия процес на услугата.
                 if (e is kotlinx.coroutines.TimeoutCancellationException)
-                    throw IOException("Няма достатъчно пиъри - не успях да получа данните за торента")
+                    throw IOException("Няма достатъчно пиъри, за да се получат данните на торента. Опитай друг.")
                 throw e
             } finally {
                 try {

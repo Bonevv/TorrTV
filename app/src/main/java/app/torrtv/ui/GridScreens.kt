@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -100,8 +101,8 @@ fun BrowseScreen(st: BrowseState, onOpen: (Media) -> Unit) {
             contentPadding = PaddingValues(horizontal = 36.d, vertical = 4.d),
             horizontalArrangement = Arrangement.spacedBy(8.d)
         ) {
-            items(sorts.size, key = { "s$it" }) { i -> Chip("↕ " + sorts[i], st.sort == i, { st.apply(st.genre, i) }) }
-            item(key = "anime") { Chip("🎌 Аниме", st.anime, { st.apply(st.genre, st.sort, !st.anime) }) }
+            items(sorts.size, key = { "s$it" }) { i -> Chip(sorts[i], st.sort == i, { st.apply(st.genre, i) }) }
+            item(key = "anime") { Chip("Аниме", st.anime, { st.apply(st.genre, st.sort, !st.anime) }) }
         }
         LazyRow(
             contentPadding = PaddingValues(horizontal = 36.d, vertical = 4.d),
@@ -124,7 +125,7 @@ fun SearchScreen(st: SearchState, onOpen: (Media) -> Unit) {
                 Modifier.fillMaxWidth().background(if (f) C.cardHi else C.card).padding(horizontal = 16.d, vertical = 12.d),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text2("🔍", 16, C.dim, FontWeight.Normal, 1)
+                GlyphIcon(Glyph.SEARCH, C.dim, Modifier.size(20.d))
                 Spacer(Modifier.padding(horizontal = 6.d))
                 BasicTextField(
                     value = st.query,
@@ -136,7 +137,7 @@ fun SearchScreen(st: SearchState, onOpen: (Media) -> Unit) {
                     keyboardActions = KeyboardActions(onSearch = { kb?.hide() }),
                     modifier = Modifier.fillMaxWidth().focusRequesterCompat(inputFocus),
                     decorationBox = { inner ->
-                        if (st.query.isEmpty()) Text2("Търси филм или сериал…  (натисни OK за клавиатура)", 16, C.dim, FontWeight.Normal, 1)
+                        if (st.query.isEmpty()) Text2("Търси филм или сериал (OK отваря клавиатурата)", 16, C.dim, FontWeight.Normal, 1)
                         inner()
                     }
                 )

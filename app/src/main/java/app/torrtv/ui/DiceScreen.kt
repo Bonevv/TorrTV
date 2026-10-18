@@ -103,7 +103,7 @@ fun DiceScreen(dice: DiceState, onOpen: (Media) -> Unit) {
                 Text2(
                     when {
                         dice.rolling -> "Зарът се върти…"
-                        dice.error != null -> "⚠ ${dice.error}"
+                        dice.error != null -> "${dice.error}"
                         dice.pickedGenre != null -> "Зарът избра: ${dice.pickedGenre}  ·  5 предложения"
                         else -> "Избери жанр или хвърли зара"
                     },
@@ -111,7 +111,7 @@ fun DiceScreen(dice: DiceState, onOpen: (Media) -> Unit) {
                 )
                 Spacer(Modifier.height(8.d))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.d), verticalAlignment = Alignment.CenterVertically) {
-                    PrimaryButton("🎲  Хвърли отново", { dice.roll() })
+                    PrimaryButton("Хвърли отново", { dice.roll() })
                     Chip("Филми", dice.type == MediaType.MOVIE, { dice.changeType(MediaType.MOVIE) })
                     Chip("Сериали", dice.type == MediaType.TV, { dice.changeType(MediaType.TV) })
                     Spacer(Modifier.width(10.d))
@@ -123,7 +123,7 @@ fun DiceScreen(dice: DiceState, onOpen: (Media) -> Unit) {
         }
         Spacer(Modifier.height(8.d))
         LazyRow(contentPadding = PaddingValues(horizontal = 36.d), horizontalArrangement = Arrangement.spacedBy(8.d)) {
-            item(key = "surprise") { Chip("🎲 Изненада ме", dice.genre == null, { dice.changeGenre(null) }) }
+            item(key = "surprise") { Chip("Изненада ме", dice.genre == null, { dice.changeGenre(null) }) }
             items(Genres.forType(dice.type), key = { it.id }) { g ->
                 Chip(g.name, dice.genre == g.id, { dice.changeGenre(g.id) })
             }

@@ -273,7 +273,7 @@ fun ErrorLine(message: String, onRetry: (() -> Unit)?, modifier: Modifier = Modi
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.d)
     ) {
-        Text("⚠ $message", color = C.red, fontSize = 13.t, modifier = Modifier.weight(1f), maxLines = 3)
+        Text(message, color = C.red, fontSize = 13.t, modifier = Modifier.weight(1f), maxLines = 3)
         if (onRetry != null) PrimaryButton("Опитай пак", onRetry, primary = false)
     }
 }

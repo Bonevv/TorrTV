@@ -7,6 +7,7 @@ import android.os.Process
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,11 +23,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -37,6 +45,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import app.torrtv.state.Graph
@@ -62,6 +71,19 @@ private val entries = listOf(
     RailEntry(6, "Настройки", Glyph.SETTINGS)
 )
 
+/**
+ * Съдържанието до панела е отделна група: нагоре и надолу фокусът не излиза от него. Без това "надолу" от
+ * последния ред стига до бутона "Изход", защото той е най-близкото нещо отдолу. Наляво се влиза в панела както преди.
+ */
+@OptIn(ExperimentalComposeUiApi::class)
+internal fun Modifier.stayInContent(): Modifier = this
+    .focusProperties {
+        exit = { dir ->
+            if (dir == FocusDirection.Up || dir == FocusDirection.Down) FocusRequester.Cancel else FocusRequester.Default
+        }
+    }
+    .focusGroup()
+
 /** Страничен панел: лого, раздели, отдолу "Изход" и заетата памет. */
 @Composable
 fun SideRail(
@@ -73,8 +95,11 @@ fun SideRail(
     ramMb: Int,
     onExit: () -> Unit
 ) {
+    // "Изход" е най-долу и затова е най-близкото нещо под съдържанието. Достъпен е само отвътре на панела.
+    var railFocused by remember { mutableStateOf(false) }
     Column(
         Modifier
+            .onFocusChanged { railFocused = it.hasFocus }
             .width(76.d)
             .fillMaxHeight()
             .background(Brush.verticalGradient(listOf(Color(0xFF0C1019), C.bg)))
@@ -95,7 +120,7 @@ fun SideRail(
             Spacer(Modifier.height(3.d))
         }
         Spacer(Modifier.weight(1f))
-        RailItem("Изход", Glyph.POWER, false, false, onExit, null)
+        RailItem("Изход", Glyph.POWER, false, false, onExit, null, enabled = railFocused)
         if (ramMb > 0) {
             Spacer(Modifier.height(3.d))
             Text("RAM $ramMb MB", color = if (ramMb > 450) C.amber else Color(0xFF6E778A), fontSize = 8.t, maxLines = 1)
@@ -110,10 +135,11 @@ private fun RailItem(
     selected: Boolean,
     dot: Boolean,
     onClick: () -> Unit,
-    focusRequester: FocusRequester?
+    focusRequester: FocusRequester?,
+    enabled: Boolean = true
 ) {
     Focusable(
-        onClick, Modifier.width(64.d).height(50.d), RoundedCornerShape(12.d), 1.05f,
+        onClick, Modifier.focusProperties { canFocus = enabled }.width(64.d).height(50.d), RoundedCornerShape(12.d), 1.05f,
         ring = false, focusRequester = focusRequester
     ) { f ->
         val fg = when {
@@ -223,27 +249,26 @@ internal fun GlyphIcon(glyph: Glyph, color: Color, modifier: Modifier) {
     }
 }
 
-/** Потвърждение преди пълно спиране - да не се затвори приложението от случайно натискане. */
+/** Въпрос преди изход - да не се затвори приложението от случайно натискане. */
 @Composable
 fun ExitDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
     val stay = remember { FocusRequester() }
     LaunchedEffect(Unit) { stay.tryRequest() }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
-            Modifier.width(400.d).clip(RoundedCornerShape(20.d)).background(C.bg2)
-                .border(1.d, C.line, RoundedCornerShape(20.d)).padding(22.d),
+            Modifier.width(340.d).clip(RoundedCornerShape(20.d)).background(C.bg2)
+                .border(1.d, C.line, RoundedCornerShape(20.d)).padding(horizontal = 24.d, vertical = 22.d),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text2("Спиране на приложението", 17, C.text, FontWeight.Bold, 1)
-            Spacer(Modifier.height(6.d))
-            Text2(
-                "Приложението ще се затвори напълно и ще освободи паметта на устройството. При следващо отваряне започва отначало.",
-                12, C.dim, FontWeight.Medium, 4
+            Text(
+                "Сигурни ли сте, че искате да излезете?",
+                color = C.text, fontSize = 17.t, fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center, lineHeight = 23.t
             )
-            Spacer(Modifier.height(16.d))
+            Spacer(Modifier.height(18.d))
             Row(horizontalArrangement = Arrangement.spacedBy(10.d)) {
-                PrimaryButton("Спри", onConfirm)
-                PrimaryButton("Остани", onDismiss, primary = false, focusRequester = stay)
+                PrimaryButton("Да", onConfirm, primary = false)
+                PrimaryButton("Не", onDismiss, focusRequester = stay)
             }
         }
     }

@@ -90,7 +90,7 @@ fun PrepareScreen(st: app.torrtv.state.DetailState? = null) {
                     PrimaryButton("Отказ", { sc.close() }, primary = false, focusRequester = focus)
                 }
                 Stage.ERROR -> {
-                    Text2("⚠ ${ui.error ?: "Грешка"}", 14, C.red, FontWeight.Medium, 5)
+                    Text2(ui.error ?: "Нещо се обърка.", 14, C.red, FontWeight.Medium, 5)
                     Spacer(Modifier.height(16.d))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.d)) {
                         PrimaryButton("Опитай пак", { req?.let { sc.start(it) } }, focusRequester = focus)
@@ -98,10 +98,10 @@ fun PrepareScreen(st: app.torrtv.state.DetailState? = null) {
                     }
                 }
                 Stage.READY -> {
-                    Text2("✓ Плеърът е пуснат", 16, C.green, FontWeight.Bold, 1)
+                    Text2("Плеърът е пуснат", 16, C.green, FontWeight.Bold, 1)
                     Spacer(Modifier.height(6.d))
                     if (ui.webHost.isNotEmpty()) {
-                        Text2("🌐 Гледаш от уеб сайт: ${ui.webHost}", 12, C.accent2, FontWeight.Medium, 1)
+                        Text2("Гледаш от сайт: ${ui.webHost}", 12, C.accent2, FontWeight.Medium, 1)
                     } else {
                         Text2(ui.fileName, 11, C.dim, FontWeight.Normal, 2)
                         live?.let { Text2("Пиъри ${it.peers} · сийдъри ${it.seeds} · ↓ ${formatSpeed(it.speed)}", 12, C.dim, FontWeight.Medium, 1) }
@@ -109,8 +109,8 @@ fun PrepareScreen(st: app.torrtv.state.DetailState? = null) {
                     Spacer(Modifier.height(16.d))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.d)) {
                         PrimaryButton("▶ Пусни отново", { sc.relaunch() }, focusRequester = focus)
-                        if (st != null) PrimaryButton("▾ Откъде?", { pickOpen = true }, primary = false)
-                        PrimaryButton("■ Спри", { sc.close() }, primary = false)
+                        if (st != null) PrimaryButton("Откъде?", { pickOpen = true }, primary = false)
+                        PrimaryButton("Спри", { sc.close() }, primary = false)
                     }
                 }
                 else -> {
@@ -123,7 +123,7 @@ fun PrepareScreen(st: app.torrtv.state.DetailState? = null) {
                     val seeds = s?.seeds ?: ui.seeds
                     val speed = s?.speed ?: ui.speed
                     if (ui.webHost.isNotEmpty()) {
-                        Text2("🌐 Поток от уеб сайт: ${ui.webHost}", 12, C.accent2, FontWeight.Medium, 1)
+                        Text2("Видео от сайт: ${ui.webHost}", 12, C.accent2, FontWeight.Medium, 1)
                     } else {
                         Text2("Пиъри $peers · сийдъри $seeds · ↓ ${formatSpeed(speed)}", 12, C.dim, FontWeight.Medium, 1)
                     }
@@ -156,8 +156,8 @@ fun PrepareScreen(st: app.torrtv.state.DetailState? = null) {
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.d)
                         ) {
-                            Text2("⚠ Този торент няма достатъчно сийдъри. Гледай от:", 13, C.amber, FontWeight.Bold, 2, Modifier.weight(1f))
-                            PrimaryButton("▾ Откъде?", { pickOpen = true }, focusRequester = focus)
+                            Text2("Този торент има малко сийдъри. Гледай от:", 13, C.amber, FontWeight.Bold, 2, Modifier.weight(1f))
+                            PrimaryButton("Откъде?", { pickOpen = true }, focusRequester = focus)
                         }
                     }
                     Spacer(Modifier.height(18.d))
