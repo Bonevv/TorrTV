@@ -108,20 +108,19 @@ fun SideRail(
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text("TORR", color = C.text, fontSize = 11.t, fontWeight = FontWeight.Light, letterSpacing = 2.t, maxLines = 1)
             Text("TV", color = C.accent, fontSize = 17.t, fontWeight = FontWeight.Black, letterSpacing = 1.t, maxLines = 1)
+            Signature(large = false)
         }
-        Spacer(Modifier.height(10.d))
+        Spacer(Modifier.height(6.d))
         entries.forEach { e ->
             val upd = updateReady && e.tab == settingsTab
             RailItem(
                 if (upd) "Обнови" else e.label, e.glyph, selected == e.tab, upd,
                 { onSelect(e.tab) }, focus[e.tab]
             )
-            Spacer(Modifier.height(3.d))
+            Spacer(Modifier.height(2.d))
         }
         Spacer(Modifier.weight(1f))
         RailItem("Изход", Glyph.POWER, false, false, onExit, null, enabled = railFocused)
-        Spacer(Modifier.height(4.d))
-        Signature(large = false)
     }
 }
 
@@ -131,14 +130,7 @@ private val allura = androidx.compose.ui.text.font.FontFamily(androidx.compose.u
 @Composable
 fun Signature(large: Boolean) {
     val c = Color(0xFFE5E1DA)
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        if (large) {
-            Text("by V. Bonev", color = c, fontFamily = allura, fontSize = 26.t, maxLines = 1, softWrap = false)
-        } else {
-            Text("by", color = c, fontFamily = allura, fontSize = 12.t, maxLines = 1, softWrap = false)
-            Text("V. Bonev", color = c, fontFamily = allura, fontSize = 18.t, maxLines = 1, softWrap = false)
-        }
-    }
+    Text("by V. Bonev", color = c, fontFamily = allura, fontSize = if (large) 26.t else 14.t, maxLines = 1, softWrap = false)
 }
 
 @Composable
