@@ -1,6 +1,7 @@
 package app.torrtv.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,6 +46,7 @@ import app.torrtv.data.torrents.TorrentResult
 import app.torrtv.state.DetailState
 import app.torrtv.state.Graph
 import app.torrtv.state.Library
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -68,7 +70,14 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
     val listState = remember(st) { androidx.compose.foundation.lazy.LazyListState() }
 
     LaunchedEffect(st) { if (st.detail == null) st.start() }
-    LaunchedEffect(d != null) { if (d != null) playFocus.tryRequest() }
+    LaunchedEffect(d != null) {
+        if (d != null) {
+            playFocus.tryRequest()
+            // Ако фокусът е скролнал списъка при отварянето, връщаме го най-горе, за да се вижда заглавието.
+            delay(250)
+            if (listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset > 0) listState.animateScrollToItem(0)
+        }
+    }
     // При „Продължи“ търсенето на торенти е отложено: пуска се, щом диалогът за пускане не е отворен.
     LaunchedEffect(d != null, sheetOpen) { if (d != null && !sheetOpen) st.ensureTorrents() }
     LaunchedEffect(st) {
@@ -123,31 +132,38 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
 
         LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 40.d)) {
             item {
-                Row(Modifier.fillMaxWidth().padding(start = 36.d, end = 36.d, top = 28.d), horizontalArrangement = Arrangement.spacedBy(22.d)) {
-                    Img(Look.img(d.media.posterPath, "w342"), Modifier.width(150.d).height(225.d).clip(RoundedCornerShape(12.d)))
+                Row(Modifier.fillMaxWidth().padding(start = 36.d, end = 36.d, top = 22.d), horizontalArrangement = Arrangement.spacedBy(22.d)) {
+                    Img(
+                        Look.img(d.media.posterPath, "w342"),
+                        Modifier.width(132.d).height(198.d).clip(RoundedCornerShape(12.d)).border(1.d, C.line, RoundedCornerShape(12.d))
+                    )
                     Column(Modifier.weight(1f)) {
-                        Text2(d.media.title, 30, C.text, FontWeight.ExtraBold, 2)
+                        Text2(d.media.title, 28, C.text, FontWeight.ExtraBold, 2)
+                        // Под заглавието: оригиналното име (ако е различно), иначе слоганът.
                         if (d.media.originalTitle.isNotBlank() && d.media.originalTitle != d.media.title)
-                            Text2(d.media.originalTitle, 13, C.dim, FontWeight.Normal, 1)
-                        if (d.tagline.isNotBlank()) {
+                            Text2(d.media.originalTitle, 12, C.dim, FontWeight.Normal, 1)
+                        else if (d.tagline.isNotBlank())
+                            Text2("„${d.tagline}“", 12, C.accent2, FontWeight.Medium, 1)
+                        Spacer(Modifier.height(8.d))
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.d), verticalAlignment = Alignment.CenterVertically) {
+                            if (d.media.rating > 0) Pill("★ " + String.format(Locale.US, "%.1f", d.media.rating), Color(0x33FFC857), C.gold)
+                            val meta = listOf(
+                                d.media.year,
+                                if (d.runtime > 0) "${d.runtime} мин" else "",
+                                if (d.media.type == MediaType.TV) (if (d.seasons.size == 1) "1 сезон" else "${d.seasons.size} сезона") else "",
+                                if (d.media.type == MediaType.TV) d.status else ""
+                            ).filter { it.isNotBlank() }
+                            Text2(meta.joinToString("  ·  "), 13, C.dim, FontWeight.Medium, 1)
+                        }
+                        if (d.genres.isNotEmpty()) {
                             Spacer(Modifier.height(4.d))
-                            Text2("„${d.tagline}“", 13, C.accent2, FontWeight.Medium, 2)
+                            Text2(d.genres.joinToString(" · ") { it.name }, 12, C.accent2, FontWeight.Medium, 1)
                         }
                         Spacer(Modifier.height(8.d))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.d), verticalAlignment = Alignment.CenterVertically) {
-                            if (d.media.rating > 0) Pill("★ " + String.format(Locale.US, "%.1f", d.media.rating), Color(0x33FFC857), C.gold)
-                            if (d.media.year.isNotBlank()) Pill(d.media.year)
-                            if (d.runtime > 0) Pill("${d.runtime} мин")
-                            if (d.status.isNotBlank() && d.media.type == MediaType.TV) Pill(d.status)
-                            if (d.media.type == MediaType.TV) Pill(if (d.seasons.size == 1) "1 сезон" else "${d.seasons.size} сезона")
-                        }
-                        Spacer(Modifier.height(6.d))
-                        if (d.genres.isNotEmpty()) Text2(d.genres.joinToString(" · ") { it.name }, 12, C.accent2, FontWeight.Medium, 1)
-                        Spacer(Modifier.height(6.d))
-                        Text2(d.media.overview.ifBlank { "Няма описание." }, 13, Color(0xFFD5DAE6), FontWeight.Normal, 5)
+                        Text2(d.media.overview.ifBlank { "Няма описание." }, 13, Color(0xFFD5DAE6), FontWeight.Normal, 3)
                         if (d.cast.isNotEmpty()) {
-                            Spacer(Modifier.height(6.d))
-                            Text2("В ролите: " + d.cast.take(6).joinToString(", "), 12, C.dim, FontWeight.Normal, 2)
+                            Spacer(Modifier.height(4.d))
+                            Text2("В ролите: " + d.cast.take(5).joinToString(", "), 12, C.dim, FontWeight.Normal, 1)
                         }
                         Spacer(Modifier.height(12.d))
                         val best = st.torrents.filter { !it.isCam }.let { l ->
@@ -160,6 +176,7 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
                         val pr = Library.progressOf(d.media.key)?.takeIf {
                             !it.nextUp && (d.media.type == MediaType.MOVIE || (it.season == st.season && it.episode == st.episode))
                         }
+                        // Главните действия: едно голямо златно копче, останалите са по-тихи.
                         Row(horizontalArrangement = Arrangement.spacedBy(12.d), verticalAlignment = Alignment.CenterVertically) {
                             if (pr != null) {
                                 PrimaryButton(
@@ -189,36 +206,32 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
                             )
                         }
                         Spacer(Modifier.height(8.d))
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.d)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.d), verticalAlignment = Alignment.CenterVertically) {
                             val fav = Library.isFavorite(d.media.key)
-                            PrimaryButton(
-                                if (fav) "♥ В любими" else "♡ Добави в любими",
-                                { Library.toggleFavorite(d.media) },
-                                primary = false
-                            )
-                            PrimaryButton("Търси пак", { st.loadTorrents(); st.loadSubs() }, primary = false)
+                            Chip(if (fav) "♥ В любими" else "♡ Любими", fav, { Library.toggleFavorite(d.media) })
                             val isTv = d.media.type == MediaType.TV
                             val seen = Library.isWatched(d.media, if (isTv) st.season else null, if (isTv) st.episode else null)
-                            PrimaryButton(
+                            Chip(
                                 when {
                                     seen -> if (isTv) "✓ Епизодът е гледан" else "✓ Изгледан"
                                     isTv -> "Отбележи епизода като гледан"
                                     else -> "Отбележи като изгледан"
                                 },
-                                { Library.setWatched(d.media, if (isTv) st.season else null, if (isTv) st.episode else null, !seen) },
-                                primary = false
+                                seen,
+                                { Library.setWatched(d.media, if (isTv) st.season else null, if (isTv) st.episode else null, !seen) }
                             )
+                            Chip("↻ Търси пак", false, { st.loadTorrents(); st.loadSubs() })
                         }
-                        Spacer(Modifier.height(5.d))
-                        if (best != null && best.seeders in 0..4 && pr == null) {
+                        if (pr == null && best != null) {
+                            Spacer(Modifier.height(6.d))
+                            val few = best.seeders in 0..4
                             Text2(
-                                "Най-добрият торент има само ${best.seeders} ${if (best.seeders == 1) "сийдър" else "сийдъра"}, така че може да буферира. Пробвай друг торент или „Уеб сайтове“ по-долу.",
-                                11, C.amber, FontWeight.Medium, 2
-                            )
-                        } else {
-                            Text2(
-                                "„Гледай“ сам избира добър торент. Ако искаш друг или сайт, избери по-долу.",
-                                11, C.dim, FontWeight.Normal, 2
+                                if (few) "Най-добрият торент има само ${best.seeders} ${if (best.seeders == 1) "сийдър" else "сийдъра"} и може да буферира. Пробвай друг по-долу или „Уеб сайтове“."
+                                else "Ще се пусне: " + listOf(
+                                    best.quality, formatSize(best.size),
+                                    if (best.seeders >= 0) "${best.seeders} сийдъра" else "", best.source
+                                ).filter { it.isNotBlank() }.joinToString(" · "),
+                                11, if (few) C.amber else C.dim, FontWeight.Medium, 2
                             )
                         }
                     }
@@ -267,49 +280,52 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
             }
 
             item {
+                Spacer(Modifier.height(6.d))
                 Row(Modifier.fillMaxWidth().padding(end = 36.d), verticalAlignment = Alignment.CenterVertically) {
-                    SectionTitle(
-                        if (d.media.type == MediaType.TV) "Откъде да гледаш · С${st.season} Е${st.episode}" else "Откъде да гледаш"
-                    )
+                    SectionTitle("Откъде да гледаш", sub = if (d.media.type == MediaType.TV) "Сезон ${st.season} · Епизод ${st.episode}" else "")
                     if (st.searching && tab == 0) Spinner(18.d)
                 }
-                // Двата бутона: щом натиснеш единия, списъкът отдолу се сменя.
+                // Вляво: торенти или уеб сайтове (щом избереш, списъкът отдолу се сменя). Вдясно: свободното място и мрежата.
                 Row(
-                    Modifier.padding(horizontal = 36.d), horizontalArrangement = Arrangement.spacedBy(10.d),
+                    Modifier.fillMaxWidth().padding(horizontal = 36.d), horizontalArrangement = Arrangement.spacedBy(10.d),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Chip("Торенти (${st.torrents.size})", tab == 0, { tab = 0 })
                     Chip("Уеб сайтове (${web.size})", tab == 1, { tab = 1 })
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+                        Text2(
+                            "Свободно " + app.torrtv.core.CacheManager.fmt(freeBytes) + " (" + place.label.lowercase() + ")" +
+                                (if (netMbps > 0) " · мрежа ${netMbps.toInt()} Mbit/s" else ""),
+                            11, C.dim, FontWeight.Normal, 1
+                        )
+                    }
                 }
-                Spacer(Modifier.height(4.d))
-                Text2(
-                    "Свободно: ${app.torrtv.core.CacheManager.fmt(freeBytes)} (${place.label.lowercase()}) · файлове до около " +
-                        app.torrtv.core.CacheManager.fmt(StreamFit.usableBytes(freeBytes)) +
-                        (if (netMbps > 0) " · мрежа ${netMbps.toInt()} Mbit/s" else ""),
-                    11, C.dim, FontWeight.Normal, 1, Modifier.padding(horizontal = 36.d)
-                )
-                Spacer(Modifier.height(6.d))
+                Spacer(Modifier.height(8.d))
                 if (tab == 0) {
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 36.d), horizontalArrangement = Arrangement.spacedBy(8.d),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        item(key = "qlabel") { Text2("Качество", 11, C.dim, FontWeight.Bold, 1) }
-                        val present = st.torrents.map { it.quality }.toSet()
-                        items(listOf("all", "4K", "1080p", "720p", "480p", "SD").filter { it == "all" || it in present }, key = { it }) { q ->
-                            Chip(if (q == "all") "Всички (${st.torrents.size})" else q, quality == q, { quality = q })
+                    Row(Modifier.fillMaxWidth().padding(start = 36.d), verticalAlignment = Alignment.CenterVertically) {
+                        Text2("Качество", 11, C.dim, FontWeight.Bold, 1, Modifier.width(66.d))
+                        LazyRow(
+                            Modifier.weight(1f), contentPadding = PaddingValues(end = 36.d), horizontalArrangement = Arrangement.spacedBy(8.d),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val present = st.torrents.map { it.quality }.toSet()
+                            items(listOf("all", "4K", "1080p", "720p", "480p", "SD").filter { it == "all" || it in present }, key = { it }) { q ->
+                                Chip(if (q == "all") "Всички (${st.torrents.size})" else q, quality == q, { quality = q }, compact = true)
+                            }
                         }
                     }
                     if (siteList.size >= 2) {
-                        Spacer(Modifier.height(6.d))
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = 36.d), horizontalArrangement = Arrangement.spacedBy(8.d),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            item(key = "slabel") { Text2("Сайт", 11, C.dim, FontWeight.Bold, 1) }
-                            item(key = "sall") { Chip("Всички сайтове", siteSel == "all", { site = "all" }, compact = true) }
-                            items(siteList, key = { "s" + it.first }) { (name, n) ->
-                                Chip("$name · $n", siteSel == name, { site = name }, compact = true)
+                        Spacer(Modifier.height(4.d))
+                        Row(Modifier.fillMaxWidth().padding(start = 36.d), verticalAlignment = Alignment.CenterVertically) {
+                            Text2("Сайт", 11, C.dim, FontWeight.Bold, 1, Modifier.width(66.d))
+                            LazyRow(
+                                Modifier.weight(1f), contentPadding = PaddingValues(end = 36.d), horizontalArrangement = Arrangement.spacedBy(8.d),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                item(key = "sall") { Chip("Всички сайтове", siteSel == "all", { site = "all" }, compact = true) }
+                                items(siteList, key = { "s" + it.first }) { (name, n) ->
+                                    Chip("$name · $n", siteSel == name, { site = name }, compact = true)
+                                }
                             }
                         }
                     }
@@ -378,14 +394,21 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
             }
 
             item {
-                if (st.subResults.isNotEmpty() || st.subStatus.isNotEmpty()) {
+                if (st.subResults.isNotEmpty() || st.subStatus.isNotEmpty() || st.subSearching) {
                     Spacer(Modifier.height(10.d))
-                    Row(Modifier.padding(horizontal = 36.d), horizontalArrangement = Arrangement.spacedBy(6.d), verticalAlignment = Alignment.CenterVertically) {
-                        Text2("Субтитри:", 12, C.dim, FontWeight.Bold, 1)
-                        st.subStatus.entries.sortedBy { it.key }.forEach { (k, v) ->
-                            Pill("$k: $v", if (v.startsWith("✗")) Color(0x33FF5C6C) else C.card, if (v.startsWith("✗")) C.red else C.dim)
-                        }
+                    // Подробностите по източници са в Настройки -> Разширени -> Диагностика; тук се показват само неуспелите.
+                    val failedSubs = st.subStatus.entries.filter { it.value.startsWith("✗") }.sortedBy { it.key }
+                    Row(Modifier.padding(horizontal = 36.d), horizontalArrangement = Arrangement.spacedBy(8.d), verticalAlignment = Alignment.CenterVertically) {
+                        Text2(
+                            when {
+                                st.subSearching -> "Субтитри: търсят се…"
+                                st.subResults.isNotEmpty() -> "Субтитри: намерени ${st.subResults.size}"
+                                else -> "Субтитри: не са намерени"
+                            },
+                            12, C.dim, FontWeight.Medium, 1
+                        )
                         if (st.subSearching) Spinner(16.d)
+                        failedSubs.forEach { (k, v) -> Pill("$k: $v", Color(0x33FF5C6C), C.red) }
                     }
                 }
             }
@@ -425,21 +448,33 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
 fun TorrentRow(
     t: TorrentResult, fit: app.torrtv.data.subs.Fit, storage: StreamFit.Level, smooth: StreamFit.Level, onClick: () -> Unit
 ) {
-    Focusable(onClick, Modifier.fillMaxWidth().padding(horizontal = 36.d, vertical = 3.d), RoundedCornerShape(10.d), 1.015f) { f ->
+    // Една от четирите колони вдясно: най-важното за това дали ще тръгне гладко.
+    val status: Triple<String, Color, Color>? = when {
+        storage == StreamFit.Level.BAD -> Triple("няма място", Color(0x33FF5C6C), C.red)
+        smooth == StreamFit.Level.BAD -> Triple("ще буферира", Color(0x33FF5C6C), C.red)
+        storage == StreamFit.Level.EDGE -> Triple("малко място", Color(0x33FFB020), C.amber)
+        smooth == StreamFit.Level.EDGE -> Triple("на ръба", Color(0x33FFB020), C.amber)
+        smooth == StreamFit.Level.GOOD -> Triple("гладко", Color(0x333DDC84), C.green)
+        else -> null
+    }
+    Focusable(onClick, Modifier.fillMaxWidth().padding(horizontal = 36.d, vertical = 3.d), RoundedCornerShape(12.d), 1.015f) { f ->
         Row(
-            Modifier.fillMaxWidth().background(if (f) C.cardHi else C.card).padding(horizontal = 12.d, vertical = 8.d),
+            Modifier.fillMaxWidth().background(if (f) C.cardHi else C.card).padding(horizontal = 14.d, vertical = 9.d),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.d)
+            horizontalArrangement = Arrangement.spacedBy(14.d)
         ) {
-            Box(Modifier.width(50.d), contentAlignment = Alignment.Center) {
+            // 1. Качество
+            Box(Modifier.width(54.d), contentAlignment = Alignment.Center) {
                 Pill(t.quality, if (t.quality == "4K" || t.quality == "1080p") C.accent else C.cardHi, if (t.quality == "4K" || t.quality == "1080p") C.onAccent else C.text)
             }
+            // 2. Име, размер, сайт и белези на файла
             Column(Modifier.weight(1f)) {
                 Text2(t.title, 13, C.text, FontWeight.SemiBold, 1)
+                Spacer(Modifier.height(3.d))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.d), verticalAlignment = Alignment.CenterVertically) {
                     Text2(formatSize(t.size) + " · " + t.source + (if (t.via.isNotBlank()) " · през " + t.via else ""), 11, C.dim, FontWeight.Normal, 1)
                     // Звукът, който вграденият плеър не пуска, и записът от камера се виждат първи.
-                    t.tags.sortedBy { if (it == "DTS" || it == "TrueHD" || it == "CAM") 0 else 1 }.take(3).forEach {
+                    t.tags.sortedBy { if (it == "DTS" || it == "TrueHD" || it == "CAM") 0 else 1 }.take(2).forEach {
                         when (it) {
                             "CAM" -> Pill(it, Color(0x33FF5C6C), C.red)
                             "DTS", "TrueHD" -> Pill(it, Color(0x33FFB020), C.amber)
@@ -447,25 +482,19 @@ fun TorrentRow(
                         }
                     }
                     if (t.pack) Pill("пакет", Color(0x33FFB020), C.amber)
-                    when (storage) {
-                        StreamFit.Level.BAD -> Pill("няма място", Color(0x33FF5C6C), C.red)
-                        StreamFit.Level.EDGE -> Pill("малко място", Color(0x33FFB020), C.amber)
-                        else -> {}
-                    }
-                    when (smooth) {
-                        StreamFit.Level.GOOD -> Pill("гладко", Color(0x333DDC84), C.green)
-                        StreamFit.Level.EDGE -> Pill("на ръба", Color(0x33FFB020), C.amber)
-                        StreamFit.Level.BAD -> Pill("ще буферира", Color(0x33FF5C6C), C.red)
-                        else -> {}
-                    }
-                    when (fit) {
-                        app.torrtv.data.subs.Fit.EXACT -> Pill("точни субтитри", Color(0x333DDC84), C.green)
-                        app.torrtv.data.subs.Fit.SIMILAR -> Pill("подобни субтитри", Color(0x33FFB020), C.amber)
-                        else -> {}
-                    }
                 }
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // 3. Годност: гладко ли ще върви и пасват ли субтитрите
+            Column(Modifier.width(112.d), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.d)) {
+                status?.let { Pill(it.first, it.second, it.third) }
+                when (fit) {
+                    app.torrtv.data.subs.Fit.EXACT -> Pill("точни субтитри", Color(0x333DDC84), C.green)
+                    app.torrtv.data.subs.Fit.SIMILAR -> Pill("подобни субтитри", Color(0x33FFB020), C.amber)
+                    else -> {}
+                }
+            }
+            // 4. Сийдъри
+            Row(Modifier.width(56.d), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(9.d).clip(CircleShape).background(seedColor(t.seeders)))
                 Spacer(Modifier.width(6.d))
                 Column(horizontalAlignment = Alignment.End) {
