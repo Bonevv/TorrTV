@@ -1,15 +1,11 @@
 package app.torrtv.ui
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -17,10 +13,8 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.text.font.FontWeight
 import app.torrtv.core.CacheManager
 import app.torrtv.data.Media
 import app.torrtv.data.MediaType
@@ -30,7 +24,8 @@ import app.torrtv.state.Graph
 import app.torrtv.state.Library
 import app.torrtv.torrent.StreamController.Stage
 
-private val tabs = listOf("🏠 Начало", "🎬 Филми", "📺 Сериали", "♥ Любими", "🎲 Зарче", "🔍 Търсене", "⚙ Настройки")
+/** Брой раздели в страничния панел (виж SideRail); 6 е "Настройки". */
+private const val TAB_COUNT = 7
 private const val TAB_SETTINGS = 6
 
 /** Отворен диалог за пускане: за кой екран, кой торент и от коя секунда да продължи (0 = отначало). */
@@ -47,7 +42,8 @@ fun App() {
     var pending by remember { mutableStateOf<Library.Progress?>(null) }
     val home = Graph.home
     val streaming = Graph.stream.ui.stage != Stage.IDLE
-    val tabFocus = remember { List(tabs.size) { FocusRequester() } }
+    val tabFocus = remember { List(TAB_COUNT) { FocusRequester() } }
+    var exitAsk by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { home.checkUpdate() }
 
@@ -118,26 +114,13 @@ fun App() {
                 onPlay = { t, at -> sheet = Sheet(top, t, at) }
             )
         } else {
-            Column(Modifier.fillMaxSize()) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 36.d, vertical = 8.d),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.d)
-                ) {
-                    Row(verticalAlignment = Alignment.Bottom) {
-                        androidx.compose.material3.Text("TORR", color = C.text, fontSize = 20.t, fontWeight = FontWeight.Light, letterSpacing = 2.t)
-                        androidx.compose.material3.Text("TV", color = C.accent, fontSize = 20.t, fontWeight = FontWeight.Black, letterSpacing = 1.t)
-                    }
-                    Spacer(Modifier.width(14.d))
-                    tabs.forEachIndexed { i, name ->
-                        Chip(name, tab == i, { tab = i }, focusRequester = tabFocus[i], compact = true)
-                    }
-                    Spacer(Modifier.weight(1f))
-                    if (home.update != null) {
-                        PrimaryButton("⬆ Нова версия", { tab = TAB_SETTINGS })
-                    } else if (ramMb > 0) Pill("RAM $ramMb MB", C.card, if (ramMb > 450) C.amber else C.dim)
-                }
-                Box(Modifier.fillMaxWidth().weight(1f)) {
+            Row(Modifier.fillMaxSize()) {
+                SideRail(
+                    selected = tab, settingsTab = TAB_SETTINGS, onSelect = { tab = it }, focus = tabFocus,
+                    updateReady = home.update != null, ramMb = ramMb, onExit = { exitAsk = true }
+                )
+                // Началото е с банер до горния ръб; другите екрани получават малък отстъп отгоре.
+                Box(Modifier.weight(1f).fillMaxHeight().padding(top = if (tab == 0) 0.d else 14.d)) {
                     when (tab) {
                         0 -> HomeScreen(home, ::open, ::resume)
                         1 -> BrowseScreen(Graph.browseMovies, ::open)
@@ -155,5 +138,6 @@ fun App() {
             PlaySheet(sh.st, sh.t, sh.resumeMs, onSwitch = { nt -> sheet = Sheet(sh.st, nt, 0L) }) { sheet = null }
         }
         if (streaming) PrepareScreen(stack.lastOrNull())
+        if (exitAsk && !streaming) ExitDialog({ exitAsk = false; stopApp(ctx) }, { exitAsk = false })
     }
 }

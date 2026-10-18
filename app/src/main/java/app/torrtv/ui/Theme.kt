@@ -36,7 +36,7 @@ object C {
     val green = Color(0xFF3DDC84)
     val amber = Color(0xFFFFB020)
     val red = Color(0xFFFF5C6C)
-    val ring = Color(0xFFF4F1EA)
+    val ring = Color(0xFFF2D58F)
     val line = Color(0x1FFFFFFF)
     val grad: Brush = Brush.horizontalGradient(listOf(Color(0xFFF6CB6B), Color(0xFFD9962B)))
     val flat: Brush = Brush.horizontalGradient(listOf(card, card))

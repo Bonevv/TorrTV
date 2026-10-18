@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -70,6 +71,8 @@ fun Focusable(
     val interaction = remember { MutableInteractionSource() }
     val base = if (focusRequester != null) modifier.focusRequester(focusRequester) else modifier
     val ringMod = if (focused && ring) Modifier.border(if (lite) 3.d else 2.d, C.ring, shape) else Modifier
+    // Мека златиста светлина около избрания плакат (не в лек режим - там е излишна тежест).
+    val glow = if (focused && ring && !lite) Modifier.shadow(18.d, shape, clip = false, ambientColor = C.accent, spotColor = C.accent) else Modifier
     Box(
         base
             .zIndex(if (focused) 2f else 0f)
@@ -81,6 +84,7 @@ fun Focusable(
                 focused = it.isFocused
                 if (it.isFocused) onFocus()
             }
+            .then(glow)
             .clip(shape)
             .then(ringMod)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
@@ -241,7 +245,7 @@ fun genreLine(m: Media, max: Int = 3): String =
     m.genreIds.mapNotNull { Genres.name(it) }.take(max).joinToString(" · ")
 
 @Composable
-fun SectionTitle(text: String, modifier: Modifier = Modifier) {
+fun SectionTitle(text: String, modifier: Modifier = Modifier, sub: String = "") {
     Row(
         modifier.padding(horizontal = 36.d, vertical = 8.d),
         verticalAlignment = Alignment.CenterVertically
@@ -250,8 +254,12 @@ fun SectionTitle(text: String, modifier: Modifier = Modifier) {
         Spacer(Modifier.width(9.d))
         Text(
             text, color = C.text, fontSize = 17.t, fontWeight = FontWeight.Bold,
-            letterSpacing = 0.4.sp
+            letterSpacing = 0.3.sp, maxLines = 1
         )
+        if (sub.isNotBlank()) {
+            Spacer(Modifier.width(10.d))
+            Text(sub, color = C.dim, fontSize = 12.t, fontWeight = FontWeight.Medium, maxLines = 1)
+        }
     }
 }
 

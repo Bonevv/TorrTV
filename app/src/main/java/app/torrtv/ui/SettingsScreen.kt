@@ -113,7 +113,7 @@ fun SettingsScreen() {
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 50.d)) {
         item {
-            Group("📱  Въвеждане на ключовете от телефона") {
+            Group("Въвеждане на ключовете от телефона") {
                 val addrs = remember(tick / 4) { Graph.config.addresses() }
                 val port = Graph.config.port
                 Text2("Отвори на телефона (в същата Wi-Fi мрежа) и въведи ПИН-а:", 13, C.dim, FontWeight.Normal, 2)
@@ -136,7 +136,7 @@ fun SettingsScreen() {
         }
 
         item {
-            Group("▶  Плеър по подразбиране") {
+            Group("Плеър по подразбиране") {
                 val installed = remember { ExternalPlayers.installed(ctx) }
                 val opts = listOf("builtin") + installed.map { it.id } + "ask"
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.d)) {
@@ -154,7 +154,7 @@ fun SettingsScreen() {
         }
 
         item {
-            Group("🌐  Език на описанията") {
+            Group("Език на описанията") {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
                     Chip("Български", metaLang == "bg", { metaLang = "bg"; prefs.metaLang = "bg" })
                     Chip("English", metaLang == "en", { metaLang = "en"; prefs.metaLang = "en" })
@@ -163,7 +163,7 @@ fun SettingsScreen() {
         }
 
         item {
-            Group("💬  Езици на субтитрите") {
+            Group("Езици на субтитрите") {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.d)) {
                     items(Langs.choices, key = { it.first }) { (code, name) ->
                         Chip((if (code in subLangs) "✓ " else "") + name, code in subLangs, {
@@ -179,7 +179,7 @@ fun SettingsScreen() {
         }
 
         item {
-            Group("🧲  Торент източници") {
+            Group("Торент източници") {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.d)) {
                     items(Graph.torrents.sources, key = { it.id }) { s ->
                         val on = srcState.firstOrNull { it.first == s.id }?.second ?: true
@@ -194,7 +194,7 @@ fun SettingsScreen() {
         }
 
         item {
-            Group("⬆  Обновяване") {
+            Group("Обновяване") {
                 Text2("Инсталирана версия: ${Graph.updater.currentVersion}", 13, C.dim, FontWeight.Medium, 1)
                 Spacer(Modifier.height(6.d))
                 val r = release
@@ -246,7 +246,7 @@ fun SettingsScreen() {
         }
 
         item {
-            Group("📊  Място и скорост") {
+            Group("Място и скорост") {
                 val places = remember(cacheTick) { app.torrtv.core.Storage.places(ctx) }
                 var storageId by remember { mutableStateOf(prefs.storageId) }
                 val cur = places.firstOrNull { it.id == storageId } ?: places.first()
@@ -325,7 +325,7 @@ fun SettingsScreen() {
         }
 
         item {
-            Group("💾  Памет и кеш") {
+            Group("Памет и кеш") {
                 Text2(
                     "RAM на приложението: ${mem.totalMb} MB   (интерфейс ${mem.pssMb} MB" +
                         (if (mem.torrentMb > 0) " + торент двигател ${mem.torrentMb} MB" else "") +
@@ -383,7 +383,7 @@ fun SettingsScreen() {
         }
 
         item {
-            Group("⚡  Лек режим") {
+            Group("Лек режим") {
                 Text2(
                     "За по-слаби телевизори: без анимации на фокуса и плавни преходи, по-малки картинки. Включи го, ако менютата се движат на пресекулки.",
                     12, C.dim, FontWeight.Normal, 3
@@ -397,7 +397,7 @@ fun SettingsScreen() {
         }
 
         item {
-            Group("🌐  Уеб сайтове") {
+            Group("Уеб сайтове") {
                 Text2(
                     "Когато торентът няма сийдъри, филмът може да се гледа онлайн от сайт (в страницата на филма, бутон „Уеб сайтове“). Рекламите се блокират. " +
                         "Тази част е отделна от торентите - ако не я искаш, я изключи и ще се виждат само торентите.",
@@ -427,7 +427,7 @@ fun SettingsScreen() {
         }
 
         item {
-            Group("⚙  Торент режим") {
+            Group("Торент режим") {
                 Text2(
                     "Ако филмът спре веднага след старта, смени режима. Приложението само сменя режима след срив, но тук можеш да го избереш и ръчно.",
                     12, C.dim, FontWeight.Normal, 3
@@ -442,7 +442,7 @@ fun SettingsScreen() {
         }
 
         item {
-            Group("🩺  Диагностика") {
+            Group("Диагностика") {
                 Text2("Тества всеки торент сайт, доставчик на субтитри и TMDB и показва кой не работи.", 12, C.dim, FontWeight.Normal, 2)
                 Spacer(Modifier.height(6.d))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.d)) {
@@ -479,7 +479,7 @@ fun SettingsScreen() {
         }
 
         item {
-            Group("📜  Дневник (при проблем покажи го на разработчика)") {
+            Group("Дневник (за съобщаване на проблем)") {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.d)) {
                     PrimaryButton(if (logText == null) "Покажи дневника" else "Опресни", { logText = AppLog.text() }, primary = false)
                     PrimaryButton("Изчисти дневника", { AppLog.clear(); logText = "" }, primary = false)

@@ -380,7 +380,7 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
                     }.collect { (last, total) -> if (recs.started && last >= total - 5) recs.loadNext() }
                 }
                 Spacer(Modifier.height(18.d))
-                SectionTitle("✨  Предложения след това")
+                SectionTitle("Предложения след това")
                 if (recs.items.isEmpty()) {
                     if (recs.error != null) ErrorLine(recs.error ?: "", { scope.launch { recs.retry() } })
                     else if (recs.started && recs.exhausted) Text2("Няма предложения.", 12, C.dim, FontWeight.Normal, 1, Modifier.padding(horizontal = 36.d))

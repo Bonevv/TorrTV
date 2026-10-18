@@ -12,10 +12,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -26,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -41,7 +45,7 @@ import kotlinx.coroutines.launch
 import java.util.Locale
 
 @Composable
-fun HeroBanner(m: Media?, modifier: Modifier = Modifier) {
+fun HeroBanner(m: Media?, kicker: String, isPick: Boolean, modifier: Modifier = Modifier) {
     Box(modifier.fillMaxWidth()) {
         Crossfade(targetState = m, animationSpec = tween(if (Look.lite) 0 else 350), label = "hero") { cur ->
             Box(Modifier.fillMaxSize()) {
@@ -50,7 +54,7 @@ fun HeroBanner(m: Media?, modifier: Modifier = Modifier) {
                 }
                 Box(
                     Modifier.fillMaxSize().background(
-                        Brush.horizontalGradient(listOf(Color(0xF207090E), Color(0x9907090E), Color.Transparent))
+                        Brush.horizontalGradient(listOf(Color(0xF507090E), Color(0x9907090E), Color.Transparent))
                     )
                 )
                 Box(
@@ -60,19 +64,35 @@ fun HeroBanner(m: Media?, modifier: Modifier = Modifier) {
                 )
                 if (cur != null) {
                     Column(
-                        Modifier.align(Alignment.BottomStart).padding(start = 36.d, bottom = 18.d).fillMaxWidth(0.52f)
+                        Modifier.align(Alignment.BottomStart).padding(start = 36.d, bottom = 14.d).fillMaxWidth(0.5f)
                     ) {
-                        Text2(cur.title, 30, C.text, FontWeight.ExtraBold, 2)
+                        if (kicker.isNotBlank()) {
+                            Text(
+                                kicker, color = C.accent, fontSize = 10.t, fontWeight = FontWeight.Bold,
+                                letterSpacing = 2.t, maxLines = 1
+                            )
+                            Spacer(Modifier.height(4.d))
+                        }
+                        Text2(cur.title, 32, C.text, FontWeight.ExtraBold, 2)
                         Spacer(Modifier.height(6.d))
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.d)) {
-                            if (cur.rating > 0) Text2("★ " + String.format(Locale.US, "%.1f", cur.rating), 13, C.gold, FontWeight.Bold, 1)
-                            if (cur.year.isNotBlank()) Text2(cur.year, 13, C.dim, FontWeight.Medium, 1)
-                            Text2(if (cur.type == MediaType.TV) "Сериал" else "Филм", 13, C.accent2, FontWeight.Medium, 1)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            val parts = ArrayList<Pair<String, Color>>()
+                            if (cur.rating > 0) parts.add("★ " + String.format(Locale.US, "%.1f", cur.rating) to C.gold)
+                            if (cur.year.isNotBlank()) parts.add(cur.year to Color(0xFFC9CFDC))
+                            if (isPick) parts.add((if (cur.type == MediaType.TV) "Сериал" else "Филм") to Color(0xFFC9CFDC))
                             val g = genreLine(cur)
-                            if (g.isNotBlank()) Text2(g, 13, C.dim, FontWeight.Medium, 1)
+                            if (g.isNotBlank()) parts.add(g to Color(0xFFC9CFDC))
+                            parts.forEachIndexed { i, (t, c) ->
+                                if (i > 0) {
+                                    Spacer(Modifier.width(8.d))
+                                    Box(Modifier.size(3.d).clip(RoundedCornerShape(50)).background(Color(0xFF6E778A)))
+                                    Spacer(Modifier.width(8.d))
+                                }
+                                Text2(t, 12, c, if (i == 0 && cur.rating > 0) FontWeight.Bold else FontWeight.Medium, 1)
+                            }
                         }
                         Spacer(Modifier.height(6.d))
-                        Text2(cur.overview.ifBlank { "Няма описание." }, 12, Color(0xFFD5DAE6), FontWeight.Normal, 3)
+                        Text2(cur.overview.ifBlank { "Няма описание." }, 12, Color(0xFFC4CAD8), FontWeight.Normal, 2)
                     }
                 }
             }
@@ -88,6 +108,16 @@ fun Text2(text: String, size: Int, color: Color, weight: FontWeight, lines: Int,
     )
 }
 
+/** Надпис над банера: за избор на седмицата - класирането, иначе видът на заглавието. Вторият резултат: дали е избор. */
+private fun kickerOf(home: HomeState, m: Media?): Pair<String, Boolean> {
+    if (m == null) return "" to false
+    for (r in home.picks) {
+        val i = r.items.indexOfFirst { it.key == m.key }
+        if (i >= 0) return "ИЗБОР НА СЕДМИЦАТА · №${i + 1}" to true
+    }
+    return (if (m.type == MediaType.TV) "СЕРИАЛ" else "ФИЛМ") to false
+}
+
 @Composable
 fun HomeScreen(home: HomeState, onOpen: (Media) -> Unit, onResume: (app.torrtv.state.Library.Progress) -> Unit) {
     // Хероят се сменя със закъснение, за да не мига при бързо прескачане по плакатите.
@@ -99,14 +129,18 @@ fun HomeScreen(home: HomeState, onOpen: (Media) -> Unit, onResume: (app.torrtv.s
         }
     }
     Column(Modifier.fillMaxSize()) {
-        HeroBanner(shown, Modifier.height(235.d))
+        val (kicker, isPick) = kickerOf(home, shown)
+        HeroBanner(shown, kicker, isPick, Modifier.height(215.d))
         LazyColumn(Modifier.fillMaxWidth().weight(1f), state = home.listState) {
             if (app.torrtv.state.Library.progress.isNotEmpty()) {
                 item(key = "continue") { ContinueRow(onResume, { home.heroTarget = it }) }
             }
+            items(home.picks, key = { "pick-" + it.type.path }) { row ->
+                PicksRow(home, row, onOpen)
+            }
             if (app.torrtv.state.Library.favorites.isNotEmpty()) {
                 item(key = "favs") {
-                    MediaRow("♥  Любими", app.torrtv.state.Library.favorites.take(20), onOpen, { home.heroTarget = it })
+                    MediaRow("Любими", app.torrtv.state.Library.favorites.take(20), onOpen, { home.heroTarget = it })
                 }
             }
             items(home.rows, key = { it.id }) { row ->
@@ -151,8 +185,8 @@ private fun HomeRow(home: HomeState, row: HomeState.Row, onOpen: (Media) -> Unit
             ) {
                 items(data.items, key = { it.key }) { m ->
                     val fr = remember { FocusRequester() }
-                    val restore = home.focusKey == m.key
-                    if (restore) {
+                    val fk = "${row.id}|${m.key}"
+                    if (home.focusKey == fk) {
                         LaunchedEffect(Unit) {
                             fr.tryRequest()
                             home.focusKey = null
@@ -161,7 +195,7 @@ private fun HomeRow(home: HomeState, row: HomeState.Row, onOpen: (Media) -> Unit
                     Poster(
                         m, 112.d,
                         onClick = {
-                            home.focusKey = m.key
+                            home.focusKey = fk
                             onOpen(m)
                         },
                         onFocus = { home.heroTarget = m },

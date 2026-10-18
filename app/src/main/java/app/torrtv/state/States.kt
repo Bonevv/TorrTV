@@ -93,22 +93,28 @@ class HomeState {
         Graph.tmdb.discover(MediaType.MOVIE, id, p, "popularity.desc", 300, 0.0)
     }
 
+    /** Първите два реда на началото: избор на седмицата (10 филма и 10 сериала). */
+    val picks: List<WeeklyRow> = listOf(
+        WeeklyRow(MediaType.MOVIE, "Избор на седмицата · Филми"),
+        WeeklyRow(MediaType.TV, "Избор на седмицата · Сериали")
+    )
+
     val rows: List<Row> = listOf(
-        Row("trend", "🔥  В тренда тази седмица") { p -> Graph.tmdb.trending(p) },
-        Row("pop_m", "🎬  Популярни филми") { p -> Graph.tmdb.list(MediaType.MOVIE, "popular", p) },
-        Row("pop_t", "📺  Популярни сериали") { p -> Graph.tmdb.list(MediaType.TV, "popular", p) },
-        Row("top_m", "⭐  Най-високо оценени филми") { p -> Graph.tmdb.list(MediaType.MOVIE, "top_rated", p) },
-        Row("top_t", "🏆  Най-добрите сериали") { p -> Graph.tmdb.list(MediaType.TV, "top_rated", p) },
-        genreRow(28, "💥  Екшън"),
-        genreRow(35, "😂  Комедия"),
-        genreRow(878, "🚀  Фантастика"),
-        genreRow(27, "👻  Ужаси"),
-        genreRow(53, "🔪  Трилър"),
-        genreRow(16, "🎨  Анимация"),
-        genreRow(18, "🎭  Драма"),
-        genreRow(12, "🧭  Приключенски"),
-        genreRow(80, "🕵  Криминални"),
-        genreRow(99, "🌍  Документални")
+        Row("trend", "В тренда тази седмица") { p -> Graph.tmdb.trending(p) },
+        Row("pop_m", "Популярни филми") { p -> Graph.tmdb.list(MediaType.MOVIE, "popular", p) },
+        Row("pop_t", "Популярни сериали") { p -> Graph.tmdb.list(MediaType.TV, "popular", p) },
+        Row("top_m", "Най-високо оценени филми") { p -> Graph.tmdb.list(MediaType.MOVIE, "top_rated", p) },
+        Row("top_t", "Най-добрите сериали") { p -> Graph.tmdb.list(MediaType.TV, "top_rated", p) },
+        genreRow(28, "Екшън"),
+        genreRow(35, "Комедия"),
+        genreRow(878, "Фантастика"),
+        genreRow(27, "Ужаси"),
+        genreRow(53, "Трилър"),
+        genreRow(16, "Анимация"),
+        genreRow(18, "Драма"),
+        genreRow(12, "Приключенски"),
+        genreRow(80, "Криминални"),
+        genreRow(99, "Документални")
     )
 
     val listState = LazyListState()

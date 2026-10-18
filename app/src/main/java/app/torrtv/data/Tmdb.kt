@@ -102,7 +102,8 @@ class Tmdb(private val prefs: Prefs) {
         sort: String,
         minVotes: Int,
         minRating: Double,
-        anime: Boolean = false
+        anime: Boolean = false,
+        withoutGenre: Int? = null
     ): Page<Media> {
         val p = LinkedHashMap<String, String>()
         p["page"] = page.toString()
@@ -114,6 +115,7 @@ class Tmdb(private val prefs: Prefs) {
         val genres = listOfNotNull(if (anime) 16 else null, genre).distinct()
         if (genres.isNotEmpty()) p["with_genres"] = genres.joinToString(",")
         if (anime) p["with_original_language"] = "ja"
+        if (withoutGenre != null) p["without_genres"] = withoutGenre.toString()
         return parsePage(call("/discover/${type.path}", p), type)
     }
 

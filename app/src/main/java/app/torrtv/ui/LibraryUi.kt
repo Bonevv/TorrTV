@@ -43,7 +43,7 @@ fun ContinueRow(onResume: (Library.Progress) -> Unit, onFocusMedia: (Media) -> U
     val list = Library.progress.toList()
     if (list.isEmpty()) return
     Column(Modifier.fillMaxWidth()) {
-        SectionTitle("▶  Продължи гледане")
+        SectionTitle("Продължи гледане")
         LazyRow(
             contentPadding = PaddingValues(horizontal = 36.d, vertical = 8.d),
             horizontalArrangement = Arrangement.spacedBy(12.d)
@@ -129,7 +129,7 @@ fun FavoritesScreen(onOpen: (Media) -> Unit) {
         return
     }
     Column(Modifier.fillMaxSize()) {
-        SectionTitle("♥  Любими · ${favs.size}")
+        SectionTitle("Любими", sub = if (favs.size == 1) "1 заглавие" else "${favs.size} заглавия")
         LazyVerticalGrid(
             columns = GridCells.Adaptive(118.d),
             state = FavUi.grid,
