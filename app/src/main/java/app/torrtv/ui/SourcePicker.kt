@@ -15,7 +15,10 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,12 +45,14 @@ fun SourcePicker(
     onDismiss: () -> Unit
 ) {
     val torrents = remember(st.torrents, excludeHash) {
-        st.torrents.filter { !it.isCam && it.hash != excludeHash }.sortedByDescending { it.seeders }.take(8)
+        st.torrents.filter { !it.isCam && it.hash != excludeHash }.sortedByDescending { it.seeders }.take(12)
     }
     val web = remember(st.detail, st.season, st.episode) { st.webSources() }
     val webOn = Graph.prefs.webEnabled
-    val firstFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { firstFocus.tryRequest() }
+    // По подразбиране са торентите; уеб сайтовете се избират със стрелките наляво/надясно.
+    var tab by remember { mutableStateOf(0) }
+    val tabFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { tabFocus.tryRequest() }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
@@ -55,41 +60,47 @@ fun SourcePicker(
                 .border(1.d, C.line, RoundedCornerShape(20.d)).padding(20.d)
         ) {
             Text2("Откъде да гледаш?", 18, C.text, FontWeight.ExtraBold, 1)
-            Spacer(Modifier.height(2.d))
-            Text2("Избери друг торент или гледай онлайн от сайт. „Назад“ затваря.", 11, C.dim, FontWeight.Normal, 2)
             Spacer(Modifier.height(10.d))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.d), verticalAlignment = Alignment.CenterVertically) {
+                Chip("🧲  Торенти (${torrents.size})", tab == 0, { tab = 0 }, onFocus = { tab = 0 }, focusRequester = tabFocus)
+                Chip("🌐  Уеб сайтове (${web.size})", tab == 1, { tab = 1 }, onFocus = { tab = 1 })
+                if (st.searching) Spinner(16.d)
+            }
+            Spacer(Modifier.height(4.d))
+            Text2(
+                if (tab == 0) "Торенти с най-много сийдъри първи. Стрелка надолу - към списъка, надясно - към уеб сайтовете."
+                else "Гледане онлайн, без торент. Стрелка надолу - към списъка, наляво - към торентите.",
+                11, C.dim, FontWeight.Normal, 2
+            )
+            Spacer(Modifier.height(8.d))
 
             LazyColumn(Modifier.heightIn(max = 270.d), verticalArrangement = Arrangement.spacedBy(4.d)) {
-                item(key = "h1") {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.d)) {
-                        Text2("🧲  Други торенти - най-много сийдъри първи", 13, C.accent2, FontWeight.Bold, 1)
-                        if (st.searching) Spinner(14.d)
+                if (tab == 0) {
+                    if (torrents.isEmpty()) item(key = "none") {
+                        Text2(
+                            if (st.searching) "Търся…" else "Няма други торенти. Пробвай уеб сайтовете (стрелка надясно).",
+                            12, C.dim, FontWeight.Normal, 2, Modifier.padding(start = 4.d)
+                        )
                     }
-                }
-                if (torrents.isEmpty()) item(key = "none") {
-                    Text2(if (st.searching) "Търся…" else "Няма други торенти.", 12, C.dim, FontWeight.Normal, 1, Modifier.padding(start = 4.d))
-                }
-                itemsIndexed(torrents, key = { _, t -> "t" + t.hash + t.source }) { i, t ->
-                    PickRow(
-                        left = t.quality, title = t.title,
-                        sub = formatSize(t.size) + " · " + t.source,
-                        right = "${t.seeders}", rightColor = seedColor(t.seeders),
-                        focusRequester = if (i == 0) firstFocus else null
-                    ) { onTorrent(t); onDismiss() }
-                }
-
-                item(key = "h2") {
-                    Spacer(Modifier.height(8.d))
-                    Text2("🌐  Уеб сайтове - гледане онлайн", 13, C.accent2, FontWeight.Bold, 1)
-                }
-                if (!webOn) item(key = "weboff") {
-                    Text2("Изключени са. Включват се от Настройки → Уеб сайтове.", 12, C.dim, FontWeight.Normal, 2, Modifier.padding(start = 4.d))
-                } else if (web.isEmpty()) item(key = "webnone") {
-                    Text2("Няма адреси (или още се зарежда информацията за филма).", 12, C.dim, FontWeight.Normal, 2, Modifier.padding(start = 4.d))
+                    itemsIndexed(torrents, key = { _, t -> "t" + t.hash + t.source }) { _, t ->
+                        PickRow(
+                            left = t.quality, title = t.title,
+                            sub = formatSize(t.size) + " · " + t.source,
+                            right = "${t.seeders}", rightColor = seedColor(t.seeders)
+                        ) { onTorrent(t); onDismiss() }
+                    }
+                } else if (!webOn) {
+                    item(key = "weboff") {
+                        Text2("Уеб сайтовете са изключени. Включват се от Настройки → Уеб сайтове.", 12, C.dim, FontWeight.Normal, 2, Modifier.padding(start = 4.d))
+                    }
+                } else if (web.isEmpty()) {
+                    item(key = "webnone") {
+                        Text2("Няма адреси (или още се зарежда информацията за филма).", 12, C.dim, FontWeight.Normal, 2, Modifier.padding(start = 4.d))
+                    }
                 } else {
                     item(key = "webnote") {
                         Text2(
-                            "Рекламите се блокират. Щом сайтът пусне видеото, предавам го на вградения плеър със субтитри. Ако не успее - гледаш в самата страница.",
+                            "Рекламите се блокират. Щом сайтът пусне видеото, можеш да го прехвърлиш във вградения плеър със субтитри. Ако не, гледаш в самата страница.",
                             11, C.dim, FontWeight.Normal, 3, Modifier.padding(start = 4.d, bottom = 2.d)
                         )
                     }
@@ -97,8 +108,7 @@ fun SourcePicker(
                         PickRow(
                             left = "WEB", title = s.host,
                             sub = if (i == 0) "основен" else "резервен " + i,
-                            right = "▶", rightColor = C.accent,
-                            focusRequester = if (torrents.isEmpty() && i == 0) firstFocus else null
+                            right = "▶", rightColor = C.accent
                         ) { onDismiss(); onWeb(i) }
                     }
                 }

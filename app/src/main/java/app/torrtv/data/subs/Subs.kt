@@ -170,7 +170,7 @@ object SubText {
 
 class SubtitleStore(private val cacheDir: File, private val providers: List<SubtitleProvider>) {
 
-    class Local(val file: File, val lang: String, val label: String, val mime: String)
+    class Local(val file: File, val lang: String, val label: String, val mime: String, val uid: String = "")
 
     private val dir: File get() = File(cacheDir, "subs").also { it.mkdirs() }
 
@@ -191,7 +191,7 @@ class SubtitleStore(private val cacheDir: File, private val providers: List<Subt
         }
         // Името на изданието е в етикета, за да се вижда в менюто на плеъра за кой филм е всеки субтитър.
         val rel = r.release.trim().take(40)
-        Local(out, r.lang, if (rel.isNotEmpty()) "${Langs.short(r.lang)} · $rel" else "${Langs.short(r.lang)} · ${r.providerName}", mime)
+        Local(out, r.lang, if (rel.isNotEmpty()) "${Langs.short(r.lang)} · $rel" else "${Langs.short(r.lang)} · ${r.providerName}", mime, r.uid)
     }
 
     fun clear() {

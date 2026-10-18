@@ -16,6 +16,8 @@ import app.torrtv.data.subs.SubtitleResult
 import app.torrtv.data.subs.SubShift
 import app.torrtv.data.subs.SubtitleStore
 import app.torrtv.state.Graph
+import app.torrtv.state.Sync
+import app.torrtv.state.SyncMemory
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -29,7 +31,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.io.IOException
 
-class LocalSub(val file: File, val lang: String, val label: String, val mime: String, val url: String)
+class LocalSub(val file: File, val lang: String, val label: String, val mime: String, val url: String, val uid: String = "", val id: Int = 0)
 
 /**
  * Държи целия живот на един стрийм: свързване с торента, избор на файл, буфериране,
@@ -52,7 +54,11 @@ class StreamController(
         val backdrop: String?,
         val media: app.torrtv.data.Media? = null,
         val torrent: app.torrtv.data.torrents.TorrentResult? = null,
-        val resumeMs: Long = 0L
+        val resumeMs: Long = 0L,
+        /** Всички намерени субтитри (подредени) - за бутона „Субтитри“ в плеъра. */
+        val allSubs: List<SubtitleResult> = emptyList(),
+        /** Името на торента, с което се сравнява изданието на субтитрите (празно за уеб поток). */
+        val fitTitle: String? = null
     )
 
     enum class Stage { IDLE, CONNECTING, METADATA, PICK_FILE, BUFFERING, READY, ERROR }
@@ -69,11 +75,13 @@ class StreamController(
         val error: String? = null,
         val subsDone: Int = 0,
         val subsTotal: Int = 0,
-        val req: Req? = null
+        val req: Req? = null,
+        /** Не е празно, когато потокът идва от уеб сайт (а не от торент). */
+        val webHost: String = ""
     )
 
     /** headers - за поток от уеб страница: Referer, Origin, бисквитки и т.н., с които трябва да се тегли. */
-    class Playback(val url: String, val title: String, val subs: List<LocalSub>, val headers: Map<String, String> = emptyMap())
+    class Playback(val url: String, val title: String, val subs: List<LocalSub>, val headers: Map<String, String> = emptyMap(), val webHost: String = "")
 
     /** Субтитрите без изместване (оригиналните файлове) и текущото изместване в милисекунди. */
     private var baseSubs: List<LocalSub> = emptyList()
@@ -89,21 +97,68 @@ class StreamController(
     fun shiftSubs(offsetMs: Long): List<LocalSub> {
         val pb = playback ?: return emptyList()
         subOffsetMs = offsetMs
-        val out = ArrayList<LocalSub>()
-        baseSubs.forEachIndexed { i, s ->
-            if (offsetMs == 0L) {
-                out.add(s)
-            } else {
-                val ext = s.file.extension.ifBlank { "srt" }
-                val shifted = SubShift.shift(s.file.readText(), ext, offsetMs)
-                val path = "/sub$i.o$offsetMs.$ext"
-                server.set(path, LocalServer.BytesContent(shifted.toByteArray(Charsets.UTF_8), s.mime))
-                out.add(LocalSub(s.file, s.lang, s.label, s.mime, "http://127.0.0.1:${server.port}$path"))
-            }
-        }
-        playback = Playback(pb.url, pb.title, out, pb.headers)
+        val out = shifted(offsetMs)
+        playback = Playback(pb.url, pb.title, out, pb.headers, pb.webHost)
         AppLog.d("stream", "синхрон на субтитрите: ${offsetMs} ms")
         return out
+    }
+
+    /** Всички субтитри с адреси, изместени с offsetMs (0 = оригиналите). */
+    private fun shifted(offsetMs: Long): List<LocalSub> = baseSubs.map { s ->
+        if (offsetMs == 0L) {
+            s
+        } else {
+            val ext = s.file.extension.ifBlank { "srt" }
+            val text = SubShift.shift(s.file.readText(), ext, offsetMs)
+            val path = "/sub${s.id}.o$offsetMs.$ext"
+            server.set(path, LocalServer.BytesContent(text.toByteArray(Charsets.UTF_8), s.mime))
+            LocalSub(s.file, s.lang, s.label, s.mime, "http://127.0.0.1:${server.port}$path", s.uid, s.id)
+        }
+    }
+
+    private var subSeq = 0
+
+    private fun publish(l: SubtitleStore.Local): LocalSub {
+        val id = subSeq++
+        val sp = "/sub$id.${l.file.extension}"
+        server.set(sp, LocalServer.BytesContent(l.file.readBytes(), l.mime))
+        return LocalSub(l.file, l.lang, l.label, l.mime, "http://127.0.0.1:${server.port}$sp", l.uid, id)
+    }
+
+    /**
+     * Сваля още един субтитър по време на гледане и го добавя към наличните (най-много 6). Вика се от
+     * фонова нишка. Връща новия списък (със сегашния синхрон) или null, ако не е успяло.
+     */
+    fun addSub(r: SubtitleResult): List<LocalSub>? {
+        val req = ui.req ?: return null
+        val q = req.subQuery ?: return null
+        val pb = playback ?: return null
+        if (baseSubs.none { it.uid == r.uid }) {
+            val local = try {
+                kotlinx.coroutines.runBlocking { subStore.fetch(r, q) }
+            } catch (e: Exception) {
+                AppLog.d("stream", "субтитър - грешка: ${e.message}")
+                null
+            } ?: return null
+            baseSubs = (baseSubs + publish(local)).takeLast(6)
+        }
+        val out = shifted(subOffsetMs)
+        playback = Playback(pb.url, pb.title, out, pb.headers, pb.webHost)
+        return out
+    }
+
+    private fun syncKey(req: Req?, uid: String): String? {
+        val m = req?.media ?: return null
+        if (uid.isEmpty()) return null
+        return SyncMemory.key(m.key, req.season, req.episode, uid)
+    }
+
+    /** Запомнен синхрон за този филм / епизод и субтитър (0, ако няма). */
+    fun recallOffset(uid: String): Long = syncKey(ui.req, uid)?.let { Sync.memory.get(it) } ?: 0L
+
+    /** Запомня синхрона, за да не се настройва втори път. */
+    fun rememberOffset(uid: String, ms: Long) {
+        syncKey(ui.req, uid)?.let { Sync.memory.set(it, ms) }
     }
 
     var ui by mutableStateOf(Ui())
@@ -197,7 +252,7 @@ class StreamController(
                 throw IOException("Твърде бавно теглене - няма достатъчно сийдъри. Опитай друг източник.")
         }
 
-        val subs = registerSubs(sj)
+        val subs = registerSubs(sj, req)
         val title = if (req.subtitle.isBlank()) req.title else "${req.title} · ${req.subtitle}"
         // Видеото идва от сървъра в торент процеса, субтитрите - от този процес.
         val pb = Playback("http://127.0.0.1:${started.port}${started.path}", title, subs)
@@ -207,38 +262,35 @@ class StreamController(
         launchPlayer(req.player, pb)
     }
 
-    /** Чака субтитрите, подава ги от локалния сървър и ги запомня (за синхрона). */
-    private suspend fun registerSubs(sj: Deferred<List<SubtitleStore.Local>>): List<LocalSub> {
+    /** Чака субтитрите, подава ги от локалния сървър и прилага запомнения синхрон за първия от тях. */
+    private suspend fun registerSubs(sj: Deferred<List<SubtitleStore.Local>>, req: Req): List<LocalSub> {
         val locals = sj.await()
-        val subs = ArrayList<LocalSub>()
-        locals.forEachIndexed { i, l ->
-            val sp = "/sub$i.${l.file.extension}"
-            server.set(sp, LocalServer.BytesContent(l.file.readBytes(), l.mime))
-            subs.add(LocalSub(l.file, l.lang, l.label, l.mime, "http://127.0.0.1:${server.port}$sp"))
-        }
-        baseSubs = subs
-        subOffsetMs = 0L
-        return subs
+        subSeq = 0
+        baseSubs = locals.map { publish(it) }
+        val off = baseSubs.firstOrNull()?.let { syncKey(req, it.uid)?.let { k -> Sync.memory.get(k) } } ?: 0L
+        subOffsetMs = off
+        if (off != 0L) AppLog.d("stream", "запомнен синхрон: $off ms")
+        return shifted(off)
     }
 
     /**
      * Поток, намерен в уеб страница (m3u8/mpd/mp4): сваля субтитрите и го пуска във вградения плеър
      * със същите заглавки, с които страницата го е поискала. Външни плеъри не могат да ги получат.
      */
-    fun playWeb(url: String, headers: Map<String, String>, req: Req) {
+    fun playWeb(url: String, headers: Map<String, String>, req: Req, host: String) {
         close()
         resumeFrom = 0L
         AppLog.d("stream", "Уеб поток: ${req.title} ${req.subtitle} субтитри=${req.subs.size}")
-        ui = Ui(stage = Stage.CONNECTING, message = "Подготвям субтитрите…", req = req)
+        ui = Ui(stage = Stage.CONNECTING, message = "Подготвям субтитрите…", req = req, webHost = host)
         StreamService.start(app)
         job = scope.launch {
             try {
                 val sj = scope.async { prepareSubs(req) }
                 subsJob = sj
                 server.start()
-                val subs = registerSubs(sj)
+                val subs = registerSubs(sj, req)
                 val title = if (req.subtitle.isBlank()) req.title else "${req.title} · ${req.subtitle}"
-                val pb = Playback(url, title, subs, headers)
+                val pb = Playback(url, title, subs, headers, host)
                 playback = pb
                 ui = ui.copy(stage = Stage.READY, message = "Готово", bufferPct = 100)
                 launchPlayer("builtin", pb)
@@ -329,6 +381,7 @@ class StreamController(
         subsJob = null
         playback = null
         baseSubs = emptyList()
+        subSeq = 0
         subOffsetMs = 0L
         client.close()
         server.clearRoutes()

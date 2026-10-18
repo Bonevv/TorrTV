@@ -88,6 +88,13 @@ class Prefs(ctx: Context) {
             sp.edit().putBoolean("web_enabled", v).apply()
         }
 
+    /** Какво става, когато уеб сайтът пусне видео: 0 = питай, 1 = автоматично във вградения плеър, 2 = остани на сайта. */
+    var webHandoff: Int
+        get() = sp.getInt("web_handoff", 0).coerceIn(0, 2)
+        set(v) {
+            sp.edit().putInt("web_handoff", v.coerceIn(0, 2)).apply()
+        }
+
     /** Лимит на кеша в MB (0 = без лимит): при надвишаване се чисти автоматично. */
     var cacheLimitMb: Int
         get() = sp.getInt("cache_limit_mb", 500)

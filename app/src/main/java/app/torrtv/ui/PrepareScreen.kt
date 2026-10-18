@@ -100,8 +100,12 @@ fun PrepareScreen(st: app.torrtv.state.DetailState? = null) {
                 Stage.READY -> {
                     Text2("✓ Плеърът е пуснат", 16, C.green, FontWeight.Bold, 1)
                     Spacer(Modifier.height(6.d))
-                    Text2(ui.fileName, 11, C.dim, FontWeight.Normal, 2)
-                    live?.let { Text2("Пиъри ${it.peers} · сийдъри ${it.seeds} · ↓ ${formatSpeed(it.speed)}", 12, C.dim, FontWeight.Medium, 1) }
+                    if (ui.webHost.isNotEmpty()) {
+                        Text2("🌐 Гледаш от уеб сайт: ${ui.webHost}", 12, C.accent2, FontWeight.Medium, 1)
+                    } else {
+                        Text2(ui.fileName, 11, C.dim, FontWeight.Normal, 2)
+                        live?.let { Text2("Пиъри ${it.peers} · сийдъри ${it.seeds} · ↓ ${formatSpeed(it.speed)}", 12, C.dim, FontWeight.Medium, 1) }
+                    }
                     Spacer(Modifier.height(16.d))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.d)) {
                         PrimaryButton("▶ Пусни отново", { sc.relaunch() }, focusRequester = focus)
@@ -118,7 +122,11 @@ fun PrepareScreen(st: app.torrtv.state.DetailState? = null) {
                     val peers = s?.peers ?: ui.peers
                     val seeds = s?.seeds ?: ui.seeds
                     val speed = s?.speed ?: ui.speed
-                    Text2("Пиъри $peers · сийдъри $seeds · ↓ ${formatSpeed(speed)}", 12, C.dim, FontWeight.Medium, 1)
+                    if (ui.webHost.isNotEmpty()) {
+                        Text2("🌐 Поток от уеб сайт: ${ui.webHost}", 12, C.accent2, FontWeight.Medium, 1)
+                    } else {
+                        Text2("Пиъри $peers · сийдъри $seeds · ↓ ${formatSpeed(speed)}", 12, C.dim, FontWeight.Medium, 1)
+                    }
                     if (ui.stage == Stage.BUFFERING) {
                         Spacer(Modifier.height(12.d))
                         Box(Modifier.fillMaxWidth(0.8f).height(8.d).background(C.card, RoundedCornerShape(50))) {

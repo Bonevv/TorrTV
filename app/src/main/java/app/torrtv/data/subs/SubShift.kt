@@ -60,6 +60,34 @@ object SubShift {
         return out.toString().trimEnd('\n') + "\n"
     }
 
+    /** Кога свършва последният ред на субтитъра (мс). 0, ако не се намери нито един ред. */
+    fun lastEndMs(text: String, ext: String): Long {
+        var best = 0L
+        if (ext.lowercase(Locale.US) in setOf("ass", "ssa")) {
+            for (line in text.lineSequence()) {
+                if (!line.startsWith("Dialogue:")) continue
+                val parts = line.substring(9).split(",", limit = 10)
+                if (parts.size < 10) continue
+                val m = assTime.find(parts[2].trim()) ?: continue
+                val ms = ((m.groupValues[1].toLong() * 60 + m.groupValues[2].toLong()) * 60 + m.groupValues[3].toLong()) * 1000 +
+                    m.groupValues[4].toLong() * 10
+                if (ms > best) best = ms
+            }
+            return best
+        }
+        for (line in text.lineSequence()) {
+            if (!line.contains("-->")) continue
+            val last = stamp.findAll(line).lastOrNull() ?: continue
+            val h = last.groupValues[1].ifEmpty { "0" }.toLong()
+            val mi = last.groupValues[2].toLong()
+            val se = last.groupValues[3].toLong()
+            val frac = last.groupValues[5].padEnd(3, '0').take(3).toLong()
+            val ms = ((h * 60 + mi) * 60 + se) * 1000 + frac
+            if (ms > best) best = ms
+        }
+        return best
+    }
+
     /** ext: srt | vtt | ass | ssa. offsetMs > 0 - субтитрите излизат по-късно. */
     fun shift(text: String, ext: String, offsetMs: Long): String {
         if (offsetMs == 0L) return text

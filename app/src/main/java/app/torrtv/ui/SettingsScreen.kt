@@ -93,6 +93,7 @@ fun SettingsScreen() {
     var engineMode by remember { mutableStateOf(prefs.engineProfile) }
     var lite by remember { mutableStateOf(prefs.lite) }
     var webOn by remember { mutableStateOf(prefs.webEnabled) }
+    var webHandoff by remember { mutableStateOf(prefs.webHandoff) }
     val mem by produceState(remember { CacheManager.memory(ctx) }) {
         while (true) {
             value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { CacheManager.memory(ctx) }
@@ -309,6 +310,15 @@ fun SettingsScreen() {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
                     Chip("Изключени", !webOn, { webOn = false; prefs.webEnabled = false })
                     Chip("Включени", webOn, { webOn = true; prefs.webEnabled = true })
+                }
+                Spacer(Modifier.height(8.d))
+                Text2("Когато сайтът пусне видеото:", 12, C.dim, FontWeight.Bold, 1)
+                Spacer(Modifier.height(4.d))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.d)) {
+                    items(
+                        listOf(0 to "Питай ме", 1 to "Автоматично във вградения плеър", 2 to "Остани на сайта"),
+                        key = { it.first }
+                    ) { (m, label) -> Chip(label, webHandoff == m, { webHandoff = m; prefs.webHandoff = m }) }
                 }
                 Spacer(Modifier.height(6.d))
                 Text2(

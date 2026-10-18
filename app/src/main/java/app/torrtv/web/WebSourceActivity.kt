@@ -66,6 +66,8 @@ class WebSourceActivity : AppCompatActivity() {
     private var captured: Cap? = null
     private var countdown = 0
     private var handedOff = false
+    private var asked = false
+    private var hinted = false
     private var pending: WebPlay.Pending? = null
     private var ownBases: Set<String> = emptySet()
     private var blockedCount = 0
@@ -100,7 +102,7 @@ class WebSourceActivity : AppCompatActivity() {
     private val mp4Wait = Runnable {
         // Само видео файл (без плейлист) за 8 секунди: най-вероятно е истинското видео.
         val c = captured
-        if (c != null && !c.playlist && !handedOff) startCountdown()
+        if (c != null && !c.playlist && !handedOff) onCaptured()
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -214,6 +216,8 @@ class WebSourceActivity : AppCompatActivity() {
         pageDone = false
         captured = null
         pageUrl = null
+        asked = false
+        hinted = false
         cancelCountdown()
         ui.removeCallbacks(mp4Wait)
         ui.removeCallbacks(loadTimeout)
@@ -374,11 +378,41 @@ class WebSourceActivity : AppCompatActivity() {
             captured = Cap(url, h, kind == 1)
             pageDone = true
             ui.removeCallbacks(loadTimeout)
-            if (kind == 1) startCountdown() else {
+            if (kind == 1) onCaptured() else {
                 ui.removeCallbacks(mp4Wait)
                 ui.postDelayed(mp4Wait, 8000)
             }
         }
+    }
+
+    /** Страницата пусна видео: според настройката питаме, прехвърляме сами или само подсказваме. */
+    private fun onCaptured() {
+        when (Graph.prefs.webHandoff) {
+            1 -> startCountdown()
+            2 -> if (!hinted) {
+                hinted = true
+                showBanner("▶ Намерих видео поток. Ако искаш вградения плеър: задръж OK → „Пусни във вградения плеър“.", 6000)
+            }
+            else -> ask()
+        }
+    }
+
+    private fun ask() {
+        if (asked || handedOff) return
+        asked = true
+        val stay = {
+            showBanner("Оставаш на сайта. Задръж OK → меню → „Пусни във вградения плеър“, когато поискаш.", 6000)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Намерих видео поток")
+            .setMessage(
+                "От ${sources[idx].host}.\n\nДа го пусна ли във вградения плеър? Там няма реклами, слагат се твоите субтитри " +
+                    "(с избор и синхрон) и има таймер за заспиване."
+            )
+            .setPositiveButton("▶  Вграден плеър") { _, _ -> handOff() }
+            .setNegativeButton("Остани на сайта") { _, _ -> stay() }
+            .setOnCancelListener { stay() }
+            .show()
     }
 
     private fun startCountdown() {
@@ -418,7 +452,7 @@ class WebSourceActivity : AppCompatActivity() {
         if (!cookie.isNullOrBlank() && !headers.containsKey("Cookie")) headers["Cookie"] = cookie
         if (!headers.containsKey("User-Agent")) headers["User-Agent"] = DESKTOP_UA
         AppLog.d("web", "предавам на вградения плеър: ${Uri.parse(c.url).host}")
-        Graph.stream.playWeb(c.url, headers, p.req)
+        Graph.stream.playWeb(c.url, headers, p.req, sources[idx].host)
         finish()
     }
 

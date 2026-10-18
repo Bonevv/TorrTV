@@ -431,9 +431,11 @@ class DetailState(val type: MediaType, val id: Int) {
     }
 
     /** Субтитри, подредени за конкретен торент (по езици и съвпадение с релийза). */
-    fun rankedSubs(forTorrent: TorrentResult?): List<SubtitleResult> {
+    fun rankedSubs(forTorrent: TorrentResult?): List<SubtitleResult> = rankedByHint(forTorrent?.title)
+
+    private fun rankedByHint(hint: String?): List<SubtitleResult> {
         val order = Langs.choices.map { it.first }.filter { it in Graph.prefs.subLangs }.ifEmpty { listOf("bg", "en") }
-        return SubRank.rank(subResults, order, forTorrent?.title)
+        return SubRank.rank(subResults, order, hint)
     }
 
     /** Най-доброто съвпадение на намерените субтитри с този торент (за белега в списъка). */
@@ -443,12 +445,14 @@ class DetailState(val type: MediaType, val id: Int) {
     }
 
     fun playRequest(t: TorrentResult, subs: List<SubtitleResult>, player: String, resumeMs: Long = 0L): StreamController.Req =
-        buildReq(t, t.magnet, subs, player, resumeMs)
+        buildReq(t, t.magnet, subs, player, resumeMs, rankedSubs(t), t.title)
 
     /** Заявка за гледане от уеб сайт: без торент; субтитрите се избират сами (най-подходящ за всеки от двата езика). */
     fun webRequest(): StreamController.Req {
-        val subs = rankedSubs(null).distinctBy { it.lang }.take(2)
-        return buildReq(null, "", subs, "builtin", 0L)
+        // Потоците от сайтове най-често са WEB-DL / WEBRip - субтитрите за такова издание са първи.
+        val ranked = rankedByHint("WEB-DL")
+        val subs = ranked.distinctBy { it.lang }.take(2)
+        return buildReq(null, "", subs, "builtin", 0L, ranked, null)
     }
 
     /** Адресите на уеб сайтовете за избрания филм / епизод (празно, ако са изключени). */
@@ -458,7 +462,10 @@ class DetailState(val type: MediaType, val id: Int) {
         return app.torrtv.web.WebSources.sources(Graph.prefs, type == MediaType.TV, id, d.imdbId, season, episode)
     }
 
-    private fun buildReq(t: TorrentResult?, magnet: String, subs: List<SubtitleResult>, player: String, resumeMs: Long): StreamController.Req {
+    private fun buildReq(
+        t: TorrentResult?, magnet: String, subs: List<SubtitleResult>, player: String, resumeMs: Long,
+        all: List<SubtitleResult>, fitTitle: String?
+    ): StreamController.Req {
         val d = detail
         val title = d?.media?.title ?: ""
         val epName = if (type == MediaType.TV) {
@@ -477,7 +484,9 @@ class DetailState(val type: MediaType, val id: Int) {
             backdrop = Tmdb.img(d?.media?.backdropPath, "w780"),
             media = d?.media,
             torrent = t,
-            resumeMs = resumeMs
+            resumeMs = resumeMs,
+            allSubs = all.take(40),
+            fitTitle = fitTitle
         )
     }
 }
