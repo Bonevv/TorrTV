@@ -175,16 +175,19 @@ fun Spinner(size: Dp = 26.d) {
     CircularProgressIndicator(color = C.accent, strokeWidth = 3.d, modifier = Modifier.size(size))
 }
 
+/**
+ * Картинка от TMDB. Размерът за декодиране не се задава - Coil го взема от мястото в оформлението, така че
+ * плакат от 200 пиксела не държи в паметта картинка от 342 (а над размера на файла никога не се уголемява).
+ */
 @Composable
-fun Img(url: String?, modifier: Modifier, w: Int, h: Int, scale: ContentScale = ContentScale.Crop) {
+fun Img(url: String?, modifier: Modifier, scale: ContentScale = ContentScale.Crop) {
     Box(modifier.background(C.card)) {
         if (url != null) {
             val ctx = LocalContext.current
             val lite = Look.lite
-            val req = remember(url, w, h, lite) {
-                // В лек режим: по-малко пиксели в паметта и без плавно появяване.
-                val k = if (lite) 0.66f else 1f
-                ImageRequest.Builder(ctx).data(url).size((w * k).toInt(), (h * k).toInt()).allowRgb565(true)
+            val req = remember(url, lite) {
+                // В лек режим: без плавно появяване.
+                ImageRequest.Builder(ctx).data(url).allowRgb565(true)
                     .crossfade(if (lite) 0 else 220).build()
             }
             AsyncImage(model = req, contentDescription = null, contentScale = scale, modifier = Modifier.fillMaxSize())
@@ -218,7 +221,7 @@ fun Poster(
         onClick, modifier.width(width).height(width * 1.5f), RoundedCornerShape(12.d), 1.09f,
         onFocus = onFocus, focusRequester = focusRequester
     ) { f ->
-        Img(Look.img(media.posterPath, "w342"), Modifier.fillMaxSize(), 342, 513)
+        Img(Look.img(media.posterPath, "w342"), Modifier.fillMaxSize())
         if (!f) Box(Modifier.fillMaxSize().border(1.d, C.line, RoundedCornerShape(12.d)))
         RatingBadge(media.rating, Modifier.align(Alignment.TopEnd).padding(5.d))
         if (media.type == MediaType.TV) {

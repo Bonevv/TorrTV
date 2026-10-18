@@ -59,7 +59,7 @@ fun PrepareScreen(st: app.torrtv.state.DetailState? = null) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
 
     Box(Modifier.fillMaxSize().background(C.bg)) {
-        Img(req?.backdrop, Modifier.fillMaxSize(), 780, 439)
+        Img(req?.backdrop, Modifier.fillMaxSize())
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xDD07090E), Color(0xF807090E)))))
         Column(
             Modifier.align(Alignment.Center).fillMaxWidth(0.62f),

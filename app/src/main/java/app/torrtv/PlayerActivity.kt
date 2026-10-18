@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.KeyEvent
@@ -32,7 +33,9 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
+import androidx.media3.ui.SubtitleView
 import app.torrtv.core.formatSpeed
 import app.torrtv.data.subs.Fit
 import app.torrtv.data.subs.Langs
@@ -64,6 +67,15 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var sleepBtn: TextView
     private lateinit var subsBtn: TextView
     private lateinit var subWarn: TextView
+    private lateinit var nextBtn: TextView
+    private lateinit var nextInfo: TextView
+    private lateinit var seekInfo: TextView
+    /** Кой стрийм е бил пуснат при отварянето на този плеър (виж onDestroy). */
+    private var myToken = 0
+    private var nextLeft = -1 // секунди до автоматичното пускане на следващия епизод; -1 = не тече
+    private var nextStarted = false
+    private var seekTarget = -1L // натрупана цел при превъртане с ←/→ (-1 = няма)
+    private var lastSeekEvent = 0L
     /** Кога свършва последният ред на всеки зареден субтитър (мс, без синхрона) - за проверката по дължина. */
     private val ends = java.util.concurrent.ConcurrentHashMap<String, Long>()
     private val warned = HashSet<String>()
@@ -71,12 +83,15 @@ class PlayerActivity : AppCompatActivity() {
     private var sleepAt = 0L // кога изтича таймера (elapsedRealtime), 0 = изключен
     private var sleepWarned = false
     private val applyOffset = Runnable { applyOffsetNow() }
+    private val applySeek = Runnable { applySeekNow() }
+    private val hideSeek = Runnable { seekInfo.visibility = View.GONE }
     private val handler = Handler(Looper.getMainLooper())
     private val tick = object : Runnable {
         override fun run() {
             updateStats()
             if (++tickN % 10 == 0) saveProgress()
             checkSleep()
+            updateNext()
             handler.postDelayed(this, 1000)
         }
     }
@@ -88,6 +103,7 @@ class PlayerActivity : AppCompatActivity() {
             finish()
             return
         }
+        myToken = Graph.stream.token
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         // Запомнен синхрон за този филм (вече приложен върху субтитрите от контролера).
@@ -103,6 +119,7 @@ class PlayerActivity : AppCompatActivity() {
             keepScreenOn = true
         }
         root.addView(view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        applySubStyle()
         stats = TextView(this).apply {
             setTextColor(0xFFFFFFFF.toInt())
             setBackgroundColor(0x99000000.toInt())
@@ -113,6 +130,12 @@ class PlayerActivity : AppCompatActivity() {
         root.addView(stats, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.START).apply {
             setMargins(32, 32, 0, 0)
         })
+        nextInfo = overlayText(14f).apply { gravity = Gravity.CENTER }
+        root.addView(nextInfo, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+            setMargins(0, 0, 0, 150)
+        })
+        seekInfo = overlayText(22f).apply { gravity = Gravity.CENTER }
+        root.addView(seekInfo, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
         buildSyncBar()
         root.addView(syncBar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END).apply {
             setMargins(0, 32, 32, 0)
@@ -148,12 +171,12 @@ class PlayerActivity : AppCompatActivity() {
         pbUrl = pb.url
         req = Graph.stream.ui.req
         val item = buildItem(pb.url, pb.subs, 0)
+        var tsp = p.trackSelectionParameters.buildUpon()
+        audioPref()?.let { tsp = tsp.setPreferredAudioLanguage(it) }
         if (pb.subs.isNotEmpty()) {
-            p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-                .setPreferredTextLanguage(pb.subs[0].lang)
-                .setSelectUndeterminedTextLanguage(true)
-                .build()
+            tsp = tsp.setPreferredTextLanguage(pb.subs[0].lang).setSelectUndeterminedTextLanguage(true)
         }
+        p.trackSelectionParameters = tsp.build()
         p.addListener(object : Player.Listener {
             override fun onTracksChanged(tracks: Tracks) {
                 refreshWarn()
@@ -183,6 +206,7 @@ class PlayerActivity : AppCompatActivity() {
             if (!shown && syncBar.hasFocus()) view.requestFocus()
             syncPart.visibility = if (hasSubs) View.VISIBLE else View.GONE
             subsBtn.visibility = if (req?.allSubs?.isNotEmpty() == true) View.VISIBLE else View.GONE
+            nextBtn.visibility = if (req?.next != null) View.VISIBLE else View.GONE
             syncBar.visibility = if (shown) View.VISIBLE else View.GONE
         })
         // Продължаване от запазеното място (с 5 секунди назад, за да се влезе в сцената).
@@ -219,6 +243,111 @@ class PlayerActivity : AppCompatActivity() {
         if (low.contains(".m3u8")) b.setMimeType(MimeTypes.APPLICATION_M3U8)
         else if (low.contains(".mpd")) b.setMimeType(MimeTypes.APPLICATION_MPD)
         return b.build()
+    }
+
+    // ---- Външен вид на субтитрите и език на звука (от Настройки) ----
+
+    /** Размер, оформление и позиция на субтитрите. */
+    private fun applySubStyle() {
+        val sv = view.subtitleView ?: return
+        val pr = Graph.prefs
+        val size = floatArrayOf(0.8f, 1f, 1.25f, 1.5f)[pr.subSize]
+        sv.setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * size)
+        sv.setApplyEmbeddedFontSizes(false)
+        sv.setBottomPaddingFraction(floatArrayOf(0.04f, SubtitleView.DEFAULT_BOTTOM_PADDING_FRACTION, 0.16f)[pr.subLift])
+        when (pr.subEdge) {
+            1 -> sv.setStyle(CaptionStyleCompat(Color.WHITE, Color.TRANSPARENT, Color.TRANSPARENT, CaptionStyleCompat.EDGE_TYPE_OUTLINE, Color.BLACK, null))
+            2 -> sv.setStyle(CaptionStyleCompat(Color.WHITE, 0xB3000000.toInt(), Color.TRANSPARENT, CaptionStyleCompat.EDGE_TYPE_NONE, Color.BLACK, null))
+            3 -> sv.setStyle(CaptionStyleCompat(Color.WHITE, Color.TRANSPARENT, Color.TRANSPARENT, CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW, Color.BLACK, null))
+            else -> sv.setUserDefaultStyle()
+        }
+    }
+
+    /** Предпочитан език на звука или null (както е във файла). "orig" е оригиналният език на филма от TMDB. */
+    private fun audioPref(): String? = when (val a = Graph.prefs.audioLang) {
+        "bg", "en" -> a
+        "orig" -> Graph.stream.ui.req?.media?.originalLanguage?.takeIf { it.isNotBlank() }
+        else -> null
+    }
+
+    private fun overlayText(sp: Float): TextView = TextView(this).apply {
+        setTextColor(0xFFFFFFFF.toInt())
+        setBackgroundColor(0xB3000000.toInt())
+        textSize = sp
+        setPadding(32, 16, 32, 16)
+        visibility = View.GONE
+    }
+
+    // ---- Следващ епизод ----
+
+    /** Пуска следващия епизод и затваря плеъра; потокът не се затваря, а се сменя (виж StreamController.playNext). */
+    private fun goNext() {
+        if (nextStarted) return
+        nextStarted = true
+        saveProgress()
+        if (Graph.stream.playNext()) finish() else nextStarted = false
+    }
+
+    /** Когато епизодът свърши: обратно броене и автоматично пускане на следващия (ако е позволено в Настройки). */
+    private fun updateNext() {
+        val n = req?.next
+        val p = player
+        if (n == null || p == null || p.playbackState != Player.STATE_ENDED || !Graph.prefs.autoNext) {
+            if (nextLeft >= 0) nextLeft = -1
+            if (nextInfo.visibility != View.GONE) nextInfo.visibility = View.GONE
+            return
+        }
+        if (nextLeft < 0) nextLeft = 6
+        nextInfo.text = "Следва: ${n.label}\nПуска се след $nextLeft с  ·  Назад - отказ"
+        nextInfo.visibility = View.VISIBLE
+        if (nextLeft == 0) goNext() else nextLeft--
+    }
+
+    // ---- Превъртане с ←/→ при скрити контроли ----
+
+    /**
+     * При скрити контроли ←/→ превърта директно: натискане = 10 с, задържане = все по-бързо.
+     * Реалното превъртане става чак след кратка пауза, за да не се препуска потокът на всяка стъпка.
+     * Когато контролите се виждат, всичко си работи както досега.
+     */
+    private fun handleSeekKey(event: KeyEvent): Boolean {
+        val code = event.keyCode
+        if (code != KeyEvent.KEYCODE_DPAD_LEFT && code != KeyEvent.KEYCODE_DPAD_RIGHT) return false
+        val p = player ?: return false
+        if (view.isControllerFullyVisible || syncBar.hasFocus()) return false
+        if (p.duration == C.TIME_UNSET || p.duration <= 0 || !p.isCurrentMediaItemSeekable) return false
+        if (event.action != KeyEvent.ACTION_DOWN) return true // отпускането се поглъща, иначе показва контролите
+        val dir = if (code == KeyEvent.KEYCODE_DPAD_RIGHT) 1 else -1
+        val stepMs = if (event.repeatCount == 0) {
+            10_000L
+        } else {
+            val held = event.eventTime - event.downTime
+            val rate = when { // секунди филм за секунда задържане
+                held < 1_500 -> 30
+                held < 3_000 -> 60
+                held < 5_000 -> 120
+                else -> 240
+            }
+            val dt = (event.eventTime - lastSeekEvent).coerceIn(0L, 200L)
+            rate * dt
+        }
+        lastSeekEvent = event.eventTime
+        val base = if (seekTarget >= 0) seekTarget else p.currentPosition
+        seekTarget = (base + dir * stepMs).coerceIn(0L, (p.duration - 2_000).coerceAtLeast(0L))
+        seekInfo.text = (if (dir > 0) "⏩  " else "⏪  ") + Library.fmt(seekTarget) + " / " + Library.fmt(p.duration)
+        seekInfo.visibility = View.VISIBLE
+        handler.removeCallbacks(hideSeek)
+        handler.removeCallbacks(applySeek)
+        handler.postDelayed(applySeek, 400)
+        return true
+    }
+
+    private fun applySeekNow() {
+        val t = seekTarget
+        seekTarget = -1L
+        if (t >= 0) player?.seekTo(t)
+        handler.removeCallbacks(hideSeek)
+        handler.postDelayed(hideSeek, 1_200)
     }
 
     // ---- Синхрон на субтитрите ----
@@ -259,6 +388,12 @@ class PlayerActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
+        // Следващ епизод (само за сериал, пуснат от торент).
+        nextBtn = pill("⏭  Следващ епизод") { goNext() }
+        nextBtn.visibility = View.GONE
+        topRow.addView(nextBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            rightMargin = 16
+        })
         // Избор на друг субтитър от всички намерени.
         subsBtn = pill("💬  Субтитри") { openSubPicker() }
         subsBtn.visibility = View.GONE
@@ -375,6 +510,11 @@ class PlayerActivity : AppCompatActivity() {
                 return true
             }
         }
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && event.keyCode == KeyEvent.KEYCODE_MEDIA_NEXT && req?.next != null) {
+            goNext()
+            return true
+        }
+        if (handleSeekKey(event)) return true
         return super.dispatchKeyEvent(event)
     }
 
@@ -510,6 +650,7 @@ class PlayerActivity : AppCompatActivity() {
                 runOnUiThread { Toast.makeText(this, "Не успях да сваля този субтитър. Пробвай друг.", Toast.LENGTH_LONG).show() }
                 return@thread
             }
+            Graph.stream.rememberSubChoice(r)
             val off = Graph.stream.recallOffset(r.uid)
             val list = if (off != Graph.stream.subOffsetMs) Graph.stream.shiftSubs(off) else added
             runOnUiThread {
@@ -614,9 +755,12 @@ class PlayerActivity : AppCompatActivity() {
     override fun onDestroy() {
         handler.removeCallbacks(tick)
         handler.removeCallbacks(applyOffset)
+        handler.removeCallbacks(applySeek)
+        handler.removeCallbacks(hideSeek)
         player?.release()
         player = null
         super.onDestroy()
-        if (isFinishing) Graph.stream.close()
+        // Потокът се затваря само ако не е сменен със следващия епизод (или вече не е пуснат нов).
+        if (isFinishing && !Graph.stream.switching && Graph.stream.token == myToken) Graph.stream.close()
     }
 }

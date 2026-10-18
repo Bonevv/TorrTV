@@ -22,7 +22,7 @@ object Graph {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     val prefs by lazy { Prefs(app) }
-    val tmdb by lazy { Tmdb(prefs) }
+    val tmdb by lazy { Tmdb(prefs, java.io.File(app.cacheDir, "tmdb")) }
     val torrents by lazy { TorrentAggregator(prefs) }
     val subs by lazy { SubtitleAggregator(prefs) }
     val subStore by lazy { SubtitleStore(app.cacheDir, subs.providers) }

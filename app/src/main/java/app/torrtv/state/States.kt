@@ -32,6 +32,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.max
 import kotlin.math.min
 
@@ -441,7 +442,57 @@ class DetailState(val type: MediaType, val id: Int) {
 
     private fun rankedByHint(hint: String?): List<SubtitleResult> {
         val order = Langs.choices.map { it.first }.filter { it in Graph.prefs.subLangs }.ifEmpty { listOf("bg", "en") }
-        return SubRank.rank(subResults, order, hint)
+        // Ако за този сериал вече е избран субтитър на ръка, подобен му се предлага първи и за другите епизоди.
+        val prefer = detail?.media?.key?.let { SubChoice.memory.get(it) }
+        return SubRank.rank(subResults, order, hint, prefer)
+    }
+
+    /** Етикет на следващия епизод („S01E04 · Име“) или null: филм, последен епизод или още неизлязъл. */
+    fun nextLabel(): String? {
+        val d = detail ?: return null
+        if (type != MediaType.TV) return null
+        val n = NextEpisode.after(episodes.map { it.number }, episode)
+        if (n != null) {
+            val ep = episodes.first { it.number == n }
+            return if (NextEpisode.aired(ep.airDate, NextEpisode.today())) NextEpisode.label(season, n, ep.name) else null
+        }
+        val ns = NextEpisode.nextSeason(d.seasons.map { it.number }, season) ?: return null
+        return NextEpisode.label(ns, 1, "")
+    }
+
+    /**
+     * Заявка за следващия епизод: премества избора на него (така и екранът се връща на правилния епизод),
+     * търси торент (по възможност като предишния) и субтитри. Връща null, ако няма такъв епизод или торент.
+     */
+    suspend fun nextRequest(prev: TorrentResult?): StreamController.Req? {
+        val d = detail ?: return null
+        if (type != MediaType.TV) return null
+        val n = NextEpisode.after(episodes.map { it.number }, episode)
+        if (n != null) {
+            episode = n
+        } else {
+            season = NextEpisode.nextSeason(d.seasons.map { it.number }, season) ?: return null
+            episode = 0
+            loadEpisodes() // ако епизод 0 го няма, взема първия
+            if (episodes.isEmpty()) episode = 1
+        }
+        loadTorrents()
+        loadSubs()
+        val t = awaitTorrent(prev) ?: return null
+        withTimeoutOrNull(10_000) { subJob?.join() }
+        return playRequest(t, rankedSubs(t).take(1), "builtin", 0L)
+    }
+
+    /** Чака търсенето; щом има добър кандидат и са минали 7 секунди, не чака останалите сайтове. */
+    private suspend fun awaitTorrent(prev: TorrentResult?): TorrentResult? {
+        val t0 = System.currentTimeMillis()
+        while (System.currentTimeMillis() - t0 < 30_000) {
+            val c = NextEpisode.choose(prev, torrents)
+            if (!searching) return c
+            if (c != null && System.currentTimeMillis() - t0 > 7_000) return c
+            delay(300)
+        }
+        return NextEpisode.choose(prev, torrents)
     }
 
     /** Най-доброто съвпадение на намерените субтитри с този торент (за белега в списъка). */
@@ -475,8 +526,7 @@ class DetailState(val type: MediaType, val id: Int) {
         val d = detail
         val title = d?.media?.title ?: ""
         val epName = if (type == MediaType.TV) {
-            val n = episodes.firstOrNull { it.number == episode }?.name.orEmpty()
-            "S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')}" + if (n.isNotBlank()) " · $n" else ""
+            NextEpisode.label(season, episode, episodes.firstOrNull { it.number == episode }?.name.orEmpty())
         } else ""
         return StreamController.Req(
             magnet = magnet,
@@ -492,7 +542,8 @@ class DetailState(val type: MediaType, val id: Int) {
             torrent = t,
             resumeMs = resumeMs,
             allSubs = all.take(40),
-            fitTitle = fitTitle
+            fitTitle = fitTitle,
+            next = if (t != null) nextLabel()?.let { label -> StreamController.NextEp(label) { nextRequest(t) } } else null
         )
     }
 }

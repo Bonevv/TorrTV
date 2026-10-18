@@ -76,7 +76,7 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
 
     Box(Modifier.fillMaxSize()) {
         // фон
-        Img(Look.img(d?.media?.backdropPath, "w780"), Modifier.fillMaxSize(), 780, 439)
+        Img(Look.img(d?.media?.backdropPath, "w780"), Modifier.fillMaxSize())
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xCC07090E), Color(0xF507090E), C.bg))))
 
         if (d == null) {
@@ -120,7 +120,7 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
         LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 40.d)) {
             item {
                 Row(Modifier.fillMaxWidth().padding(start = 36.d, end = 36.d, top = 28.d), horizontalArrangement = Arrangement.spacedBy(22.d)) {
-                    Img(Look.img(d.media.posterPath, "w342"), Modifier.width(150.d).height(225.d).clip(RoundedCornerShape(12.d)), 342, 513)
+                    Img(Look.img(d.media.posterPath, "w342"), Modifier.width(150.d).height(225.d).clip(RoundedCornerShape(12.d)))
                     Column(Modifier.weight(1f)) {
                         Text2(d.media.title, 30, C.text, FontWeight.ExtraBold, 2)
                         if (d.media.originalTitle.isNotBlank() && d.media.originalTitle != d.media.title)
@@ -228,7 +228,7 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
                             Focusable({ st.selectEpisode(e.number) }, Modifier.width(190.d), RoundedCornerShape(10.d), 1.06f) { f ->
                                 Column(Modifier.background(if (sel) C.cardHi else C.card)) {
                                     Box {
-                                        Img(Look.img(e.stillPath, "w300"), Modifier.fillMaxWidth().height(104.d), 300, 169)
+                                        Img(Look.img(e.stillPath, "w300"), Modifier.fillMaxWidth().height(104.d))
                                         Box(Modifier.padding(6.d)) { Pill("Еп. ${e.number}", Color(0xCC000000), if (sel) C.accent2 else C.text) }
                                     }
                                     Column(Modifier.padding(8.d)) {

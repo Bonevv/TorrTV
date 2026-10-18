@@ -14,9 +14,11 @@ import app.torrtv.core.Magnets
 import app.torrtv.core.Storage
 import app.torrtv.data.subs.SubtitleQuery
 import app.torrtv.data.subs.SubtitleResult
+import app.torrtv.data.subs.SubPref
 import app.torrtv.data.subs.SubShift
 import app.torrtv.data.subs.SubtitleStore
 import app.torrtv.state.Graph
+import app.torrtv.state.SubChoice
 import app.torrtv.state.Sync
 import app.torrtv.state.SyncMemory
 import kotlinx.coroutines.CancellationException
@@ -43,6 +45,9 @@ class StreamController(
     private val subStore: SubtitleStore,
     private val server: LocalServer
 ) {
+    /** Следващият епизод: етикет за показване и подготовка на заявката за него (търси торент и субтитри). */
+    class NextEp(val label: String, val prepare: suspend () -> Req?)
+
     class Req(
         val magnet: String,
         val title: String,
@@ -59,7 +64,9 @@ class StreamController(
         /** Всички намерени субтитри (подредени) - за бутона „Субтитри“ в плеъра. */
         val allSubs: List<SubtitleResult> = emptyList(),
         /** Името на торента, с което се сравнява изданието на субтитрите (празно за уеб поток). */
-        val fitTitle: String? = null
+        val fitTitle: String? = null,
+        /** Следващият епизод на сериала (null за филм, последен епизод или уеб поток). */
+        val next: NextEp? = null
     )
 
     enum class Stage { IDLE, CONNECTING, METADATA, PICK_FILE, BUFFERING, READY, ERROR }
@@ -203,8 +210,52 @@ class StreamController(
     @Volatile
     var resumeFrom = 0L
 
+    /** Увеличава се при всяко стартиране - стар плеър не затваря потока, ако междувременно е пуснат нов. */
+    @Volatile
+    var token = 0
+        private set
+
+    /** Истина, докато се подготвя следващият епизод: излизането от стария плеър не бива да затваря потока. */
+    @Volatile
+    var switching = false
+        private set
+
+    /**
+     * Минава към следващия епизод: показва подготовка, търси торент и субтитри и пуска новия поток.
+     * Вика се от вградения плеър (който после се затваря). Връща false, ако няма следващ епизод.
+     */
+    fun playNext(): Boolean {
+        val cur = ui.req ?: return false
+        val n = cur.next ?: return false
+        if (switching) return true
+        switching = true
+        ui = Ui(stage = Stage.CONNECTING, message = "Търся торент за ${n.label}…", req = cur)
+        scope.launch {
+            try {
+                val r = n.prepare()
+                if (r != null) start(r)
+                else ui = ui.copy(stage = Stage.ERROR, error = "Не намерих торент за ${n.label}. Може още да не е излязъл - опитай по-късно.")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                AppLog.e("stream", "следващ епизод - грешка", e)
+                ui = ui.copy(stage = Stage.ERROR, error = e.message ?: e.javaClass.simpleName)
+            } finally {
+                switching = false
+            }
+        }
+        return true
+    }
+
+    /** Запомня ръчно избрания субтитър, за да се предлага първи за следващите епизоди на заглавието. */
+    fun rememberSubChoice(r: SubtitleResult) {
+        val key = ui.req?.media?.key ?: return
+        SubChoice.memory.set(key, SubPref(r.lang, r.provider, r.fx.groups))
+    }
+
     fun start(req: Req) {
         close()
+        token++
         resumeFrom = req.resumeMs
         startedAt = android.os.SystemClock.elapsedRealtime()
         AppLog.d("stream", "Старт: ${req.title} ${req.subtitle} плеър=${req.player} субтитри=${req.subs.size}")
@@ -280,6 +331,7 @@ class StreamController(
      */
     fun playWeb(url: String, headers: Map<String, String>, req: Req, host: String) {
         close()
+        token++
         resumeFrom = 0L
         AppLog.d("stream", "Уеб поток: ${req.title} ${req.subtitle} субтитри=${req.subs.size}")
         ui = Ui(stage = Stage.CONNECTING, message = "Подготвям субтитрите…", req = req, webHost = host)

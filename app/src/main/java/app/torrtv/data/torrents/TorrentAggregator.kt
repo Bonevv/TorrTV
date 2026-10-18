@@ -76,19 +76,17 @@ class TorrentAggregator(private val prefs: Prefs) {
             )
         }
 
-        /** Най-добрият избор за "Гледай веднага": добро качество и достатъчно сийдъри. */
-        fun best(list: List<TorrentResult>): TorrentResult? {
-            return list.filter { it.seeders >= 2 && !it.isCam }.maxByOrNull { r ->
-                val q = when (r.quality) {
-                    "1080p" -> 40
-                    "720p" -> 28
-                    "4K" -> 18
-                    "480p" -> 5
-                    else -> 0
-                }
-                val sizeOk = if (r.size in 1..(25L * 1024 * 1024 * 1024)) 0 else -20
-                minOf(r.seeders, 120) + q + sizeOk
+        /** Оценка на торент: качество, сийдъри и разумен размер. По-голямо = по-добре. */
+        fun score(r: TorrentResult): Int {
+            val q = when (r.quality) {
+                "1080p" -> 40
+                "720p" -> 28
+                "4K" -> 18
+                "480p" -> 5
+                else -> 0
             }
+            val sizeOk = if (r.size in 1..(25L * 1024 * 1024 * 1024)) 0 else -20
+            return minOf(r.seeders, 120) + q + sizeOk
         }
     }
 }

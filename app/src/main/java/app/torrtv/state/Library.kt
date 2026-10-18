@@ -49,7 +49,7 @@ object Library {
     val favorites = mutableStateListOf<Media>()
     val progress = mutableStateListOf<Progress>()
 
-    private const val MAX_PROGRESS = 24
+    private const val MAX_PROGRESS = 5
     private const val MAX_FAV = 300
 
     private fun sp() = Graph.app.getSharedPreferences("library", Context.MODE_PRIVATE)
@@ -63,6 +63,8 @@ object Library {
         try {
             val p = JSONArray(sp().getString("prog", "[]"))
             for (i in 0 until p.length()) progressFrom(p.getJSONObject(i))?.let { progress.add(it) }
+            // По-старите записи над лимита (най-новите са първи) се отрязват.
+            while (progress.size > MAX_PROGRESS) progress.removeAt(progress.size - 1)
         } catch (_: Exception) {
         }
     }

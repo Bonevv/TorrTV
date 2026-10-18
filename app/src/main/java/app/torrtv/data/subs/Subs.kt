@@ -256,6 +256,9 @@ class Release(val res: String, val src: String, val codec: String, val groups: S
     }
 }
 
+/** Какъв субтитър е избрал зрителят за това заглавие: език, доставчик и групи на изданието. */
+class SubPref(val lang: String, val provider: String, val groups: Set<String>)
+
 /** Подрежда субтитрите: езици по ред на предпочитание, после съвпадение с изданието, после доверени и сваляния. */
 object SubRank {
 
@@ -296,8 +299,13 @@ object SubRank {
         return if (any) best else Fit.UNKNOWN
     }
 
-    fun rank(all: List<SubtitleResult>, langOrder: List<String>, releaseHint: String?): List<SubtitleResult> {
+    /**
+     * [prefer] - предишният ръчен избор за това заглавие: неговият език се слага пръв, а субтитри от същия
+     * доставчик и същата група получават малък бонус (по-малък от точното съвпадение с изданието).
+     */
+    fun rank(all: List<SubtitleResult>, langOrder: List<String>, releaseHint: String?, prefer: SubPref? = null): List<SubtitleResult> {
         val tor = releaseHint?.let { Release.parse(it) }
+        val order = if (prefer != null && prefer.lang in langOrder) listOf(prefer.lang) + (langOrder - prefer.lang) else langOrder
         fun score(r: SubtitleResult): Int {
             val f = if (tor == null) Fit.UNKNOWN else fit(r.fx, tor)
             val fitScore = when (f) {
@@ -306,11 +314,16 @@ object SubRank {
                 Fit.UNKNOWN -> 0
                 Fit.OTHER -> -60
             }
-            return fitScore + (if (r.trusted) 20 else 0) + minOf(r.downloads, 5000) / 100 - (if (r.hearing) 10 else 0)
+            var bonus = 0
+            if (prefer != null) {
+                if (r.lang == prefer.lang && r.provider == prefer.provider) bonus += 40
+                if (r.fx.groups.any { it in prefer.groups }) bonus += 40
+            }
+            return fitScore + bonus + (if (r.trusted) 20 else 0) + minOf(r.downloads, 5000) / 100 - (if (r.hearing) 10 else 0)
         }
         return all.sortedWith(
             compareBy<SubtitleResult> {
-                val i = langOrder.indexOf(it.lang)
+                val i = order.indexOf(it.lang)
                 if (i < 0) 99 else i
             }.thenByDescending { score(it) }
         )

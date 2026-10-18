@@ -82,6 +82,11 @@ fun SettingsScreen() {
     var player by remember { mutableStateOf(prefs.player) }
     var metaLang by remember { mutableStateOf(prefs.metaLang) }
     var subLangs by remember { mutableStateOf(prefs.subLangs) }
+    var subSize by remember { mutableStateOf(prefs.subSize) }
+    var subEdge by remember { mutableStateOf(prefs.subEdge) }
+    var subLift by remember { mutableStateOf(prefs.subLift) }
+    var audioLang by remember { mutableStateOf(prefs.audioLang) }
+    var autoNext by remember { mutableStateOf(prefs.autoNext) }
     var release by remember { mutableStateOf<Updater.Release?>(Graph.home.update) }
     var updMsg by remember { mutableStateOf("") }
     var progress by remember { mutableStateOf(-1f) }
@@ -174,6 +179,51 @@ fun SettingsScreen() {
                             }
                         })
                     }
+                }
+            }
+        }
+
+        item {
+            Group("Вграден плеър: субтитри, звук, следващ епизод") {
+                Text2("Размер", 13, C.dim, FontWeight.Bold, 1)
+                Spacer(Modifier.height(4.d))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
+                    listOf("Малки", "Средни", "Големи", "Много големи").forEachIndexed { i, name ->
+                        Chip(name, subSize == i, { subSize = i; prefs.subSize = i })
+                    }
+                }
+                Spacer(Modifier.height(8.d))
+                Text2("Оформление", 13, C.dim, FontWeight.Bold, 1)
+                Spacer(Modifier.height(4.d))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
+                    listOf("Като в системата", "Контур", "Фон", "Сянка").forEachIndexed { i, name ->
+                        Chip(name, subEdge == i, { subEdge = i; prefs.subEdge = i })
+                    }
+                }
+                Spacer(Modifier.height(8.d))
+                Text2("Позиция", 13, C.dim, FontWeight.Bold, 1)
+                Spacer(Modifier.height(4.d))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
+                    listOf("По-ниско", "Стандартно", "По-високо").forEachIndexed { i, name ->
+                        Chip(name, subLift == i, { subLift = i; prefs.subLift = i })
+                    }
+                }
+                Spacer(Modifier.height(8.d))
+                Text2("Език на звука", 13, C.dim, FontWeight.Bold, 1)
+                Spacer(Modifier.height(4.d))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
+                    listOf("auto" to "Както е във файла", "orig" to "Оригинален", "bg" to "Български", "en" to "English").forEach { (code, name) ->
+                        Chip(name, audioLang == code, { audioLang = code; prefs.audioLang = code })
+                    }
+                }
+                Spacer(Modifier.height(4.d))
+                Text2("Ако избраният звук го няма във файла, се пуска този по подразбиране. Важи за следващото пускане.", 11, C.dim, FontWeight.Normal, 2)
+                Spacer(Modifier.height(8.d))
+                Text2("Следващ епизод при край на текущия", 13, C.dim, FontWeight.Bold, 1)
+                Spacer(Modifier.height(4.d))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
+                    Chip("Пуска се сам", autoNext, { autoNext = true; prefs.autoNext = true })
+                    Chip("Само с бутон", !autoNext, { autoNext = false; prefs.autoNext = false })
                 }
             }
         }

@@ -7,12 +7,16 @@ import app.torrtv.core.dbl
 import app.torrtv.core.enc
 import app.torrtv.core.intOr
 import app.torrtv.core.str
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 
-class Tmdb(private val prefs: Prefs) {
+class Tmdb(private val prefs: Prefs, diskDir: File? = null) {
 
     companion object {
         private const val BASE = "https://api.themoviedb.org/3"
@@ -23,7 +27,9 @@ class Tmdb(private val prefs: Prefs) {
             if (path.isNullOrBlank()) null else "$IMG/$size$path"
     }
 
-    private val cache = LruCache<String, JSONObject>(80)
+    // Разобраните отговори в паметта са малко (дървета от обекти са тежки); зад тях стои дисковият кеш.
+    private val cache = LruCache<String, JSONObject>(24)
+    private val disk = diskDir?.let { TmdbDiskCache(it) }
 
     private fun uiLang(): String = if (prefs.metaLang == "en") "en-US" else "bg-BG"
 
@@ -35,16 +41,54 @@ class Tmdb(private val prefs: Prefs) {
         val key = prefs.tmdbKey
         if (key.isBlank()) throw IllegalStateException("Липсва TMDB ключ. Добави го от Настройки → Настройка от телефон.")
         val sb = StringBuilder("$BASE$path?language=$lang&include_adult=false")
+        for ((k, v) in params) sb.append('&').append(k).append('=').append(enc(v))
+        // Ключът на кеша е адресът БЕЗ API ключа - той никога не се записва на диска.
+        val cacheKey = sb.toString()
+        synchronized(cache) { cache.get(cacheKey) }?.let { return it }
+
+        val ttl = TmdbDiskCache.ttlFor(path)
+        val store = if (ttl != null) disk else null
+        if (store != null) {
+            val hit = withContext(Dispatchers.IO) { store.get(cacheKey, ttl!!) }
+            val parsed = hit?.let { parse(it) }
+            if (parsed != null) {
+                synchronized(cache) { cache.put(cacheKey, parsed) }
+                return parsed
+            }
+            if (hit != null) store.remove(cacheKey)
+        }
+
         val headers = HashMap<String, String>()
         // Дългите ключове (JWT) са "Read Access Token", късите - обикновен v3 ключ.
-        if (key.length > 40) headers["Authorization"] = "Bearer $key"
-        else sb.append("&api_key=").append(key)
-        for ((k, v) in params) sb.append('&').append(k).append('=').append(enc(v))
-        val url = sb.toString()
-        synchronized(cache) { cache.get(url) }?.let { return it }
-        val json = JSONObject(Http.get(url, headers))
-        synchronized(cache) { cache.put(url, json) }
+        val url = if (key.length > 40) {
+            headers["Authorization"] = "Bearer $key"
+            cacheKey
+        } else {
+            "$cacheKey&api_key=$key"
+        }
+        val body = try {
+            Http.get(url, headers)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Няма връзка (или TMDB не отговаря): по-добре последното запазено, отколкото грешка.
+            val old = store?.let { withContext(Dispatchers.IO) { it.getStale(cacheKey) } }?.let { parse(it) }
+            if (old != null) {
+                synchronized(cache) { cache.put(cacheKey, old) }
+                return old
+            }
+            throw e
+        }
+        val json = JSONObject(body)
+        synchronized(cache) { cache.put(cacheKey, json) }
+        if (store != null) withContext(Dispatchers.IO) { store.put(cacheKey, body) }
         return json
+    }
+
+    private fun parse(text: String): JSONObject? = try {
+        JSONObject(text)
+    } catch (_: Exception) {
+        null
     }
 
     private fun parseMedia(o: JSONObject, forced: MediaType?): Media? {

@@ -150,6 +150,39 @@ class Prefs(ctx: Context) {
             sp.edit().putStringSet("sub_langs", v).apply()
         }
 
+    /** Размер на субтитрите във вградения плеър: 0 малки, 1 средни, 2 големи, 3 много големи. */
+    var subSize: Int
+        get() = sp.getInt("sub_size", 1).coerceIn(0, 3)
+        set(v) {
+            sp.edit().putInt("sub_size", v.coerceIn(0, 3)).apply()
+        }
+
+    /** Оформление на субтитрите: 0 като в системата, 1 контур, 2 фон, 3 сянка. */
+    var subEdge: Int
+        get() = sp.getInt("sub_edge", 1).coerceIn(0, 3)
+        set(v) {
+            sp.edit().putInt("sub_edge", v.coerceIn(0, 3)).apply()
+        }
+
+    /** Позиция на субтитрите: 0 ниско, 1 стандартно, 2 високо. */
+    var subLift: Int
+        get() = sp.getInt("sub_lift", 1).coerceIn(0, 2)
+        set(v) {
+            sp.edit().putInt("sub_lift", v.coerceIn(0, 2)).apply()
+        }
+
+    /** Предпочитан език на звука: auto (какъвто е във файла) | orig (оригиналният на филма) | bg | en. */
+    var audioLang: String
+        get() = str("audio_lang", "auto")
+        set(v) = put("audio_lang", v)
+
+    /** Пуска ли се следващият епизод сам, когато свърши текущият (във вградения плеър). */
+    var autoNext: Boolean
+        get() = sp.getBoolean("auto_next", true)
+        set(v) {
+            sp.edit().putBoolean("auto_next", v).apply()
+        }
+
     fun sourceEnabled(id: String): Boolean = sp.getBoolean("src_$id", true)
     fun setSourceEnabled(id: String, on: Boolean) {
         sp.edit().putBoolean("src_$id", on).apply()

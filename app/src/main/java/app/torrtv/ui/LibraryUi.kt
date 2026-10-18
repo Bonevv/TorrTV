@@ -67,7 +67,7 @@ fun ContinueCard(p: Library.Progress, onClick: () -> Unit, onFocus: () -> Unit) 
         Focusable(onClick, Modifier.fillMaxWidth().height(112.d), RoundedCornerShape(12.d), 1.07f, onFocus = onFocus) { f ->
             Img(
                 if (m.backdropPath != null) Look.img(m.backdropPath, "w300") else Look.img(m.posterPath, "w342"),
-                Modifier.fillMaxSize(), 300, 169
+                Modifier.fillMaxSize()
             )
             Box(
                 Modifier.fillMaxSize().background(

@@ -95,6 +95,7 @@ object CacheManager {
             if (!streamActive) deleteTorrents(ctx)
             File(c, "subs").deleteRecursively()
             File(c, "updates").deleteRecursively()
+            File(c, "tmdb").deleteRecursively()
             if (!streamActive) AppLog.trim(200)
             clearImages(ctx)
             Graph.prefs.lastClean = System.currentTimeMillis()
