@@ -11,6 +11,7 @@ import app.torrtv.PlayerActivity
 import app.torrtv.StreamService
 import app.torrtv.core.AppLog
 import app.torrtv.core.Magnets
+import app.torrtv.core.Storage
 import app.torrtv.data.subs.SubtitleQuery
 import app.torrtv.data.subs.SubtitleResult
 import app.torrtv.data.subs.SubShift
@@ -230,13 +231,13 @@ class StreamController(
         ui = ui.copy(message = "Търсене на пиъри…")
         val profile = Graph.prefs.engineProfile
         AppLog.d("stream", "торент режим ${profile + 1}")
-        val files = client.open(Magnets.ensureTrackers(req.magnet), profile) { peers, seeds ->
+        val files = client.open(Magnets.ensureTrackers(req.magnet), profile, Storage.chosen(app, Graph.prefs.storageId).torrents) { peers, seeds ->
             ui = ui.copy(peers = peers, seeds = seeds)
         }
         if (files.isEmpty()) throw IOException("В торента няма видео файл")
 
         val idx = chooseFile(req, files)
-        val started = client.play(idx)
+        val started = client.play(idx, Graph.prefs.streamWindowMb)
         server.start()
         AppLog.d("stream", "файл: ${started.name} (${started.size / 1048576} MB)")
         ui = ui.copy(stage = Stage.BUFFERING, fileName = started.name, message = "Буфериране…")

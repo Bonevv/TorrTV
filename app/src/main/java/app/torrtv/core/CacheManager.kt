@@ -37,11 +37,26 @@ object CacheManager {
 
     fun sizes(ctx: Context): Sizes {
         val c = ctx.cacheDir
-        val t = size(File(c, "torrents"))
+        val inner = size(File(c, "torrents"))
+        val outer = externalTorrents(ctx)
         val i = size(File(c, "img"))
         val s = size(File(c, "subs"))
         val total = size(c)
-        return Sizes(t, i, s, (total - t - i - s).coerceAtLeast(0))
+        return Sizes(inner + outer, i, s, (total - inner - i - s).coerceAtLeast(0))
+    }
+
+    /** Свалени парчета на външните дискове (не са в папката на кеша). */
+    private fun externalTorrents(ctx: Context): Long =
+        Storage.places(ctx).filter { it.id != "internal" }.sumOf { size(it.torrents) }
+
+    /** Трие свалените парчета на всички места. */
+    fun deleteTorrents(ctx: Context) {
+        for (p in Storage.places(ctx)) {
+            try {
+                p.torrents.deleteRecursively()
+            } catch (_: Exception) {
+            }
+        }
     }
 
     fun memory(ctx: Context): Mem {
@@ -77,7 +92,7 @@ object CacheManager {
     fun clear(ctx: Context, streamActive: Boolean) {
         try {
             val c = ctx.cacheDir
-            if (!streamActive) File(c, "torrents").deleteRecursively()
+            if (!streamActive) deleteTorrents(ctx)
             File(c, "subs").deleteRecursively()
             File(c, "updates").deleteRecursively()
             if (!streamActive) AppLog.trim(200)
@@ -95,7 +110,7 @@ object CacheManager {
         // По размер: щом кешът надхвърли лимита, чисти се веднага (не чака часовете).
         val limit = Graph.prefs.cacheLimitMb
         if (limit > 0) {
-            val total = size(ctx.cacheDir)
+            val total = size(ctx.cacheDir) + externalTorrents(ctx)
             if (total > limit * 1048576L) {
                 AppLog.d("cache", "кешът е ${fmt(total)} (лимит $limit MB) - чистя")
                 clear(ctx, false)

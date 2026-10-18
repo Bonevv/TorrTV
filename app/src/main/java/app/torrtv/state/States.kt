@@ -134,6 +134,7 @@ class HomeState {
 class BrowseState(val type: MediaType) {
     var genre by mutableStateOf<Int?>(null)
     var sort by mutableStateOf(0) // 0 популярни, 1 най-нови, 2 най-високо оценени
+    var anime by mutableStateOf(false)
     var paged by mutableStateOf(make())
     val gridState = LazyGridState()
     var focusKey: String? = null
@@ -143,15 +144,16 @@ class BrowseState(val type: MediaType) {
     private suspend fun fetchPage(p: Int): Page<Media> {
         val movie = type == MediaType.MOVIE
         return when (sort) {
-            1 -> Graph.tmdb.discover(type, genre, p, if (movie) "primary_release_date.desc" else "first_air_date.desc", 40, 0.0)
-            2 -> Graph.tmdb.discover(type, genre, p, "vote_average.desc", 600, 0.0)
-            else -> Graph.tmdb.discover(type, genre, p, "popularity.desc", 60, 0.0)
+            1 -> Graph.tmdb.discover(type, genre, p, if (movie) "primary_release_date.desc" else "first_air_date.desc", 40, 0.0, anime)
+            2 -> Graph.tmdb.discover(type, genre, p, "vote_average.desc", if (anime) 250 else 600, 0.0, anime)
+            else -> Graph.tmdb.discover(type, genre, p, "popularity.desc", 60, 0.0, anime)
         }
     }
 
-    fun apply(newGenre: Int?, newSort: Int) {
+    fun apply(newGenre: Int?, newSort: Int, newAnime: Boolean = anime) {
         genre = newGenre
         sort = newSort
+        anime = newAnime
         paged = make()
     }
 }
@@ -350,8 +352,6 @@ class DetailState(val type: MediaType, val id: Int) {
             langs = langs
         )
     }
-
-    fun subtitleQuery(): SubtitleQuery? = subQuery()
 
     fun loadTorrents() {
         val q = searchQuery() ?: return

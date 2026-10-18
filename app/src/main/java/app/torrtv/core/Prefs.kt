@@ -100,6 +100,30 @@ class Prefs(ctx: Context) {
             sp.edit().putInt("web_handoff", v.coerceIn(0, 2)).apply()
         }
 
+    /** Колко MB напред се тегли при гледане (0 = класически: целият файл). */
+    var streamWindowMb: Int
+        get() = sp.getInt("stream_window_mb", 0)
+        set(v) {
+            sp.edit().putInt("stream_window_mb", v).apply()
+        }
+
+    /** Къде се тегли филмът при гледане: "internal" или "usb". */
+    var storageId: String
+        get() = str("storage_id", "internal")
+        set(v) = put("storage_id", v)
+
+    /** Последно измерени скорости (0 = не са мерени). */
+    var netMbps: Float
+        get() = sp.getFloat("net_mbps", 0f)
+        set(v) {
+            sp.edit().putFloat("net_mbps", v).apply()
+        }
+    var diskMBps: Float
+        get() = sp.getFloat("disk_mbps", 0f)
+        set(v) {
+            sp.edit().putFloat("disk_mbps", v).apply()
+        }
+
     /** Лимит на кеша в MB (0 = без лимит): при надвишаване се чисти автоматично. */
     var cacheLimitMb: Int
         get() = sp.getInt("cache_limit_mb", 500)

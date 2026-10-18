@@ -101,6 +101,7 @@ fun BrowseScreen(st: BrowseState, onOpen: (Media) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(8.d)
         ) {
             items(sorts.size, key = { "s$it" }) { i -> Chip("↕ " + sorts[i], st.sort == i, { st.apply(st.genre, i) }) }
+            item(key = "anime") { Chip("🎌 Аниме", st.anime, { st.apply(st.genre, st.sort, !st.anime) }) }
         }
         LazyRow(
             contentPadding = PaddingValues(horizontal = 36.d, vertical = 4.d),

@@ -1,5 +1,6 @@
 package app.torrtv.ui
 
+import java.io.File
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -90,6 +91,7 @@ fun SettingsScreen() {
     var cleared by remember { mutableStateOf(false) }
     var cacheHours by remember { mutableStateOf(prefs.cacheHours) }
     var cacheLimit by remember { mutableStateOf(prefs.cacheLimitMb) }
+    var streamWindow by remember { mutableStateOf(prefs.streamWindowMb) }
     var engineMode by remember { mutableStateOf(prefs.engineProfile) }
     var lite by remember { mutableStateOf(prefs.lite) }
     var webOn by remember { mutableStateOf(prefs.webEnabled) }
@@ -101,7 +103,9 @@ fun SettingsScreen() {
         }
     }
     var cacheTick by remember { mutableStateOf(0) }
-    val sizes by produceState<CacheManager.Sizes?>(null, cacheTick, tick / 3) {
+    // Размерите на кеша се обновяват на ~4.5 с; derivedStateOf не позволява целият екран да се прерисува на всеки тик.
+    val sizeTick by remember { androidx.compose.runtime.derivedStateOf { tick / 3 } }
+    val sizes by produceState<CacheManager.Sizes?>(null, cacheTick, sizeTick) {
         value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { CacheManager.sizes(ctx) }
     }
     var logText by remember { mutableStateOf<String?>(null) }
@@ -242,6 +246,85 @@ fun SettingsScreen() {
         }
 
         item {
+            Group("📊  Място и скорост") {
+                val places = remember(cacheTick) { app.torrtv.core.Storage.places(ctx) }
+                var storageId by remember { mutableStateOf(prefs.storageId) }
+                val cur = places.firstOrNull { it.id == storageId } ?: places.first()
+                val free = remember(cur, cacheTick) { app.torrtv.core.Storage.free(cur) }
+                var netMbps by remember { mutableStateOf(prefs.netMbps) }
+                var diskMBps by remember { mutableStateOf(prefs.diskMBps) }
+                var netBusy by remember { mutableStateOf(false) }
+                var diskBusy by remember { mutableStateOf(false) }
+                var testMsg by remember { mutableStateOf("") }
+                Text2("Къде се тегли филмът, докато се гледа:", 12, C.dim, FontWeight.Bold, 1)
+                Spacer(Modifier.height(4.d))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.d)) {
+                    items(places, key = { it.id }) { p ->
+                        Chip(
+                            p.label + " · " + CacheManager.fmt(app.torrtv.core.Storage.free(p)) + " свободни",
+                            cur.id == p.id, { storageId = p.id; prefs.storageId = p.id }
+                        )
+                    }
+                }
+                Spacer(Modifier.height(4.d))
+                Text2(
+                    "На избраното място могат да се гледат файлове до около " + CacheManager.fmt(app.torrtv.core.StreamFit.usableBytes(free)) +
+                        ". " + (if (places.size == 1) "Външен диск (USB или SD карта) се появява тук, когато е включен. " else "") +
+                        "Работата с външен диск зависи от модела на устройството и от скоростта на самия диск - проверява се с теста на записа.",
+                    11, C.dim, FontWeight.Normal, 4
+                )
+                Spacer(Modifier.height(8.d))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.d)) {
+                    PrimaryButton(if (diskBusy) "Тества се…" else "Тествай записа", {
+                        if (diskBusy) return@PrimaryButton
+                        diskBusy = true
+                        scope.launch {
+                            val r = app.torrtv.core.SpeedTest.disk(File(cur.root, "test"))
+                            if (r != null) {
+                                diskMBps = r.toFloat()
+                                prefs.diskMBps = diskMBps
+                                testMsg = ""
+                            } else testMsg = "Тестът на записа не успя (няма достъп или място)."
+                            diskBusy = false
+                        }
+                    }, primary = false)
+                    PrimaryButton(if (netBusy) "Тества се…" else "Тествай мрежата", {
+                        if (netBusy) return@PrimaryButton
+                        netBusy = true
+                        scope.launch {
+                            val r = app.torrtv.core.SpeedTest.net()
+                            if (r != null) {
+                                netMbps = r.toFloat()
+                                prefs.netMbps = netMbps
+                                testMsg = ""
+                            } else testMsg = "Тестът на мрежата не успя - няма връзка със сървърите за измерване."
+                            netBusy = false
+                        }
+                    }, primary = false)
+                }
+                Spacer(Modifier.height(6.d))
+                Text2(
+                    "Запис: " + (if (diskMBps > 0) "${diskMBps.toInt()} MB/s" else "не е измерен") +
+                        "   ·   Мрежа: " + (if (netMbps > 0) "${netMbps.toInt()} Mbit/s" else "не е измерена"),
+                    13, C.accent2, FontWeight.Bold, 1
+                )
+                if (testMsg.isNotBlank()) Text2(testMsg, 12, C.red, FontWeight.Medium, 2)
+                val rec = app.torrtv.core.StreamFit.recommendedWindowMb(netMbps.toDouble())
+                if (rec > 0) {
+                    Spacer(Modifier.height(8.d))
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.d)) {
+                        Text2(
+                            "Препоръчан буфер: напред " + (if (rec >= 1000) "1 GB" else "$rec MB") +
+                                (if (netMbps < 20) " (връзката е бавна - по-голям буфер)" else ""),
+                            12, C.text, FontWeight.Medium, 2, Modifier.weight(1f)
+                        )
+                        PrimaryButton(if (streamWindow == rec) "Зададен ✓" else "Задай", { streamWindow = rec; prefs.streamWindowMb = rec }, primary = false)
+                    }
+                }
+            }
+        }
+
+        item {
             Group("💾  Памет и кеш") {
                 Text2(
                     "RAM на приложението: ${mem.totalMb} MB   (интерфейс ${mem.pssMb} MB" +
@@ -272,6 +355,20 @@ fun SettingsScreen() {
                         Chip(label, cacheLimit == mb, { cacheLimit = mb; prefs.cacheLimitMb = mb })
                     }
                 }
+                Spacer(Modifier.height(8.d))
+                Text2("Теглене при гледане:", 12, C.dim, FontWeight.Bold, 1)
+                Spacer(Modifier.height(4.d))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.d)) {
+                    items(listOf(0 to "Класическо", 200 to "Напред 200 MB", 500 to "Напред 500 MB", 1000 to "Напред 1 GB"), key = { it.first }) { (mb, label) ->
+                        Chip(label, streamWindow == mb, { streamWindow = mb; prefs.streamWindowMb = mb })
+                    }
+                }
+                Spacer(Modifier.height(4.d))
+                Text2(
+                    "Класическо: торентът се тегли докрай, докато гледаш. Напред: тегли се само избраният размер пред мястото на гледане - " +
+                        "за дълги и големи файлове при малко свободно място. Вече изгледаното остава на диска до края на гледането. Важи от следващото пускане.",
+                    11, C.dim, FontWeight.Normal, 4
+                )
                 Spacer(Modifier.height(8.d))
                 PrimaryButton(if (cleared) "Изчистено ✓" else "Изчисти кеша сега", {
                     scope.launch {

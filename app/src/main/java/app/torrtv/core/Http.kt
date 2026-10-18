@@ -31,6 +31,7 @@ object Http {
         .build()
 
     /** Прави OkHttp заявка отменяема от корутини (за да работят таймаутите). */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     suspend fun Call.await(): Response = suspendCancellableCoroutine { cont ->
         enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {

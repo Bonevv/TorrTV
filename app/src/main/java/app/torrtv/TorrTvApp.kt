@@ -34,7 +34,7 @@ class TorrTvApp : Application(), ImageLoaderFactory {
         thread(isDaemon = true) {
             app.torrtv.core.CrashInfo.logRecent(this, 6)
             try {
-                File(cacheDir, "torrents").deleteRecursively()
+                app.torrtv.core.CacheManager.deleteTorrents(this)
                 File(cacheDir, "subs").deleteRecursively()
                 app.torrtv.core.CacheManager.maybeAutoClean(this, false)
             } catch (_: Exception) {

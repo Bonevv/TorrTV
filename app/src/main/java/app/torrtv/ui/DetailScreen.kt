@@ -34,6 +34,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import app.torrtv.core.StreamFit
+import app.torrtv.core.Storage
 import app.torrtv.core.formatSize
 import app.torrtv.data.Media
 import app.torrtv.data.MediaType
@@ -105,6 +107,15 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
         }
         val web = remember(st.detail, st.season, st.episode) { st.webSources() }
         val webOn = Graph.prefs.webEnabled
+        // Свободно място на избраното място и измерени скорости - за етикетите „събира се“ и „гладко“.
+        val place = remember { Storage.chosen(ctx, Graph.prefs.storageId) }
+        val freeBytes = remember(place, st.torrents.size) { Storage.free(place) }
+        val netMbps = Graph.prefs.netMbps.toDouble()
+        val diskMBps = Graph.prefs.diskMBps.toDouble()
+        val runtimeMin = if (d.media.type == MediaType.TV) st.episodes.firstOrNull { it.number == st.episode }?.runtime?.takeIf { it > 0 } ?: d.runtime else d.runtime
+        fun rowFit(t: TorrentResult): Pair<StreamFit.Level, StreamFit.Level> =
+            if (t.pack) StreamFit.Level.NONE to StreamFit.Level.NONE
+            else StreamFit.storage(t.size, freeBytes) to StreamFit.smooth(t.size, runtimeMin, netMbps, diskMBps, t.seeders)
 
         LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 40.d)) {
             item {
@@ -135,7 +146,9 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
                             Text2("В ролите: " + d.cast.take(6).joinToString(", "), 12, C.dim, FontWeight.Normal, 2)
                         }
                         Spacer(Modifier.height(12.d))
-                        val best = st.torrents.filter { !it.isCam }.maxByOrNull { score(it) } ?: st.torrents.firstOrNull()
+                        val best = st.torrents.filter { !it.isCam }.let { l ->
+                            l.filter { rowFit(it).first != StreamFit.Level.BAD }.ifEmpty { l }
+                        }.maxByOrNull { score(it) - if (rowFit(it).second == StreamFit.Level.BAD) 1500 else 0 } ?: st.torrents.firstOrNull()
                         // Започнато ли е вече? За сериал - само ако е избран същият епизод.
                         val pr = Library.progressOf(d.media.key)?.takeIf {
                             d.media.type == MediaType.MOVIE || (it.season == st.season && it.episode == st.episode)
@@ -247,7 +260,14 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
                     Chip("🧲  Торенти (${st.torrents.size})", tab == 0, { tab = 0 })
                     Chip("🌐  Уеб сайтове (${web.size})", tab == 1, { tab = 1 })
                 }
-                Spacer(Modifier.height(8.d))
+                Spacer(Modifier.height(4.d))
+                Text2(
+                    "Свободно: ${app.torrtv.core.CacheManager.fmt(freeBytes)} (${place.label.lowercase()}) · файлове до около " +
+                        app.torrtv.core.CacheManager.fmt(StreamFit.usableBytes(freeBytes)) +
+                        (if (netMbps > 0) " · мрежа ${netMbps.toInt()} Mbit/s" else ""),
+                    11, C.dim, FontWeight.Normal, 1, Modifier.padding(horizontal = 36.d)
+                )
+                Spacer(Modifier.height(6.d))
                 if (tab == 0) {
                     LazyRow(
                         contentPadding = PaddingValues(horizontal = 36.d), horizontalArrangement = Arrangement.spacedBy(8.d),
@@ -331,7 +351,8 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
                 }
                 items(shown, key = { it.hash + it.source }) { t ->
                     val fit = remember(t.hash, st.subResults) { st.subFit(t) }
-                    TorrentRow(t, fit) { onPlay(t, 0L) }
+                    val (sf, sm) = rowFit(t)
+                    TorrentRow(t, fit, sf, sm) { onPlay(t, 0L) }
                 }
             }
 
@@ -386,7 +407,9 @@ private fun score(t: TorrentResult): Int {
 }
 
 @Composable
-fun TorrentRow(t: TorrentResult, fit: app.torrtv.data.subs.Fit, onClick: () -> Unit) {
+fun TorrentRow(
+    t: TorrentResult, fit: app.torrtv.data.subs.Fit, storage: StreamFit.Level, smooth: StreamFit.Level, onClick: () -> Unit
+) {
     Focusable(onClick, Modifier.fillMaxWidth().padding(horizontal = 36.d, vertical = 3.d), RoundedCornerShape(10.d), 1.015f) { f ->
         Row(
             Modifier.fillMaxWidth().background(if (f) C.cardHi else C.card).padding(horizontal = 12.d, vertical = 8.d),
@@ -401,7 +424,7 @@ fun TorrentRow(t: TorrentResult, fit: app.torrtv.data.subs.Fit, onClick: () -> U
                 Row(horizontalArrangement = Arrangement.spacedBy(6.d), verticalAlignment = Alignment.CenterVertically) {
                     Text2(formatSize(t.size) + " · " + t.source + (if (t.via.isNotBlank()) " · през " + t.via else ""), 11, C.dim, FontWeight.Normal, 1)
                     // Звукът, който вграденият плеър не пуска, и записът от камера се виждат първи.
-                    t.tags.sortedBy { if (it == "DTS" || it == "TrueHD" || it == "CAM") 0 else 1 }.take(4).forEach {
+                    t.tags.sortedBy { if (it == "DTS" || it == "TrueHD" || it == "CAM") 0 else 1 }.take(3).forEach {
                         when (it) {
                             "CAM" -> Pill(it, Color(0x33FF5C6C), C.red)
                             "DTS", "TrueHD" -> Pill("$it ⚠", Color(0x33FFB020), C.amber)
@@ -409,6 +432,17 @@ fun TorrentRow(t: TorrentResult, fit: app.torrtv.data.subs.Fit, onClick: () -> U
                         }
                     }
                     if (t.pack) Pill("пакет", Color(0x33FFB020), C.amber)
+                    when (storage) {
+                        StreamFit.Level.BAD -> Pill("✗ не се събира", Color(0x33FF5C6C), C.red)
+                        StreamFit.Level.EDGE -> Pill("⚠ малко място", Color(0x33FFB020), C.amber)
+                        else -> {}
+                    }
+                    when (smooth) {
+                        StreamFit.Level.GOOD -> Pill("▶ гладко", Color(0x333DDC84), C.green)
+                        StreamFit.Level.EDGE -> Pill("▶ на ръба", Color(0x33FFB020), C.amber)
+                        StreamFit.Level.BAD -> Pill("▶ ще буферира", Color(0x33FF5C6C), C.red)
+                        else -> {}
+                    }
                     when (fit) {
                         app.torrtv.data.subs.Fit.EXACT -> Pill("💬 ✓ точни субтитри", Color(0x333DDC84), C.green)
                         app.torrtv.data.subs.Fit.SIMILAR -> Pill("💬 ~ подобни субтитри", Color(0x33FFB020), C.amber)

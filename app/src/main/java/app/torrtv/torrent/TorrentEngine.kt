@@ -206,9 +206,10 @@ class TorrentEngine(val baseDir: File, val profile: Int = 0) {
             }
         }
 
-    fun startStream(meta: MetaSession, fileIndex: Int): StreamSession {
+    /** windowMb = 0: класически режим (целият файл се тегли); иначе - най-много толкова MB напред от позицията. */
+    fun startStream(meta: MetaSession, fileIndex: Int, windowMb: Int = 0): StreamSession {
         val f = meta.files.first { it.index == fileIndex }
-        return StreamSession(this, meta, f, useDeadlines)
+        return StreamSession(this, meta, f, useDeadlines, windowMb)
     }
 }
 
@@ -216,7 +217,8 @@ class StreamSession internal constructor(
     private val engine: TorrentEngine,
     private val meta: MetaSession,
     val file: TFile,
-    private val deadlines: Boolean
+    private val deadlines: Boolean,
+    private val windowMb: Int = 0
 ) : LocalServer.Content {
 
     private val h = meta.handle
@@ -228,6 +230,10 @@ class StreamSession internal constructor(
     private val tail: List<Int>
     private var raf: RandomAccessFile? = null
     private var lastWindow = -1000
+
+    /** Само при ограничен режим: кои парчета вече са разрешени за теглене. */
+    private val limited = windowMb > 0
+    private var allowed = BooleanArray(0)
 
     @Volatile
     var closed = false
@@ -267,6 +273,38 @@ class StreamSession internal constructor(
         trace("init: началото е насрочено (${head.size} парчета)")
         tail.forEachIndexed { i, p -> urgent(p, i + 1) }
         trace("init: краят е насрочен (${tail.size} парчета), деадлайни=$deadlines")
+        if (limited) {
+            // Всичко извън началото и края е забранено за теглене; прозорецът се отваря напред, докато се гледа.
+            allowed = BooleanArray(lastPiece - firstPiece + 1)
+            val keep = (head + tail).toSet()
+            for (p in firstPiece..lastPiece) {
+                if (p in keep) {
+                    allowed[p - firstPiece] = true
+                    continue
+                }
+                try {
+                    h.piecePriority(p, Priority.IGNORE)
+                } catch (_: Exception) {
+                    break
+                }
+            }
+            trace("init: ограничен режим, прозорец $windowMb MB")
+        }
+    }
+
+    /** Отваря за теглене парчетата от p0 до края на прозореца (само ограничен режим). */
+    private fun openWindow(p0: Int) {
+        if (!limited) return
+        val count = max(8, ((windowMb.toLong() * 1024 * 1024) / pieceLen).toInt())
+        try {
+            for (p in p0..min(lastPiece, p0 + count)) {
+                val i = p - firstPiece
+                if (i < 0 || allowed[i]) continue
+                h.piecePriority(p, Priority.DEFAULT)
+                allowed[i] = true
+            }
+        } catch (_: Exception) {
+        }
     }
 
     private fun have(p: Int): Boolean = try {
@@ -316,6 +354,7 @@ class StreamSession internal constructor(
         val p0 = ((file.offset + posInFile) / pieceLen).toInt()
         if (p0 == lastWindow) return
         val window = max(6, min(40, ((24L * 1024 * 1024) / pieceLen).toInt()))
+        openWindow(p0)
         try {
             for (i in 0 until window) {
                 val p = p0 + i

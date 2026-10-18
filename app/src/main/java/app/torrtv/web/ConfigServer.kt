@@ -207,17 +207,19 @@ class ConfigServer(private val prefs: Prefs) {
 
     private fun esc(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
-    private fun field(name: String, label: String): String {
+    private fun desc(text: String) = if (text.isBlank()) "" else "<div class='desc'>$text</div>"
+
+    private fun field(name: String, label: String, desc: String = ""): String {
         val state = if (prefs.isSet(name)) "<span class='ok'>✓ записан</span>" else "<span class='no'>не е зададен</span>"
-        return "<label>${esc(label)} $state</label><input name='$name' autocomplete='off' autocapitalize='off' spellcheck='false' placeholder='${if (prefs.isSet(name)) "остави празно, за да не се променя" else ""}'>"
+        return "<label>${esc(label)} $state</label>${desc(desc)}<input name='$name' autocomplete='off' autocapitalize='off' spellcheck='false' placeholder='${if (prefs.isSet(name)) "остави празно, за да не се променя" else ""}'>"
     }
 
     private fun area(
         name: String, label: String, lines: List<String>, custom: Boolean,
-        none: String = "стандартни", placeholder: String = ""
+        none: String = "стандартни", placeholder: String = "", desc: String = ""
     ): String {
         val state = if (custom) "<span class='ok'>✓ свои</span>" else "<span class='no'>$none</span>"
-        return "<label>${esc(label)} $state</label><textarea name='$name' spellcheck='false' autocapitalize='off' placeholder='${esc(placeholder)}' style='min-height:150px'>${esc(lines.joinToString("\n"))}</textarea>"
+        return "<label>${esc(label)} $state</label>${desc(desc)}<textarea name='$name' spellcheck='false' autocapitalize='off' placeholder='${esc(placeholder)}' style='min-height:150px'>${esc(lines.joinToString("\n"))}</textarea>"
     }
 
     private fun link(url: String, text: String) = "<a href='$url' target='_blank' rel='noopener'>$text</a>"
@@ -247,7 +249,7 @@ class ConfigServer(private val prefs: Prefs) {
         sb.append(".sbody{padding:0 16px 14px}details.more{margin:10px 0}details.more>summary{color:#e9b44c;font-size:14px;cursor:pointer}")
         sb.append(".box{background:#141a26;border-radius:10px;padding:10px 14px;margin-top:8px;color:#c6cddd;font-size:14px}.box ol,.box ul{margin:6px 0;padding-left:20px}.box li{margin:4px 0}")
         sb.append("code{background:#1d2536;color:#f2d58f;padding:1px 6px;border-radius:6px;font-size:13px}.step{display:flex;gap:10px;margin:8px 0}.step b{flex:none;width:26px;height:26px;border-radius:50%;background:#e9b44c;color:#1a1305;text-align:center;line-height:26px}")
-        sb.append(".kicker{color:#98a2b8;font-size:13px;margin-top:2px}")
+        sb.append(".desc{color:#98a2b8;font-size:13px;margin:0 0 6px}")
         sb.append("</style></head><body><h1>Torr<b>TV</b></h1><div class='sub'>Настройки от телефона</div>")
         if (msg != null) sb.append("<div class='msg ").append(if (ok) "good" else "bad").append("'>").append(esc(msg)).append("</div>")
 
@@ -267,20 +269,18 @@ class ConfigServer(private val prefs: Prefs) {
 
         // ---------- Ключове ----------
         sb.append("<details class='sec' open><summary>🔑  Ключове (филми и субтитри)</summary><div class='sbody'>")
-        sb.append("<p>Нужни са, за да се показват плакати и описания и да се намират субтитри. Всички са безплатни.</p>")
+        sb.append("<p>Приложението ползва външни услуги за информация и субтитри. Всяка иска свой безплатен ключ. Полетата, които вече са попълнени, не е нужно да се пипат.</p>")
 
-        sb.append(field("tmdb_key", "TMDB ключ"))
-        sb.append("<div class='kicker'>Информация, плакати и снимки на филмите.</div>")
+        sb.append(field("tmdb_key", "TMDB ключ", "Дава описанията, плакатите, актьорите и препоръките за филмите и сериалите. Без него каталогът не се зарежда."))
         sb.append(more("Откъде се взима",
             "<ol><li>Направи безплатен акаунт в ${link("https://www.themoviedb.org/signup", "themoviedb.org")} и потвърди имейла.</li>" +
                 "<li>Отвори ${link("https://www.themoviedb.org/settings/api", "Settings → API")} и поискай ключ (<i>Request an API Key</i> → тип <i>Developer</i>).</li>" +
                 "<li>Попълни кратката форма (за лична употреба; адресът на сайта може да е произволен).</li>" +
                 "<li>Копирай <b>API Key</b> (дългото число с букви, около 32 знака). <i>Не</i> копирай „API Read Access Token“ - той е друго.</li></ol>"))
 
-        sb.append(field("os_key", "OpenSubtitles - API ключ"))
-        sb.append(field("os_user", "OpenSubtitles - потребител"))
-        sb.append(field("os_pass", "OpenSubtitles - парола"))
-        sb.append("<div class='kicker'>Субтитри от OpenSubtitles. Трябват ключ, потребител и парола на един и същ акаунт.</div>")
+        sb.append(field("os_key", "OpenSubtitles - API ключ", "Идентифицира приложението пред OpenSubtitles. Получава се от същия акаунт, за който са потребителят и паролата отдолу."))
+        sb.append(field("os_user", "OpenSubtitles - потребител", "Името на акаунта в opensubtitles.com (не в по-стария opensubtitles.org)."))
+        sb.append(field("os_pass", "OpenSubtitles - парола", "Паролата на този акаунт. Трябва, за да може да се свалят файловете със субтитри. Записва се само на телевизора."))
         sb.append(more("Откъде се взима",
             "<ol><li>Направи безплатен акаунт в ${link("https://www.opensubtitles.com", "opensubtitles.com")} и потвърди имейла. Потребителят и паролата са от този акаунт.</li>" +
                 "<li>Влез, натисни иконата си горе вдясно → <b>API consumers</b> → <b>New consumer</b>.</li>" +
@@ -288,15 +288,13 @@ class ConfigServer(private val prefs: Prefs) {
                 "<li>Копирай получения <b>API key</b> в полето по-горе.</li></ol>" +
                 "<p>Безплатният акаунт има дневен лимит за сваляне на субтитри. Ако лимитът свърши, другите доставчици продължават да работят.</p>"))
 
-        sb.append(field("subdl_key", "Subdl - API ключ"))
-        sb.append("<div class='kicker'>Субтитри от Subdl (безплатно, около 2000 заявки на ден).</div>")
+        sb.append(field("subdl_key", "Subdl - API ключ", "Още един източник на субтитри, независим от OpenSubtitles. Безплатният ключ дава около 2000 заявки на ден."))
         sb.append(more("Откъде се взима",
             "<ol><li>Регистрирай се и влез в ${link("https://subdl.com/panel/login", "панела на Subdl")}.</li>" +
                 "<li>Отвори ${link("https://subdl.com/panel/api", "subdl.com/panel/api")} - там е ключът („Get your free API key“).</li>" +
                 "<li>Копирай го в полето. Започва с <code>subdl_</code>.</li></ol>"))
 
-        sb.append(field("subsource_key", "SubSource - API ключ"))
-        sb.append("<div class='kicker'>Субтитри от SubSource.</div>")
+        sb.append(field("subsource_key", "SubSource - API ключ", "Трети източник на субтитри. Колкото повече източници, толкова по-голям шанс да има субтитър точно за дадената версия на филма."))
         sb.append(more("Откъде се взима",
             "<ol><li>Регистрирай се в ${link("https://subsource.net", "subsource.net")} и влез.</li>" +
                 "<li>В акаунта си отвори раздела <b>API</b> („API &amp; Plans“) и създай ключ. Описание на услугата: ${link("https://subsource.net/api-docs", "subsource.net/api-docs")}.</li>" +
@@ -306,8 +304,10 @@ class ConfigServer(private val prefs: Prefs) {
         // ---------- Уеб сайтове ----------
         sb.append("<details class='sec'><summary>🌐  Уеб сайтове за гледане</summary><div class='sbody'>")
         sb.append("<p>Когато торентът няма сийдъри, филмът може да се гледа онлайн от сайт (в страницата на филма, до „Торенти“ има бутон „Уеб сайтове“). Тук са адресите, които се пробват. Първият е основен, останалите са резервни - ако един не се отвори, се опитва следващият.</p>")
-        sb.append(area("web_movie", "За филми - по един адрес на ред", WebSources.templates(prefs, false), prefs.webMovieSrc.isNotBlank()))
-        sb.append(area("web_tv", "За сериали - по един адрес на ред", WebSources.templates(prefs, true), prefs.webTvSrc.isNotBlank()))
+        sb.append(area("web_movie", "Адреси за филми", WebSources.templates(prefs, false), prefs.webMovieSrc.isNotBlank(),
+            desc = "Сайтове, на които може да се гледа филм онлайн. По един адрес на ред; първият е основен, останалите се пробват поред, ако предишният не работи."))
+        sb.append(area("web_tv", "Адреси за сериали", WebSources.templates(prefs, true), prefs.webTvSrc.isNotBlank(),
+            desc = "Същото за сериали. В адреса се слагат и сезонът, и епизодът."))
         sb.append(more("Покажи повече - как се пише адрес",
             "<p>Всеки ред е <b>шаблон</b>: адрес, в който приложението заменя специалните части със сведенията за избрания филм:</p>" +
                 "<ul><li><code>{tmdb}</code> - номерът на филма в TMDB (има го винаги)</li>" +
@@ -324,7 +324,8 @@ class ConfigServer(private val prefs: Prefs) {
         // ---------- Торент addon-и ----------
         sb.append("<details class='sec'><summary>🧲  Още торент сайтове (addon-и)</summary><div class='sbody'>")
         sb.append("<p>В приложението вече са вградени <b>TorrentsDB</b> и <b>Torrentio</b>. Те събират торенти от десетки сайтове (1337x, TorrentGalaxy, YTS, EZTV…) и в списъка с филтри се виждат поотделно. Тук можеш да добавиш още такива addon-и.</p>")
-        sb.append(area("addons", "Свои addon-и - по един адрес на ред", StremioAddon.parseList(prefs.addonsSrc), prefs.addonsSrc.isNotBlank(), "няма", "https://…/manifest.json"))
+        sb.append(area("addons", "Допълнителни addon-и", StremioAddon.parseList(prefs.addonsSrc), prefs.addonsSrc.isNotBlank(), "няма", "https://…/manifest.json",
+            "Адреси на Stremio addon-и за търсене на торенти, по един на ред. Всеки добавя още сайтове в списъка с филтри."))
         sb.append(more("Покажи повече - как се добавя addon",
             "<ol><li>Отвори страницата на addon-а (например ${link("https://torrentsdb.com", "torrentsdb.com")}), настрой каквото искаш и стигни до бутона <b>Install</b>.</li>" +
                 "<li>Копирай адреса на бутона (на телефон: задръж пръст върху <b>Install</b> → <i>Копирай линка</i>; на компютър: десен клик → <i>Copy link</i>). Прилича на <code>https://…/manifest.json</code> или <code>stremio://…</code>.</li>" +
@@ -338,22 +339,22 @@ class ConfigServer(private val prefs: Prefs) {
 
         // ---------- Домейни ----------
         sb.append("<details class='sec'><summary>🧲  Адреси на торент сайтове</summary><div class='sbody'>")
-        sb.append("<p>Нужни са <b>само</b> ако някой сайт смени адреса си и вече не дава резултати. Иначе остави празно - ползват се вградените.</p>")
-        sb.append(field("dom_apibay", "The Pirate Bay (apibay)"))
-        sb.append(field("dom_yts", "YTS"))
-        sb.append(field("dom_eztv", "EZTV"))
-        sb.append(field("dom_nyaa", "Nyaa"))
+        sb.append("<p>Торент сайтовете често сменят адреса си. Ако някой от тях спре да дава резултати, тук се задава новият му домейн. Празно поле означава вградените адреси.</p>")
+        sb.append(field("dom_apibay", "The Pirate Bay (apibay)", "Домейн за търсене в The Pirate Bay. По подразбиране: apibay.org."))
+        sb.append(field("dom_yts", "YTS", "Домейн за филми от YTS. По подразбиране се пробват yts.mx, yts.lt и yts.am."))
+        sb.append(field("dom_eztv", "EZTV", "Домейн за сериали от EZTV. По подразбиране се пробват няколко известни адреса."))
+        sb.append(field("dom_nyaa", "Nyaa", "Домейн за аниме от Nyaa. По подразбиране: nyaa.si."))
         sb.append(more("Покажи повече", "<p>Пиши само домейна, например <code>yts.mx</code> (<code>https://</code> не е нужно). Проверка кой сайт работи: на телевизора, Настройки → Диагностика → „Тествай източниците“.</p>"))
         sb.append("</div></details>")
 
         // ---------- Всичко наведнъж ----------
         sb.append("<details class='sec'><summary>📋  Всичко наведнъж</summary><div class='sbody'>")
-        sb.append("<p>Удобно, ако копираш настройките от друго място: по един ред <code>име=стойност</code>.</p>")
+        sb.append("<p>Задава няколко полета наведнъж. Всеки ред е във вида <code>име=стойност</code>, например <code>tmdb_key=…</code>. Полета, които не са споменати, не се променят.</p>")
         sb.append("<textarea name='bulk' spellcheck='false' placeholder='tmdb_key=...&#10;subdl_key=...'></textarea>")
         sb.append(more("Покажи повече - имена на полетата", "<p>" + Prefs.FIELD_NAMES.filter { !it.startsWith("web_") }.joinToString(" · ") { "<code>$it</code>" } + "</p><p>Адресите на уеб сайтовете се сменят само от собствените им полета по-горе.</p>"))
         sb.append("</div></details>")
 
-        sb.append("<div class='savebar'><label style='margin-top:0'>ПИН от телевизора</label><input name='pin' inputmode='numeric' autocomplete='off' placeholder='4 цифри'><div style='height:10px'></div><button type='submit'>Запази</button></div>")
+        sb.append("<div class='savebar'><label style='margin-top:0'>ПИН от телевизора</label><div class='desc'>Четирицифреният код, показан в Настройки на телевизора. Пази страницата от чужд достъп в същата мрежа.</div><input name='pin' inputmode='numeric' autocomplete='off' placeholder='4 цифри'><div style='height:10px'></div><button type='submit'>Запази</button></div>")
         sb.append("</form></body></html>")
         return sb.toString()
     }

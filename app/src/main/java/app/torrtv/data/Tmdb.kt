@@ -101,14 +101,19 @@ class Tmdb(private val prefs: Prefs) {
         page: Int,
         sort: String,
         minVotes: Int,
-        minRating: Double
+        minRating: Double,
+        anime: Boolean = false
     ): Page<Media> {
         val p = LinkedHashMap<String, String>()
         p["page"] = page.toString()
         p["sort_by"] = sort
         p["vote_count.gte"] = minVotes.toString()
         if (minRating > 0) p["vote_average.gte"] = minRating.toString()
-        if (genre != null) p["with_genres"] = genre.toString()
+        // Аниме = анимация (жанр 16) на японски език - същото правило като при определяне на аниме в детайлите.
+        // Запетаята в with_genres означава "и двата жанра".
+        val genres = listOfNotNull(if (anime) 16 else null, genre).distinct()
+        if (genres.isNotEmpty()) p["with_genres"] = genres.joinToString(",")
+        if (anime) p["with_original_language"] = "ja"
         return parsePage(call("/discover/${type.path}", p), type)
     }
 

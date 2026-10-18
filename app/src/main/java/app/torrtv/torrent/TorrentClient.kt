@@ -32,6 +32,10 @@ import java.io.IOException
  */
 class TorrentClient(private val app: Application) {
 
+    /** Папката за свалените парчета на текущата сесия (във вътрешната памет или на външен диск). */
+    @Volatile
+    private var baseDir: File? = null
+
     class Started(val port: Int, val path: String, val name: String, val size: Long)
 
     class Live(val stats: EngineStats, val preloaded: Boolean, val preloadPct: Int)
@@ -113,23 +117,28 @@ class TorrentClient(private val app: Application) {
     }
 
     /** Отваря magnet линка и връща видео файловете в торента. */
-    suspend fun open(magnet: String, profile: Int, onStatus: (peers: Int, seeds: Int) -> Unit): List<TFile> {
+    suspend fun open(magnet: String, profile: Int, base: File, onStatus: (peers: Int, seeds: Int) -> Unit): List<TFile> {
         val d = CompletableDeferred<List<TFile>>()
+        baseDir = base
         metaWait = d
         statusCb = onStatus
         post(Proto.C_OPEN) {
             putString("magnet", magnet)
             putInt("profile", profile)
+            putString("base", base.path)
         }
         return within(130_000, "Няма отговор от торент услугата") { d.await() }
     }
 
     /** Започва стрийма на избрания файл; връща къде е локалният сървър. */
-    suspend fun play(index: Int): Started {
+    suspend fun play(index: Int, windowMb: Int = 0): Started {
         val d = CompletableDeferred<Started>()
         startedWait = d
         live = null
-        post(Proto.C_PLAY) { putInt("index", index) }
+        post(Proto.C_PLAY) {
+            putInt("index", index)
+            putInt("window", windowMb)
+        }
         return within(40_000, "Файлът не стартира навреме") { d.await() }
     }
 
@@ -252,7 +261,7 @@ class TorrentClient(private val app: Application) {
             }
             delay(500)
             try {
-                File(app.cacheDir, "torrents/$p").deleteRecursively()
+                File(baseDir ?: File(app.cacheDir, "torrents"), "$p").deleteRecursively()
             } catch (_: Exception) {
             }
         }
