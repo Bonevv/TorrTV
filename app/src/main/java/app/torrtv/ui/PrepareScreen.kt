@@ -28,7 +28,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import app.torrtv.core.formatSize
 import app.torrtv.core.formatSpeed
-import app.torrtv.state.DidYouKnow
 import app.torrtv.state.Graph
 import app.torrtv.torrent.StreamController.Stage
 import app.torrtv.torrent.EngineStats
@@ -159,29 +158,6 @@ fun PrepareScreen(st: app.torrtv.state.DetailState? = null) {
                         ) {
                             Text2("Този торент има малко сийдъри. Гледай от:", 13, C.amber, FontWeight.Bold, 2, Modifier.weight(1f))
                             PrimaryButton("Откъде?", { pickOpen = true }, focusRequester = focus)
-                        }
-                    }
-                    // „Знаеш ли“: кратък факт за заглавието или съвет, докато се чака. Сменя се на всеки 8 секунди.
-                    if (!weak && secs >= 3) {
-                        val facts = remember(st?.detail, req?.media?.key) {
-                            val d = st?.detail
-                            DidYouKnow.mix(if (d != null && d.media.key == req?.media?.key) DidYouKnow.facts(d) else emptyList(), DidYouKnow.tips)
-                        }
-                        val n by produceState(0) {
-                            while (true) {
-                                delay(8000)
-                                value += 1
-                            }
-                        }
-                        if (facts.isNotEmpty()) {
-                            Spacer(Modifier.height(16.d))
-                            Column(
-                                Modifier.fillMaxWidth().background(C.card, RoundedCornerShape(12.d)).padding(horizontal = 14.d, vertical = 10.d)
-                            ) {
-                                Text2("Знаеш ли", 11, C.accent2, FontWeight.Bold, 1)
-                                Spacer(Modifier.height(3.d))
-                                Text2(facts[n % facts.size], 13, C.text, FontWeight.Normal, 3)
-                            }
                         }
                     }
                     Spacer(Modifier.height(18.d))

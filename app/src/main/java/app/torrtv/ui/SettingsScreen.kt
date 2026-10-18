@@ -631,6 +631,10 @@ fun SettingsScreen() {
                 }
             }
         }
+
+        item {
+            Box(Modifier.fillMaxWidth().padding(top = 18.d, bottom = 6.d), contentAlignment = Alignment.Center) { Signature(large = true) }
+        }
     }
 }
 

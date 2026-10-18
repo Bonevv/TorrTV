@@ -120,6 +120,24 @@ fun SideRail(
         }
         Spacer(Modifier.weight(1f))
         RailItem("Изход", Glyph.POWER, false, false, onExit, null, enabled = railFocused)
+        Spacer(Modifier.height(4.d))
+        Signature(large = false)
+    }
+}
+
+private val allura = androidx.compose.ui.text.font.FontFamily(androidx.compose.ui.text.font.Font(app.torrtv.R.font.allura))
+
+/** Подпис на автора: ръкописен шрифт (Allura, лиценз OFL), меко бяло, без сянка и блясък. */
+@Composable
+fun Signature(large: Boolean) {
+    val c = Color(0xFFE5E1DA)
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        if (large) {
+            Text("by V. Bonev", color = c, fontFamily = allura, fontSize = 26.t, maxLines = 1, softWrap = false)
+        } else {
+            Text("by", color = c, fontFamily = allura, fontSize = 12.t, maxLines = 1, softWrap = false)
+            Text("V. Bonev", color = c, fontFamily = allura, fontSize = 18.t, maxLines = 1, softWrap = false)
+        }
     }
 }
 
