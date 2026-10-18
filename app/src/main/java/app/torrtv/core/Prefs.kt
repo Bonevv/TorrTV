@@ -81,6 +81,11 @@ class Prefs(ctx: Context) {
         get() = str("web_tv")
         set(v) = put("web_tv", v)
 
+    /** Свои Stremio addon-и за торенти (по един адрес на ред). */
+    var addonsSrc: String
+        get() = str("addons")
+        set(v) = put("addons", v)
+
     /** Показва ли се "уеб сайтове" като място за гледане. */
     var webEnabled: Boolean
         get() = sp.getBoolean("web_enabled", true)
@@ -130,7 +135,7 @@ class Prefs(ctx: Context) {
     companion object {
         val FIELD_NAMES = listOf(
             "tmdb_key", "os_key", "os_user", "os_pass", "subdl_key", "subsource_key",
-            "dom_apibay", "dom_yts", "dom_eztv", "dom_nyaa", "web_movie", "web_tv"
+            "dom_apibay", "dom_yts", "dom_eztv", "dom_nyaa", "web_movie", "web_tv", "addons"
         )
     }
 
@@ -147,6 +152,7 @@ class Prefs(ctx: Context) {
         "dom_nyaa" -> domNyaa
         "web_movie" -> webMovieSrc
         "web_tv" -> webTvSrc
+        "addons" -> addonsSrc
         else -> ""
     }
 
@@ -164,6 +170,7 @@ class Prefs(ctx: Context) {
             "dom_nyaa" -> domNyaa = value
             "web_movie" -> webMovieSrc = if (value.trim() == "-") "" else value
             "web_tv" -> webTvSrc = if (value.trim() == "-") "" else value
+            "addons" -> addonsSrc = if (value.trim() == "-") "" else value
         }
     }
 

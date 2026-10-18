@@ -1,6 +1,7 @@
 package app.torrtv.web
 
 import app.torrtv.core.Prefs
+import app.torrtv.data.torrents.StremioAddon
 import java.io.BufferedInputStream
 import java.io.IOException
 import java.io.InputStream
@@ -169,8 +170,20 @@ class ConfigServer(private val prefs: Prefs) {
                 count++
             }
         }
+        // Свои торент addon-и: същото правило - записваме само ако е променено; "-" ги изтрива.
+        run {
+            val v = form["addons"]?.trim().orEmpty()
+            if (v.isNotEmpty()) {
+                val now = StremioAddon.parseList(prefs.addonsSrc).joinToString("\n")
+                val norm = StremioAddon.parseList(v).joinToString("\n")
+                if (v == "-" || norm != now) {
+                    prefs.set("addons", if (v == "-") "-" else norm)
+                    count++
+                }
+            }
+        }
         for (name in Prefs.FIELD_NAMES) {
-            if (name.startsWith("web_")) continue
+            if (name.startsWith("web_") || name == "addons") continue
             val v = form[name]?.trim().orEmpty()
             if (v.isNotEmpty()) {
                 prefs.set(name, v)
@@ -199,9 +212,12 @@ class ConfigServer(private val prefs: Prefs) {
         return "<label>${esc(label)} $state</label><input name='$name' autocomplete='off' autocapitalize='off' spellcheck='false' placeholder='${if (prefs.isSet(name)) "остави празно, за да не се променя" else ""}'>"
     }
 
-    private fun area(name: String, label: String, lines: List<String>, custom: Boolean): String {
-        val state = if (custom) "<span class='ok'>✓ свои</span>" else "<span class='no'>стандартни</span>"
-        return "<label>${esc(label)} $state</label><textarea name='$name' spellcheck='false' autocapitalize='off' style='min-height:150px'>${esc(lines.joinToString("\n"))}</textarea>"
+    private fun area(
+        name: String, label: String, lines: List<String>, custom: Boolean,
+        none: String = "стандартни", placeholder: String = ""
+    ): String {
+        val state = if (custom) "<span class='ok'>✓ свои</span>" else "<span class='no'>$none</span>"
+        return "<label>${esc(label)} $state</label><textarea name='$name' spellcheck='false' autocapitalize='off' placeholder='${esc(placeholder)}' style='min-height:150px'>${esc(lines.joinToString("\n"))}</textarea>"
     }
 
     private fun link(url: String, text: String) = "<a href='$url' target='_blank' rel='noopener'>$text</a>"
@@ -289,7 +305,7 @@ class ConfigServer(private val prefs: Prefs) {
 
         // ---------- Уеб сайтове ----------
         sb.append("<details class='sec'><summary>🌐  Уеб сайтове за гледане</summary><div class='sbody'>")
-        sb.append("<p>Когато торентът няма сийдъри, филмът може да се гледа онлайн от сайт (менюто „Откъде?“ → „Уеб сайтове“). Тук са адресите, които се пробват. Първият е основен, останалите са резервни - ако един не се отвори, се опитва следващият.</p>")
+        sb.append("<p>Когато торентът няма сийдъри, филмът може да се гледа онлайн от сайт (в страницата на филма, до „Торенти“ има бутон „Уеб сайтове“). Тук са адресите, които се пробват. Първият е основен, останалите са резервни - ако един не се отвори, се опитва следващият.</p>")
         sb.append(area("web_movie", "За филми - по един адрес на ред", WebSources.templates(prefs, false), prefs.webMovieSrc.isNotBlank()))
         sb.append(area("web_tv", "За сериали - по един адрес на ред", WebSources.templates(prefs, true), prefs.webTvSrc.isNotBlank()))
         sb.append(more("Покажи повече - как се пише адрес",
@@ -303,6 +319,21 @@ class ConfigServer(private val prefs: Prefs) {
                 "<li>Напиши само <code>-</code> (тире) в полето, за да върнеш стандартните адреси.</li>" +
                 "<li>Формата на адреса зависи от самия сайт; потърси как изглежда адресът му при филм и го замени с части от горния списък.</li>" +
                 "<li>Ти избираш източниците и отговаряш за тях. Приложението само отваря адреса и блокира реклами.</li></ul>"))
+        sb.append("</div></details>")
+
+        // ---------- Торент addon-и ----------
+        sb.append("<details class='sec'><summary>🧲  Още торент сайтове (addon-и)</summary><div class='sbody'>")
+        sb.append("<p>В приложението вече са вградени <b>TorrentsDB</b> и <b>Torrentio</b>. Те събират торенти от десетки сайтове (1337x, TorrentGalaxy, YTS, EZTV…) и в списъка с филтри се виждат поотделно. Тук можеш да добавиш още такива addon-и.</p>")
+        sb.append(area("addons", "Свои addon-и - по един адрес на ред", StremioAddon.parseList(prefs.addonsSrc), prefs.addonsSrc.isNotBlank(), "няма", "https://…/manifest.json"))
+        sb.append(more("Покажи повече - как се добавя addon",
+            "<ol><li>Отвори страницата на addon-а (например ${link("https://torrentsdb.com", "torrentsdb.com")}), настрой каквото искаш и стигни до бутона <b>Install</b>.</li>" +
+                "<li>Копирай адреса на бутона (на телефон: задръж пръст върху <b>Install</b> → <i>Копирай линка</i>; на компютър: десен клик → <i>Copy link</i>). Прилича на <code>https://…/manifest.json</code> или <code>stremio://…</code>.</li>" +
+                "<li>Постави го тук, един на ред, и натисни <b>Запази</b>. Работи и със <code>/manifest.json</code> накрая, и без него.</li></ol>" +
+                "<ul><li>Нужни са addon-и, които дават <b>торенти</b> (магнитни линкове). Тези, които връщат само готови видео линкове към платени услуги (debrid), се пренебрегват.</li>" +
+                "<li>Addon-ите търсят по IMDb номер; ако филмът няма такъв, не се използват.</li>" +
+                "<li>Ако адресът съдържа лични ключове (някои addon-и ги слагат в адреса), те остават само на телевизора ти.</li>" +
+                "<li>Напиши само <code>-</code>, за да изтриеш всички свои addon-и. Всеки сайт може да се изключи и от Настройки → Торент източници.</li>" +
+                "<li>Кой сайт е дал даден торент се вижда в списъка на филма - там можеш да филтрираш по сайт.</li></ul>"))
         sb.append("</div></details>")
 
         // ---------- Домейни ----------

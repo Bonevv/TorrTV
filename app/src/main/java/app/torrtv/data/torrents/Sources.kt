@@ -21,7 +21,7 @@ import java.util.Locale
 
 private fun numeric(imdb: String?): String? = imdb?.removePrefix("tt")?.takeIf { it.isNotBlank() }
 
-private fun parseSize(s: String): Long {
+internal fun parseSize(s: String): Long {
     val m = Regex("([0-9.,]+)\\s*([KMGT]?i?B)", RegexOption.IGNORE_CASE).find(s) ?: return 0L
     val n = m.groupValues[1].replace(",", "").toDoubleOrNull() ?: return 0L
     val mult = when (m.groupValues[2].uppercase(Locale.US).take(1)) {

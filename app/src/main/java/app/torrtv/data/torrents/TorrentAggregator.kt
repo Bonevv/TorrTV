@@ -11,9 +11,15 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 class TorrentAggregator(private val prefs: Prefs) {
 
-    val sources: List<TorrentSource> = listOf(
-        Apibay(prefs), Yts(prefs), Eztv(prefs), Nyaa(prefs), Knaben(), TorrentsCsv()
+    private val builtIn: List<TorrentSource> = listOf(
+        Apibay(prefs), Yts(prefs), Eztv(prefs), Nyaa(prefs), Knaben(), TorrentsCsv(),
+        StremioAddon("torrentsdb", "TorrentsDB", "https://torrentsdb.com"),
+        StremioAddon("torrentio", "Torrentio", "https://torrentio.strem.fun")
     )
+
+    /** Вградените плюс свои Stremio addon-и от страницата за телефона. */
+    val sources: List<TorrentSource>
+        get() = builtIn + StremioAddon.custom(prefs, setOf("torrentsdb.com", "torrentio.strem.fun"))
 
     data class Update(val source: String, val results: List<TorrentResult>, val error: String?)
 
@@ -56,11 +62,16 @@ class TorrentAggregator(private val prefs: Prefs) {
         /** Събира резултатите от всички източници: без дубликати, най-много сийдъри най-отпред. */
         fun merge(all: Collection<Update>): List<TorrentResult> {
             val best = HashMap<String, TorrentResult>()
+            val sites = HashMap<String, MutableSet<String>>()
             for (u in all) for (r in u.results) {
+                sites.getOrPut(r.hash) { LinkedHashSet() }.add(r.source)
                 val old = best[r.hash]
                 if (old == null || r.seeders > old.seeders) best[r.hash] = r
             }
-            return best.values.sortedWith(
+            return best.values.map { r ->
+                val others = sites[r.hash].orEmpty() - r.source
+                if (others.isEmpty()) r else r.copy(alsoOn = others)
+            }.sortedWith(
                 compareBy<TorrentResult> { if (it.isCam) 1 else 0 }.thenByDescending { it.seeders }
             )
         }

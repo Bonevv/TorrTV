@@ -42,8 +42,15 @@ data class TorrentResult(
     val source: String,
     val quality: String,
     val tags: List<String>,
-    val pack: Boolean
+    val pack: Boolean,
+    /** През кой addon е намерен (TorrentsDB, Torrentio…); празно за директните сайтове. */
+    val via: String = "",
+    /** Други сайтове, на които същият торент е намерен (за филтъра по сайт). */
+    val alsoOn: Set<String> = emptySet()
 ) {
+    /** Намерен ли е на този сайт (основния или някой от другите). */
+    fun onSite(site: String): Boolean = source == site || site in alsoOn
+
     val isCam: Boolean get() = tags.contains("CAM")
 }
 

@@ -86,7 +86,7 @@ fun SourcePicker(
                         PickRow(
                             left = t.quality, title = t.title,
                             sub = formatSize(t.size) + " · " + t.source,
-                            right = "${t.seeders}", rightColor = seedColor(t.seeders)
+                            right = if (t.seeders < 0) "?" else "${t.seeders}", rightColor = seedColor(t.seeders)
                         ) { onTorrent(t); onDismiss() }
                     }
                 } else if (!webOn) {
@@ -120,7 +120,7 @@ fun SourcePicker(
 }
 
 @Composable
-private fun PickRow(
+internal fun PickRow(
     left: String, title: String, sub: String, right: String, rightColor: Color,
     focusRequester: FocusRequester? = null, onClick: () -> Unit
 ) {

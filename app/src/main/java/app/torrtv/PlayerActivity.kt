@@ -584,7 +584,7 @@ class PlayerActivity : AppCompatActivity() {
         var t = "Пиъри ${s.peers} · сийдъри ${s.seeds} · ↓ ${formatSpeed(s.speed)}"
         // Дълго буфериране при малко сийдъри: подсказка какво да се направи.
         if (buffering && now - bufferingSince > 10_000 && (s.seeds < 3 || s.speed < 150_000)) {
-            t += "\n⚠ Този торент няма достатъчно сийдъри. Натисни Назад → „Откъде?“ за друг източник."
+            t += "\n⚠ Този торент няма достатъчно сийдъри. Натисни Назад и избери друг торент или уеб сайт."
         }
         stats.text = t
         stats.visibility = View.VISIBLE
