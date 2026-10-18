@@ -73,6 +73,28 @@ class Prefs(ctx: Context) {
             sp.edit().putInt("engine_mode_v2", v.coerceIn(0, 2)).apply()
         }
 
+    // ---- Уеб източници (адреси с {tmdb} {imdb} {season} {episode}, по един на ред) ----
+    var webMovieSrc: String
+        get() = str("web_movie")
+        set(v) = put("web_movie", v)
+    var webTvSrc: String
+        get() = str("web_tv")
+        set(v) = put("web_tv", v)
+
+    /** Показва ли се "уеб сайтове" като място за гледане. */
+    var webEnabled: Boolean
+        get() = sp.getBoolean("web_enabled", true)
+        set(v) {
+            sp.edit().putBoolean("web_enabled", v).apply()
+        }
+
+    /** Лимит на кеша в MB (0 = без лимит): при надвишаване се чисти автоматично. */
+    var cacheLimitMb: Int
+        get() = sp.getInt("cache_limit_mb", 500)
+        set(v) {
+            sp.edit().putInt("cache_limit_mb", v).apply()
+        }
+
     /** Лек режим: без анимации на фокуса и плавните преходи, по-малки картинки (за по-слаби телевизори). */
     var lite: Boolean
         get() = sp.getBoolean("lite_mode", false)
@@ -101,7 +123,7 @@ class Prefs(ctx: Context) {
     companion object {
         val FIELD_NAMES = listOf(
             "tmdb_key", "os_key", "os_user", "os_pass", "subdl_key", "subsource_key",
-            "dom_apibay", "dom_yts", "dom_eztv", "dom_nyaa"
+            "dom_apibay", "dom_yts", "dom_eztv", "dom_nyaa", "web_movie", "web_tv"
         )
     }
 
@@ -116,6 +138,8 @@ class Prefs(ctx: Context) {
         "dom_yts" -> domYts
         "dom_eztv" -> domEztv
         "dom_nyaa" -> domNyaa
+        "web_movie" -> webMovieSrc
+        "web_tv" -> webTvSrc
         else -> ""
     }
 
@@ -131,6 +155,8 @@ class Prefs(ctx: Context) {
             "dom_yts" -> domYts = value
             "dom_eztv" -> domEztv = value
             "dom_nyaa" -> domNyaa = value
+            "web_movie" -> webMovieSrc = if (value.trim() == "-") "" else value
+            "web_tv" -> webTvSrc = if (value.trim() == "-") "" else value
         }
     }
 

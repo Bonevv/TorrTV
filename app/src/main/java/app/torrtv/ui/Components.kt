@@ -106,7 +106,8 @@ fun Chip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onFocus: () -> Unit = {},
-    focusRequester: FocusRequester? = null
+    focusRequester: FocusRequester? = null,
+    compact: Boolean = false
 ) {
     Focusable(onClick, modifier, RoundedCornerShape(50), 1.08f, ring = false, onFocus = onFocus, focusRequester = focusRequester) { f ->
         Box(
@@ -119,11 +120,11 @@ fun Chip(
                     }
                 )
                 .then(if (!f && !selected) Modifier.border(1.d, C.line, RoundedCornerShape(50)) else Modifier)
-                .padding(horizontal = 14.d, vertical = 7.d),
+                .padding(horizontal = if (compact) 11.d else 14.d, vertical = 7.d),
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text, color = if (f) C.bg else if (selected) C.onAccent else C.text, fontSize = 13.t,
+                text, color = if (f) C.bg else if (selected) C.onAccent else C.text, fontSize = if (compact) 12.t else 13.t,
                 fontWeight = FontWeight.SemiBold, maxLines = 1
             )
         }
@@ -137,17 +138,18 @@ fun PrimaryButton(
     modifier: Modifier = Modifier,
     primary: Boolean = true,
     onFocus: () -> Unit = {},
-    focusRequester: FocusRequester? = null
+    focusRequester: FocusRequester? = null,
+    big: Boolean = false
 ) {
     Focusable(onClick, modifier, RoundedCornerShape(50), 1.07f, ring = false, onFocus = onFocus, focusRequester = focusRequester) { f ->
         Box(
             Modifier
                 .background(if (f) C.white else if (primary) C.grad else C.flat)
-                .padding(horizontal = 22.d, vertical = 10.d),
+                .padding(horizontal = if (big) 32.d else 22.d, vertical = if (big) 14.d else 10.d),
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text, color = if (f) C.bg else if (primary) C.onAccent else C.text, fontSize = 14.t,
+                text, color = if (f) C.bg else if (primary) C.onAccent else C.text, fontSize = if (big) 18.t else 14.t,
                 fontWeight = FontWeight.Bold, maxLines = 1
             )
         }

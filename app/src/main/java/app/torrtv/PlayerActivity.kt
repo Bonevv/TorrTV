@@ -4,6 +4,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.KeyEvent
@@ -26,10 +27,14 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import app.torrtv.core.formatSpeed
 import app.torrtv.state.Graph
+import app.torrtv.state.Library
+import app.torrtv.torrent.StreamController
 import app.torrtv.torrent.LocalSub
 import kotlin.concurrent.thread
 
@@ -44,11 +49,21 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var syncValue: TextView
     private var offsetMs = 0L
     private var pbUrl = ""
+    private var req: StreamController.Req? = null
+    private var tickN = 0
+    private var bufferingSince = 0L
+    private lateinit var syncPart: LinearLayout
+    private lateinit var sleepBtn: TextView
+    private var sleepIdx = 0
+    private var sleepAt = 0L // кога изтича таймера (elapsedRealtime), 0 = изключен
+    private var sleepWarned = false
     private val applyOffset = Runnable { applyOffsetNow() }
     private val handler = Handler(Looper.getMainLooper())
     private val tick = object : Runnable {
         override fun run() {
             updateStats()
+            if (++tickN % 10 == 0) saveProgress()
+            checkSleep()
             handler.postDelayed(this, 1000)
         }
     }
@@ -97,11 +112,25 @@ class PlayerActivity : AppCompatActivity() {
         val renderers = DefaultRenderersFactory(this)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
             .setEnableDecoderFallback(true)
-        val p = ExoPlayer.Builder(this, renderers).setLoadControl(load).build()
+        val builder = ExoPlayer.Builder(this, renderers).setLoadControl(load)
+        if (pb.headers.isNotEmpty()) {
+            // Поток от уеб страница: тегли се със същите заглавки (Referer, Origin, бисквитки), както от самата страница.
+            val props = HashMap(pb.headers)
+            val ua = props.remove("User-Agent")
+            val http = DefaultHttpDataSource.Factory()
+                .setAllowCrossProtocolRedirects(true)
+                .setConnectTimeoutMs(15_000)
+                .setReadTimeoutMs(15_000)
+                .setDefaultRequestProperties(props)
+            if (ua != null) http.setUserAgent(ua)
+            builder.setMediaSourceFactory(DefaultMediaSourceFactory(this).setDataSourceFactory(http))
+        }
+        val p = builder.build()
         player = p
         view.player = p
 
         pbUrl = pb.url
+        req = Graph.stream.ui.req
         val item = buildItem(pb.url, pb.subs, 0)
         if (pb.subs.isNotEmpty()) {
             p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
@@ -110,6 +139,14 @@ class PlayerActivity : AppCompatActivity() {
                 .build()
         }
         p.addListener(object : Player.Listener {
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == Player.STATE_ENDED) {
+                    // Изгледано до края - вече не е за "Продължи гледане".
+                    Graph.stream.resumeFrom = 0L
+                    req?.media?.let { Library.finish(it.key) }
+                }
+            }
+
             override fun onPlayerError(error: PlaybackException) {
                 Toast.makeText(
                     this@PlayerActivity,
@@ -120,11 +157,20 @@ class PlayerActivity : AppCompatActivity() {
         })
         view.setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { vis ->
             updateStats()
-            val show = vis == View.VISIBLE && (Graph.stream.playback?.subs?.isNotEmpty() == true)
-            if (!show && syncBar.hasFocus()) view.requestFocus()
-            syncBar.visibility = if (show) View.VISIBLE else View.GONE
+            val shown = vis == View.VISIBLE
+            val hasSubs = Graph.stream.playback?.subs?.isNotEmpty() == true
+            if (!shown && syncBar.hasFocus()) view.requestFocus()
+            syncPart.visibility = if (hasSubs) View.VISIBLE else View.GONE
+            syncBar.visibility = if (shown) View.VISIBLE else View.GONE
         })
-        p.setMediaItem(item)
+        // Продължаване от запазеното място (с 5 секунди назад, за да се влезе в сцената).
+        val from = Graph.stream.resumeFrom
+        if (from > 10_000) {
+            p.setMediaItem(item, (from - 5_000).coerceAtLeast(0))
+            Toast.makeText(this, "Продължава от ${Library.fmt(from)}", Toast.LENGTH_SHORT).show()
+        } else {
+            p.setMediaItem(item)
+        }
         p.prepare()
         p.playWhenReady = true
         handler.post(tick)
@@ -146,7 +192,11 @@ class PlayerActivity : AppCompatActivity() {
                 .setSelectionFlags(if (i == defaultIdx) C.SELECTION_FLAG_DEFAULT else 0)
                 .build()
         }
-        return MediaItem.Builder().setUri(Uri.parse(url)).setSubtitleConfigurations(subs).build()
+        val b = MediaItem.Builder().setUri(Uri.parse(url)).setSubtitleConfigurations(subs)
+        val low = url.lowercase()
+        if (low.contains(".m3u8")) b.setMimeType(MimeTypes.APPLICATION_M3U8)
+        else if (low.contains(".mpd")) b.setMimeType(MimeTypes.APPLICATION_MPD)
+        return b.build()
     }
 
     // ---- Синхрон на субтитрите ----
@@ -156,7 +206,7 @@ class PlayerActivity : AppCompatActivity() {
         setColor(if (focused) 0xFFFFFFFF.toInt() else 0xB3101521.toInt())
     }
 
-    private fun syncButton(label: String, delta: Long): TextView = TextView(this).apply {
+    private fun pill(label: String, onClick: () -> Unit): TextView = TextView(this).apply {
         text = label
         textSize = 14f
         gravity = Gravity.CENTER
@@ -165,7 +215,7 @@ class PlayerActivity : AppCompatActivity() {
         background = pillBg(false)
         isFocusable = true
         setOnClickListener {
-            changeOffset(delta)
+            onClick()
             view.showController()
         }
         setOnFocusChangeListener { v, f ->
@@ -175,11 +225,24 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    private fun syncButton(label: String, delta: Long): TextView = pill(label) { changeOffset(delta) }
+
     private fun buildSyncBar() {
         syncBar = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.END
             visibility = View.GONE
+        }
+        // Таймер за заспиване: натискане сменя 30 → 60 → 90 → 120 мин → изключен.
+        sleepBtn = pill("") { cycleSleep() }
+        showSleep()
+        syncBar.addView(sleepBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            bottomMargin = 14
+        })
+        // Синхронът на субтитрите се вижда само ако има субтитри.
+        syncPart = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.END
         }
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -192,7 +255,7 @@ class PlayerActivity : AppCompatActivity() {
         }
         syncValue = TextView(this).apply {
             textSize = 14f
-            setTextColor(0xFF22D3EE.toInt())
+            setTextColor(0xFFE9B44C.toInt())
             setPadding(24, 0, 24, 0)
         }
         row.addView(title)
@@ -207,9 +270,69 @@ class PlayerActivity : AppCompatActivity() {
             setTextColor(0xCCFFFFFF.toInt())
             setPadding(0, 6, 0, 0)
         }
-        syncBar.addView(row)
-        syncBar.addView(hint)
+        syncPart.addView(row)
+        syncPart.addView(hint)
+        syncBar.addView(syncPart)
         showOffset()
+    }
+
+    // ---- Таймер за заспиване ----
+
+    private val sleepSteps = intArrayOf(0, 30, 60, 90, 120)
+
+    private fun cycleSleep() {
+        sleepIdx = (sleepIdx + 1) % sleepSteps.size
+        val m = sleepSteps[sleepIdx]
+        sleepAt = if (m == 0) 0L else SystemClock.elapsedRealtime() + m * 60_000L
+        sleepWarned = false
+        showSleep()
+        Toast.makeText(
+            this,
+            if (m == 0) "Таймерът за заспиване е изключен" else "Ще спре след $m мин",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    private fun showSleep() {
+        if (sleepAt == 0L) {
+            sleepBtn.text = "⏾  Таймер за заспиване: изкл."
+            return
+        }
+        val left = ((sleepAt - SystemClock.elapsedRealtime()) / 60_000L + 1).coerceAtLeast(0)
+        sleepBtn.text = "⏾  Спира след $left мин"
+    }
+
+    private fun checkSleep() {
+        if (sleepAt == 0L) return
+        val left = sleepAt - SystemClock.elapsedRealtime()
+        if (left <= 0) {
+            // Времето изтече: пауза, запис на мястото и излизане от приложението, за да може телевизорът да заспи.
+            saveProgress()
+            player?.pause()
+            Toast.makeText(this, "Лека нощ 🌙", Toast.LENGTH_LONG).show()
+            finishAffinity()
+            return
+        }
+        if (left <= 60_000L && !sleepWarned) {
+            sleepWarned = true
+            Toast.makeText(this, "Спира след 1 минута - натисни който и да е бутон, за да продължи", Toast.LENGTH_LONG).show()
+        }
+        if (tickN % 15 == 0 || left <= 60_000L) showSleep()
+    }
+
+    /** Всеки бутон в последната минута удължава таймера с 30 минути. */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN && sleepAt != 0L && event.repeatCount == 0) {
+            val left = sleepAt - SystemClock.elapsedRealtime()
+            if (left in 1..60_000L) {
+                sleepAt = SystemClock.elapsedRealtime() + 30 * 60_000L
+                sleepWarned = false
+                showSleep()
+                Toast.makeText(this, "Таймерът е удължен с 30 минути", Toast.LENGTH_SHORT).show()
+                return true
+            }
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     private fun showOffset() {
@@ -257,6 +380,17 @@ class PlayerActivity : AppCompatActivity() {
         p.playWhenReady = play
     }
 
+    /** Записва докъде е стигнато гледането (за "Продължи гледане"). */
+    private fun saveProgress() {
+        val p = player ?: return
+        val r = req ?: return
+        if (p.playbackState == Player.STATE_IDLE || p.playbackState == Player.STATE_ENDED) return
+        val pos = p.currentPosition
+        val dur = if (p.duration != C.TIME_UNSET && p.duration > 0) p.duration else 0L
+        Graph.stream.resumeFrom = pos
+        Library.saveProgress(r, pos, dur)
+    }
+
     private fun hideBars() {
         val c = WindowInsetsControllerCompat(window, window.decorView)
         c.hide(WindowInsetsCompat.Type.systemBars())
@@ -266,6 +400,8 @@ class PlayerActivity : AppCompatActivity() {
     private fun updateStats() {
         val p = player ?: return
         val buffering = p.playbackState == Player.STATE_BUFFERING
+        val now = SystemClock.elapsedRealtime()
+        if (!buffering) bufferingSince = 0L else if (bufferingSince == 0L) bufferingSince = now
         if (!view.isControllerFullyVisible && !buffering) {
             stats.visibility = View.GONE
             return
@@ -275,7 +411,12 @@ class PlayerActivity : AppCompatActivity() {
             stats.visibility = View.GONE
             return
         }
-        stats.text = "Пиъри ${s.peers} · сийдъри ${s.seeds} · ↓ ${formatSpeed(s.speed)}"
+        var t = "Пиъри ${s.peers} · сийдъри ${s.seeds} · ↓ ${formatSpeed(s.speed)}"
+        // Дълго буфериране при малко сийдъри: подсказка какво да се направи.
+        if (buffering && now - bufferingSince > 10_000 && (s.seeds < 3 || s.speed < 150_000)) {
+            t += "\n⚠ Този торент няма достатъчно сийдъри. Натисни Назад → „Откъде?“ за друг източник."
+        }
+        stats.text = t
         stats.visibility = View.VISIBLE
     }
 
@@ -296,6 +437,7 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
+        saveProgress()
         player?.pause()
     }
 

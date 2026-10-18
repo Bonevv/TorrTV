@@ -16,6 +16,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -32,7 +34,7 @@ import app.torrtv.torrent.EngineStats
 import kotlinx.coroutines.delay
 
 @Composable
-fun PrepareScreen() {
+fun PrepareScreen(st: app.torrtv.state.DetailState? = null) {
     val sc = Graph.stream
     val ui = sc.ui
     val req = ui.req
@@ -45,6 +47,16 @@ fun PrepareScreen() {
             delay(1000)
         }
     }
+
+    // Колко време върви подготовката (за да познаем торент без сийдъри / твърде бавно теглене).
+    val secs by produceState(0, ui.stage) {
+        while (true) {
+            value = ((android.os.SystemClock.elapsedRealtime() - sc.startedAt) / 1000).toInt()
+            delay(1000)
+        }
+    }
+    var pickOpen by remember { mutableStateOf(false) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
 
     Box(Modifier.fillMaxSize().background(C.bg)) {
         Img(req?.backdrop, Modifier.fillMaxSize(), 780, 439)
@@ -93,6 +105,7 @@ fun PrepareScreen() {
                     Spacer(Modifier.height(16.d))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.d)) {
                         PrimaryButton("▶ Пусни отново", { sc.relaunch() }, focusRequester = focus)
+                        if (st != null) PrimaryButton("▾ Откъде?", { pickOpen = true }, primary = false)
                         PrimaryButton("■ Спри", { sc.close() }, primary = false)
                     }
                 }
@@ -121,10 +134,36 @@ fun PrepareScreen() {
                         Spacer(Modifier.height(6.d))
                         Text2("Субтитри: ${ui.subsDone}/${ui.subsTotal}", 11, C.dim, FontWeight.Normal, 1)
                     }
+                    // Няма сийдъри или тегли много бавно: предлагаме друго място за гледане.
+                    val weak = req?.torrent != null && st != null && when (ui.stage) {
+                        Stage.CONNECTING, Stage.METADATA -> secs >= 25
+                        Stage.BUFFERING -> (secs >= 15 && seeds == 0) || (secs >= 25 && ui.bufferPct < 70 && speed < 120_000)
+                        else -> false
+                    }
+                    if (weak) {
+                        LaunchedEffect(Unit) { focus.tryRequest() }
+                        Spacer(Modifier.height(14.d))
+                        Row(
+                            Modifier.fillMaxWidth().background(Color(0x33FFB020), RoundedCornerShape(12.d)).padding(horizontal = 14.d, vertical = 10.d),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.d)
+                        ) {
+                            Text2("⚠ Този торент няма достатъчно сийдъри. Гледай от:", 13, C.amber, FontWeight.Bold, 2, Modifier.weight(1f))
+                            PrimaryButton("▾ Откъде?", { pickOpen = true }, focusRequester = focus)
+                        }
+                    }
                     Spacer(Modifier.height(18.d))
-                    PrimaryButton("Отказ", { sc.close() }, primary = false, focusRequester = focus)
+                    PrimaryButton("Отказ", { sc.close() }, primary = false, focusRequester = if (weak) null else focus)
                 }
             }
+        }
+        if (pickOpen && st != null && req != null) {
+            SourcePicker(
+                st, req.torrent?.hash,
+                onTorrent = { nt -> sc.start(st.playRequest(nt, req.subs, req.player, 0L)) },
+                onWeb = { i -> sc.close(); app.torrtv.web.WebPlay.open(ctx, st.webSources(), i, st.webRequest()) },
+                onDismiss = { pickOpen = false }
+            )
         }
     }
 }

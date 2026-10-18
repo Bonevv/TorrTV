@@ -89,7 +89,7 @@ fun Text2(text: String, size: Int, color: Color, weight: FontWeight, lines: Int,
 }
 
 @Composable
-fun HomeScreen(home: HomeState, onOpen: (Media) -> Unit) {
+fun HomeScreen(home: HomeState, onOpen: (Media) -> Unit, onResume: (app.torrtv.state.Library.Progress) -> Unit) {
     // Хероят се сменя със закъснение, за да не мига при бързо прескачане по плакатите.
     var shown by remember { mutableStateOf(home.heroTarget) }
     LaunchedEffect(home.heroTarget) {
@@ -101,6 +101,14 @@ fun HomeScreen(home: HomeState, onOpen: (Media) -> Unit) {
     Column(Modifier.fillMaxSize()) {
         HeroBanner(shown, Modifier.height(235.d))
         LazyColumn(Modifier.fillMaxWidth().weight(1f), state = home.listState) {
+            if (app.torrtv.state.Library.progress.isNotEmpty()) {
+                item(key = "continue") { ContinueRow(onResume, { home.heroTarget = it }) }
+            }
+            if (app.torrtv.state.Library.favorites.isNotEmpty()) {
+                item(key = "favs") {
+                    MediaRow("♥  Любими", app.torrtv.state.Library.favorites.take(20), onOpen, { home.heroTarget = it })
+                }
+            }
             items(home.rows, key = { it.id }) { row ->
                 HomeRow(home, row, onOpen)
             }

@@ -89,8 +89,10 @@ fun SettingsScreen() {
     val diag = remember { mutableStateListOf<String>() }
     var cleared by remember { mutableStateOf(false) }
     var cacheHours by remember { mutableStateOf(prefs.cacheHours) }
+    var cacheLimit by remember { mutableStateOf(prefs.cacheLimitMb) }
     var engineMode by remember { mutableStateOf(prefs.engineProfile) }
     var lite by remember { mutableStateOf(prefs.lite) }
+    var webOn by remember { mutableStateOf(prefs.webEnabled) }
     val mem by produceState(remember { CacheManager.memory(ctx) }) {
         while (true) {
             value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { CacheManager.memory(ctx) }
@@ -262,6 +264,14 @@ fun SettingsScreen() {
                     }
                 }
                 Spacer(Modifier.height(8.d))
+                Text2("Чисти, когато кешът надхвърли:", 12, C.dim, FontWeight.Bold, 1)
+                Spacer(Modifier.height(4.d))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.d)) {
+                    items(CacheManager.limits, key = { it.first }) { (mb, label) ->
+                        Chip(label, cacheLimit == mb, { cacheLimit = mb; prefs.cacheLimitMb = mb })
+                    }
+                }
+                Spacer(Modifier.height(8.d))
                 PrimaryButton(if (cleared) "Изчистено ✓" else "Изчисти кеша сега", {
                     scope.launch {
                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -285,6 +295,27 @@ fun SettingsScreen() {
                     Chip("Изключен", !lite, { lite = false; prefs.lite = false; Look.lite = false })
                     Chip("Включен", lite, { lite = true; prefs.lite = true; Look.lite = true })
                 }
+            }
+        }
+
+        item {
+            Group("🌐  Уеб сайтове") {
+                Text2(
+                    "Когато торентът няма сийдъри, филмът може да се гледа онлайн от сайт (менюто „Откъде?“). Рекламите се блокират. " +
+                        "Тази част е отделна от торентите - ако не я искаш, я изключи и менюто ще показва само торенти.",
+                    12, C.dim, FontWeight.Normal, 4
+                )
+                Spacer(Modifier.height(6.d))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
+                    Chip("Изключени", !webOn, { webOn = false; prefs.webEnabled = false })
+                    Chip("Включени", webOn, { webOn = true; prefs.webEnabled = true })
+                }
+                Spacer(Modifier.height(6.d))
+                Text2(
+                    "Адресите на сайтовете се сменят от телефона - същата страница като за ключовете, в раздел „Уеб сайтове“. " +
+                        "Ако един сайт спре да работи, махни реда му там.",
+                    11, C.dim, FontWeight.Normal, 3
+                )
             }
         }
 

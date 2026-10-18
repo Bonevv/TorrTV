@@ -22,6 +22,11 @@ object CacheManager {
         0 to "Изключено", 3 to "На 3 часа", 12 to "На 12 часа", 24 to "Всеки ден", 168 to "Веднъж седмично"
     )
 
+    /** Възможни лимити на размера (MB; 0 = без лимит). */
+    val limits: List<Pair<Int, String>> = listOf(
+        0 to "Без лимит", 200 to "200 MB", 500 to "500 MB", 1000 to "1 GB", 2000 to "2 GB"
+    )
+
     private fun size(f: File): Long {
         if (!f.exists()) return 0
         if (f.isFile) return f.length()
@@ -86,8 +91,19 @@ object CacheManager {
 
     /** Връща true, ако е почистило. Вика се при старт и периодично. */
     fun maybeAutoClean(ctx: Context, streamActive: Boolean): Boolean {
+        if (streamActive) return false
+        // По размер: щом кешът надхвърли лимита, чисти се веднага (не чака часовете).
+        val limit = Graph.prefs.cacheLimitMb
+        if (limit > 0) {
+            val total = size(ctx.cacheDir)
+            if (total > limit * 1048576L) {
+                AppLog.d("cache", "кешът е ${fmt(total)} (лимит $limit MB) - чистя")
+                clear(ctx, false)
+                return true
+            }
+        }
         val hours = Graph.prefs.cacheHours
-        if (hours <= 0 || streamActive) return false
+        if (hours <= 0) return false
         val last = Graph.prefs.lastClean
         val now = System.currentTimeMillis()
         if (last == 0L) {

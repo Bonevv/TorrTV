@@ -43,7 +43,7 @@ import app.torrtv.torrent.ExternalPlayers
 
 /** Диалог преди пускане: избор на плеър и субтитри за този конкретен торент. */
 @Composable
-fun PlaySheet(st: DetailState, t: TorrentResult, onDismiss: () -> Unit) {
+fun PlaySheet(st: DetailState, t: TorrentResult, resumeMs: Long = 0L, onSwitch: (TorrentResult) -> Unit = {}, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val ranked = remember(t, st.subResults) { st.rankedSubs(t).take(14) }
     val fits = remember(ranked, t) { ranked.associate { it.uid to SubRank.fit(it, t.title) } }
@@ -59,8 +59,9 @@ fun PlaySheet(st: DetailState, t: TorrentResult, onDismiss: () -> Unit) {
         }
     }
     var subsOpen by remember { mutableStateOf(false) }
+    var pickOpen by remember { mutableStateOf(false) }
     val startFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { startFocus.tryRequest() }
+    LaunchedEffect(t) { startFocus.tryRequest() }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
@@ -70,12 +71,19 @@ fun PlaySheet(st: DetailState, t: TorrentResult, onDismiss: () -> Unit) {
             Spacer(Modifier.height(4.d))
             Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
                 Pill(t.quality, C.accent, C.onAccent)
-                Pill("${t.seeders} сийдъра", C.card, seedColor(t.seeders))
+                Pill(if (t.seeders >= 0) "${t.seeders} сийдъра" else "сийдъри: ?", C.card, seedColor(t.seeders))
                 Pill(app.torrtv.core.formatSize(t.size))
             }
-            if (t.seeders < 3) {
-                Spacer(Modifier.height(6.d))
-                Text2("⚠ Малко сийдъри - буферирането може да е бавно.", 12, C.amber, FontWeight.Medium, 2)
+            if (t.seeders in 0..4) {
+                Spacer(Modifier.height(8.d))
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.d)).background(Color(0x22FFB020)).padding(horizontal = 12.d, vertical = 8.d),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.d)
+                ) {
+                    Text2("⚠ Този торент няма достатъчно сийдъри. Гледай от:", 12, C.amber, FontWeight.Bold, 2, Modifier.weight(1f))
+                    PrimaryButton("▾ Откъде?", { pickOpen = true })
+                }
             }
 
             Spacer(Modifier.height(14.d))
@@ -93,11 +101,17 @@ fun PlaySheet(st: DetailState, t: TorrentResult, onDismiss: () -> Unit) {
 
             Spacer(Modifier.height(14.d))
             Row(horizontalArrangement = Arrangement.spacedBy(10.d)) {
-                PrimaryButton("▶  Пусни", {
+                PrimaryButton(if (resumeMs > 0) "▶  Продължи от ${app.torrtv.state.Library.fmt(resumeMs)}" else "▶  Пусни", {
                     val chosen = ranked.filter { it.uid in picked }
-                    Graph.stream.start(st.playRequest(t, chosen, player))
+                    Graph.stream.start(st.playRequest(t, chosen, player, resumeMs))
                     onDismiss()
                 }, focusRequester = startFocus)
+                if (resumeMs > 0) PrimaryButton("От началото", {
+                    val chosen = ranked.filter { it.uid in picked }
+                    Graph.stream.start(st.playRequest(t, chosen, player, 0L))
+                    onDismiss()
+                }, primary = false)
+                if (t.seeders !in 0..4) PrimaryButton("▾ Откъде?", { pickOpen = true }, primary = false)
                 PrimaryButton("Откажи", onDismiss, primary = false)
             }
 
@@ -142,6 +156,14 @@ fun PlaySheet(st: DetailState, t: TorrentResult, onDismiss: () -> Unit) {
                 Text2("Може да избереш до 4 - в плеъра се превключват. Най-горе е най-подходящият.", 10, C.dim, FontWeight.Normal, 1)
             }
         }
+    }
+    if (pickOpen) {
+        SourcePicker(
+            st, t.hash,
+            onTorrent = { onSwitch(it) },
+            onWeb = { i -> onDismiss(); app.torrtv.web.WebPlay.open(ctx, st.webSources(), i, st.webRequest()) },
+            onDismiss = { pickOpen = false }
+        )
     }
 }
 

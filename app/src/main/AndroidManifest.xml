@@ -64,6 +64,13 @@
             android:screenOrientation="landscape"
             android:theme="@style/Theme.TorrTV.Player" />
 
+        <activity
+            android:name=".web.WebSourceActivity"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode|smallestScreenSize|density"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.TorrTV.Player" />
+
         <service
             android:name=".StreamService"
             android:exported="false"

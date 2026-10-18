@@ -20,6 +20,10 @@ import java.util.concurrent.Executors
  */
 class ConfigServer(private val prefs: Prefs) {
 
+    companion object {
+        const val PORT = 62000
+    }
+
     @Volatile
     var port: Int = 0
         private set
@@ -35,8 +39,9 @@ class ConfigServer(private val prefs: Prefs) {
     fun start() {
         if (server != null) return
         pin = (1000 + Random().nextInt(9000)).toString()
+        // Постоянен порт 62000, за да е лесно да се запомни адресът; ако е зает - друг свободен.
         val s = try {
-            ServerSocket(8080)
+            ServerSocket(PORT)
         } catch (e: IOException) {
             ServerSocket(0)
         }
@@ -153,7 +158,19 @@ class ConfigServer(private val prefs: Prefs) {
     private fun save(form: Map<String, String>): String {
         if (form["pin"]?.trim() != pin) return page("Грешен ПИН. Виж го на екрана на телевизора.", false)
         var count = 0
+        // Уеб адресите: полетата са попълнени със сегашните, затова записваме само ако нещо е променено.
+        for ((name, tv) in listOf("web_movie" to false, "web_tv" to true)) {
+            val v = form[name]?.trim().orEmpty()
+            if (v.isEmpty()) continue
+            val now = WebSources.templates(prefs, tv).joinToString("\n")
+            val norm = v.lines().map { it.trim() }.filter { it.isNotEmpty() }.joinToString("\n")
+            if (v == "-" || norm != now) {
+                prefs.set(name, if (v == "-") "-" else norm)
+                count++
+            }
+        }
         for (name in Prefs.FIELD_NAMES) {
+            if (name.startsWith("web_")) continue
             val v = form[name]?.trim().orEmpty()
             if (v.isNotEmpty()) {
                 prefs.set(name, v)
@@ -182,15 +199,20 @@ class ConfigServer(private val prefs: Prefs) {
         return "<label>${esc(label)} $state</label><input name='$name' autocomplete='off' autocapitalize='off' spellcheck='false' placeholder='${if (prefs.isSet(name)) "остави празно, за да не се променя" else ""}'>"
     }
 
+    private fun area(name: String, label: String, lines: List<String>, custom: Boolean): String {
+        val state = if (custom) "<span class='ok'>✓ свои</span>" else "<span class='no'>стандартни</span>"
+        return "<label>${esc(label)} $state</label><textarea name='$name' spellcheck='false' autocapitalize='off' style='min-height:150px'>${esc(lines.joinToString("\n"))}</textarea>"
+    }
+
     private fun page(msg: String?, ok: Boolean): String {
         val sb = StringBuilder()
         sb.append("<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>TorrTV настройки</title><style>")
-        sb.append("body{font-family:system-ui,sans-serif;background:#080b12;color:#f3f5fa;margin:0;padding:18px;max-width:560px;margin:auto}")
+        sb.append("body{font-family:system-ui,sans-serif;background:#07090e;color:#f3f5fa;margin:0;padding:18px;max-width:560px;margin:auto}")
         sb.append("h1{font-size:24px;margin:6px 0 2px}p{color:#98a2b8;margin:4px 0 14px}")
         sb.append("label{display:block;margin:14px 0 4px;font-weight:600;font-size:14px}")
         sb.append("input,textarea{width:100%;box-sizing:border-box;padding:12px;border-radius:10px;border:1px solid #2a3350;background:#171e2e;color:#fff;font-size:16px}")
         sb.append("textarea{min-height:130px;font-family:monospace;font-size:13px}")
-        sb.append("button{margin-top:20px;width:100%;padding:14px;border:0;border-radius:12px;background:linear-gradient(90deg,#7c6bff,#22d3ee);color:#fff;font-size:17px;font-weight:700}")
+        sb.append("button{margin-top:20px;width:100%;padding:14px;border:0;border-radius:12px;background:linear-gradient(90deg,#f6cb6b,#d9962b);color:#1a1305;font-size:17px;font-weight:700}")
         sb.append(".ok{color:#3ddc84;font-weight:500}.no{color:#ffb020;font-weight:500}.msg{padding:12px;border-radius:10px;margin:10px 0}")
         sb.append(".good{background:#12301f;color:#3ddc84}.bad{background:#3a1620;color:#ff5c6c}details{margin-top:18px}summary{color:#98a2b8}")
         sb.append("</style></head><body><h1>TorrTV</h1><p>Въведи ключовете си веднъж. Празните полета не се променят.</p>")
@@ -209,6 +231,11 @@ class ConfigServer(private val prefs: Prefs) {
         sb.append(field("dom_yts", "YTS"))
         sb.append(field("dom_eztv", "EZTV"))
         sb.append(field("dom_nyaa", "Nyaa"))
+        sb.append("</details>")
+        sb.append("<details><summary>Уеб сайтове за гледане (адреси)</summary>")
+        sb.append("<p>По един адрес на ред. Може да ползваш {tmdb}, {imdb}, {season}, {episode}. Първият е основен, другите са резервни. Напиши само тире (-), за да върнеш стандартните.</p>")
+        sb.append(area("web_movie", "За филми", WebSources.templates(prefs, false), prefs.webMovieSrc.isNotBlank()))
+        sb.append(area("web_tv", "За сериали", WebSources.templates(prefs, true), prefs.webTvSrc.isNotBlank()))
         sb.append("</details><button type='submit'>Запази</button></form></body></html>")
         return sb.toString()
     }

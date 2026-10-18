@@ -49,7 +49,10 @@ class StreamController(
         val subs: List<SubtitleResult>,
         val subQuery: SubtitleQuery?,
         val player: String,
-        val backdrop: String?
+        val backdrop: String?,
+        val media: app.torrtv.data.Media? = null,
+        val torrent: app.torrtv.data.torrents.TorrentResult? = null,
+        val resumeMs: Long = 0L
     )
 
     enum class Stage { IDLE, CONNECTING, METADATA, PICK_FILE, BUFFERING, READY, ERROR }
@@ -69,7 +72,8 @@ class StreamController(
         val req: Req? = null
     )
 
-    class Playback(val url: String, val title: String, val subs: List<LocalSub>)
+    /** headers - за поток от уеб страница: Referer, Origin, бисквитки и т.н., с които трябва да се тегли. */
+    class Playback(val url: String, val title: String, val subs: List<LocalSub>, val headers: Map<String, String> = emptyMap())
 
     /** Субтитрите без изместване (оригиналните файлове) и текущото изместване в милисекунди. */
     private var baseSubs: List<LocalSub> = emptyList()
@@ -97,7 +101,7 @@ class StreamController(
                 out.add(LocalSub(s.file, s.lang, s.label, s.mime, "http://127.0.0.1:${server.port}$path"))
             }
         }
-        playback = Playback(pb.url, pb.title, out)
+        playback = Playback(pb.url, pb.title, out, pb.headers)
         AppLog.d("stream", "синхрон на субтитрите: ${offsetMs} ms")
         return out
     }
@@ -139,8 +143,14 @@ class StreamController(
         }
     }
 
+    /** Откъде започва гледането (мс). Плеърът го обновява, за да може „Готово → пусни пак“ да продължи оттам. */
+    @Volatile
+    var resumeFrom = 0L
+
     fun start(req: Req) {
         close()
+        resumeFrom = req.resumeMs
+        startedAt = android.os.SystemClock.elapsedRealtime()
         AppLog.d("stream", "Старт: ${req.title} ${req.subtitle} плеър=${req.player} субтитри=${req.subs.size}")
         ui = Ui(stage = Stage.CONNECTING, message = "Свързване…", req = req)
         StreamService.start(app)
@@ -187,6 +197,18 @@ class StreamController(
                 throw IOException("Твърде бавно теглене - няма достатъчно сийдъри. Опитай друг източник.")
         }
 
+        val subs = registerSubs(sj)
+        val title = if (req.subtitle.isBlank()) req.title else "${req.title} · ${req.subtitle}"
+        // Видеото идва от сървъра в торент процеса, субтитрите - от този процес.
+        val pb = Playback("http://127.0.0.1:${started.port}${started.path}", title, subs)
+        playback = pb
+        ui = ui.copy(stage = Stage.READY, message = "Готово", bufferPct = 100)
+        AppLog.d("stream", "готово, пускам плеъра ${req.player}: ${pb.url}")
+        launchPlayer(req.player, pb)
+    }
+
+    /** Чака субтитрите, подава ги от локалния сървър и ги запомня (за синхрона). */
+    private suspend fun registerSubs(sj: Deferred<List<SubtitleStore.Local>>): List<LocalSub> {
         val locals = sj.await()
         val subs = ArrayList<LocalSub>()
         locals.forEachIndexed { i, l ->
@@ -196,14 +218,42 @@ class StreamController(
         }
         baseSubs = subs
         subOffsetMs = 0L
-        val title = if (req.subtitle.isBlank()) req.title else "${req.title} · ${req.subtitle}"
-        // Видеото идва от сървъра в торент процеса, субтитрите - от този процес.
-        val pb = Playback("http://127.0.0.1:${started.port}${started.path}", title, subs)
-        playback = pb
-        ui = ui.copy(stage = Stage.READY, message = "Готово", bufferPct = 100)
-        AppLog.d("stream", "готово, пускам плеъра ${req.player}: ${pb.url}")
-        launchPlayer(req.player, pb)
+        return subs
     }
+
+    /**
+     * Поток, намерен в уеб страница (m3u8/mpd/mp4): сваля субтитрите и го пуска във вградения плеър
+     * със същите заглавки, с които страницата го е поискала. Външни плеъри не могат да ги получат.
+     */
+    fun playWeb(url: String, headers: Map<String, String>, req: Req) {
+        close()
+        resumeFrom = 0L
+        AppLog.d("stream", "Уеб поток: ${req.title} ${req.subtitle} субтитри=${req.subs.size}")
+        ui = Ui(stage = Stage.CONNECTING, message = "Подготвям субтитрите…", req = req)
+        StreamService.start(app)
+        job = scope.launch {
+            try {
+                val sj = scope.async { prepareSubs(req) }
+                subsJob = sj
+                server.start()
+                val subs = registerSubs(sj)
+                val title = if (req.subtitle.isBlank()) req.title else "${req.title} · ${req.subtitle}"
+                val pb = Playback(url, title, subs, headers)
+                playback = pb
+                ui = ui.copy(stage = Stage.READY, message = "Готово", bufferPct = 100)
+                launchPlayer("builtin", pb)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                AppLog.e("stream", "уеб поток - грешка", e)
+                ui = ui.copy(stage = Stage.ERROR, error = e.message ?: e.javaClass.simpleName)
+            }
+        }
+    }
+
+    /** Кога е започнало подготвянето (за съобщението „няма достатъчно сийдъри“). */
+    @Volatile
+    var startedAt = 0L
 
     private suspend fun prepareSubs(req: Req): List<SubtitleStore.Local> {
         val q = req.subQuery ?: return emptyList()
@@ -251,7 +301,7 @@ class StreamController(
 
     private fun launchPlayer(player: String, pb: Playback) {
         val ok = player != "builtin" && try {
-            ExternalPlayers.launch(app, player, pb)
+            ExternalPlayers.launch(app, player, pb, resumeFrom)
         } catch (e: Throwable) {
             AppLog.e("stream", "външен плеър", e)
             false

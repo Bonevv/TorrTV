@@ -102,6 +102,8 @@ dependencies {
 
     // Плеър
     implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("androidx.media3:media3-exoplayer-hls:1.4.1")
+    implementation("androidx.media3:media3-exoplayer-dash:1.4.1")
     implementation("androidx.media3:media3-ui:1.4.1")
 
     // Торент двигател (2.1.0-39 изисква Android 9+, 38 върви от Android 7)

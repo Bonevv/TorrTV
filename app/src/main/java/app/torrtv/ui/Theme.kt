@@ -47,14 +47,12 @@ object C {
 object Look {
     var lite by androidx.compose.runtime.mutableStateOf(false)
 
-    /** Размерите на TMDB картинките; в лек режим вземаме по-малки (по-бързо и по-малко памет). */
+    /**
+     * Размерите на TMDB картинките. В лек режим плакатите се теглят по-малки (w185). Само размери, валидни и за
+     * трите вида (плакат, фон, кадър), се сменят - другите остават, а пикселите се намаляват при декодирането.
+     */
     fun img(path: String?, size: String): String? {
-        val s = if (!lite) size else when (size) {
-            "w342" -> "w185"
-            "w780" -> "w500"
-            "w300" -> "w185"
-            else -> size
-        }
+        val s = if (lite && size == "w342") "w185" else size
         return app.torrtv.data.Tmdb.img(path, s)
     }
 }

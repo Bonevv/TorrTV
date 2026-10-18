@@ -298,6 +298,13 @@ class DetailState(val type: MediaType, val id: Int) {
                 detail = d
                 if (type == MediaType.TV) {
                     season = d.seasons.firstOrNull()?.number ?: 1
+                    // Ако вече е гледан - отваря се точно на епизода, който се продължава.
+                    Library.progressOf(d.media.key)?.let { pr ->
+                        if (pr.season > 0 && d.seasons.any { it.number == pr.season }) {
+                            season = pr.season
+                            episode = pr.episode
+                        }
+                    }
                     loadEpisodes()
                 }
                 loadTorrents()
@@ -435,7 +442,23 @@ class DetailState(val type: MediaType, val id: Int) {
         return SubRank.bestFit(subResults.filter { it.lang in langs }, t.title)
     }
 
-    fun playRequest(t: TorrentResult, subs: List<SubtitleResult>, player: String): StreamController.Req {
+    fun playRequest(t: TorrentResult, subs: List<SubtitleResult>, player: String, resumeMs: Long = 0L): StreamController.Req =
+        buildReq(t, t.magnet, subs, player, resumeMs)
+
+    /** Заявка за гледане от уеб сайт: без торент; субтитрите се избират сами (най-подходящ за всеки от двата езика). */
+    fun webRequest(): StreamController.Req {
+        val subs = rankedSubs(null).distinctBy { it.lang }.take(2)
+        return buildReq(null, "", subs, "builtin", 0L)
+    }
+
+    /** Адресите на уеб сайтовете за избрания филм / епизод (празно, ако са изключени). */
+    fun webSources(): List<app.torrtv.web.WebSources.Source> {
+        val d = detail ?: return emptyList()
+        if (!Graph.prefs.webEnabled) return emptyList()
+        return app.torrtv.web.WebSources.sources(Graph.prefs, type == MediaType.TV, id, d.imdbId, season, episode)
+    }
+
+    private fun buildReq(t: TorrentResult?, magnet: String, subs: List<SubtitleResult>, player: String, resumeMs: Long): StreamController.Req {
         val d = detail
         val title = d?.media?.title ?: ""
         val epName = if (type == MediaType.TV) {
@@ -443,7 +466,7 @@ class DetailState(val type: MediaType, val id: Int) {
             "S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')}" + if (n.isNotBlank()) " · $n" else ""
         } else ""
         return StreamController.Req(
-            magnet = t.magnet,
+            magnet = magnet,
             title = title,
             subtitle = epName,
             season = if (type == MediaType.TV) season else null,
@@ -451,7 +474,10 @@ class DetailState(val type: MediaType, val id: Int) {
             subs = subs,
             subQuery = subQuery(),
             player = player,
-            backdrop = Tmdb.img(d?.media?.backdropPath, "w780")
+            backdrop = Tmdb.img(d?.media?.backdropPath, "w780"),
+            media = d?.media,
+            torrent = t,
+            resumeMs = resumeMs
         )
     }
 }

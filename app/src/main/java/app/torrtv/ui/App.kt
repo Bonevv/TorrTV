@@ -27,9 +27,14 @@ import app.torrtv.data.MediaType
 import app.torrtv.data.torrents.TorrentResult
 import app.torrtv.state.DetailState
 import app.torrtv.state.Graph
+import app.torrtv.state.Library
 import app.torrtv.torrent.StreamController.Stage
 
-private val tabs = listOf("🏠 Начало", "🎬 Филми", "📺 Сериали", "🎲 Зарче", "🔍 Търсене", "⚙ Настройки")
+private val tabs = listOf("🏠 Начало", "🎬 Филми", "📺 Сериали", "♥ Любими", "🎲 Зарче", "🔍 Търсене", "⚙ Настройки")
+private const val TAB_SETTINGS = 6
+
+/** Отворен диалог за пускане: за кой екран, кой торент и от коя секунда да продължи (0 = отначало). */
+private class Sheet(val st: DetailState, val t: TorrentResult, val resumeMs: Long = 0L)
 
 @Composable
 fun App() {
@@ -37,7 +42,9 @@ fun App() {
     remember { Look.lite = Graph.prefs.lite; 0 }
     var tab by remember { mutableStateOf(0) }
     val stack = remember { mutableStateListOf<DetailState>() }
-    var sheet by remember { mutableStateOf<Pair<DetailState, TorrentResult>?>(null) }
+    var sheet by remember { mutableStateOf<Sheet?>(null) }
+    // "Продължи гледане" от началото: отваря заглавието и пуска диалога, щом данните са заредени.
+    var pending by remember { mutableStateOf<Library.Progress?>(null) }
     val home = Graph.home
     val streaming = Graph.stream.ui.stage != Stage.IDLE
     val tabFocus = remember { List(tabs.size) { FocusRequester() } }
@@ -59,13 +66,37 @@ fun App() {
         }
     }
 
+    // След края на гледане (и при старт): ако кешът е над лимита - чисти се.
+    LaunchedEffect(streaming) {
+        if (!streaming) {
+            kotlinx.coroutines.delay(4000)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { CacheManager.maybeAutoClean(ctx, false) }
+        }
+    }
+
     fun open(m: Media) {
         if (stack.size >= 8) stack.removeAt(0).cancel()
         stack.add(DetailState(m.type, m.id))
     }
 
     fun pop() {
+        pending = null
         if (stack.isNotEmpty()) stack.removeAt(stack.size - 1).cancel()
+    }
+
+    fun resume(p: Library.Progress) {
+        open(p.media)
+        pending = p
+    }
+
+    val topDetail = stack.lastOrNull()?.detail
+    LaunchedEffect(topDetail, pending) {
+        val pr = pending
+        val st = stack.lastOrNull()
+        if (pr != null && st != null && st.detail?.media?.key == pr.media.key) {
+            sheet = Sheet(st, pr.torrent(), pr.posMs)
+            pending = null
+        }
     }
 
     BackHandler(enabled = sheet != null || streaming || stack.isNotEmpty() || tab != 0) {
@@ -84,7 +115,7 @@ fun App() {
         } else if (top != null) {
             DetailScreen(
                 top, onOpen = { open(it) },
-                onPlay = { t -> sheet = top to t }
+                onPlay = { t, at -> sheet = Sheet(top, t, at) }
             )
         } else {
             Column(Modifier.fillMaxSize()) {
@@ -99,28 +130,30 @@ fun App() {
                     }
                     Spacer(Modifier.width(14.d))
                     tabs.forEachIndexed { i, name ->
-                        Chip(name, tab == i, { tab = i }, focusRequester = tabFocus[i])
+                        Chip(name, tab == i, { tab = i }, focusRequester = tabFocus[i], compact = true)
                     }
                     Spacer(Modifier.weight(1f))
-                    if (ramMb > 0) Pill("RAM $ramMb MB", C.card, if (ramMb > 450) C.amber else C.dim)
                     if (home.update != null) {
-                        PrimaryButton("⬆ Нова версия", { tab = 5 })
-                    }
+                        PrimaryButton("⬆ Нова версия", { tab = TAB_SETTINGS })
+                    } else if (ramMb > 0) Pill("RAM $ramMb MB", C.card, if (ramMb > 450) C.amber else C.dim)
                 }
                 Box(Modifier.fillMaxWidth().weight(1f)) {
                     when (tab) {
-                        0 -> HomeScreen(home, ::open)
+                        0 -> HomeScreen(home, ::open, ::resume)
                         1 -> BrowseScreen(Graph.browseMovies, ::open)
                         2 -> BrowseScreen(Graph.browseTv, ::open)
-                        3 -> DiceScreen(Graph.dice, ::open)
-                        4 -> SearchScreen(Graph.search, ::open)
+                        3 -> FavoritesScreen(::open)
+                        4 -> DiceScreen(Graph.dice, ::open)
+                        5 -> SearchScreen(Graph.search, ::open)
                         else -> SettingsScreen()
                     }
                 }
             }
         }
 
-        sheet?.let { (st, t) -> PlaySheet(st, t) { sheet = null } }
-        if (streaming) PrepareScreen()
+        sheet?.let { sh ->
+            PlaySheet(sh.st, sh.t, sh.resumeMs, onSwitch = { nt -> sheet = Sheet(sh.st, nt, 0L) }) { sheet = null }
+        }
+        if (streaming) PrepareScreen(stack.lastOrNull())
     }
 }

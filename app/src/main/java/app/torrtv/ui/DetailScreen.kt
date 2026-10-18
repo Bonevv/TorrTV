@@ -40,21 +40,25 @@ import app.torrtv.data.Tmdb
 import app.torrtv.data.torrents.TorrentResult
 import app.torrtv.state.DetailState
 import app.torrtv.state.Graph
+import app.torrtv.state.Library
 import kotlinx.coroutines.launch
 import java.util.Locale
 
 fun seedColor(n: Int): Color = when {
+    n < 0 -> C.dim
     n >= 20 -> C.green
     n >= 5 -> C.amber
     else -> C.red
 }
 
 @Composable
-fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResult) -> Unit) {
+fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResult, Long) -> Unit) {
     val d = st.detail
     val scope = rememberCoroutineScope()
     var quality by remember(st) { mutableStateOf("all") }
     val playFocus = remember { FocusRequester() }
+    var pickOpen by remember(st) { mutableStateOf(false) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     val listState = remember(st) { androidx.compose.foundation.lazy.LazyListState() }
 
     LaunchedEffect(st) { if (st.detail == null) st.start() }
@@ -117,14 +121,56 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
                             Text2("В ролите: " + d.cast.take(6).joinToString(", "), 12, C.dim, FontWeight.Normal, 2)
                         }
                         Spacer(Modifier.height(12.d))
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.d)) {
-                            val best = st.torrents.filter { !it.isCam }.maxByOrNull { score(it) } ?: st.torrents.firstOrNull()
+                        val best = st.torrents.filter { !it.isCam }.maxByOrNull { score(it) } ?: st.torrents.firstOrNull()
+                        // Започнато ли е вече? За сериал - само ако е избран същият епизод.
+                        val pr = Library.progressOf(d.media.key)?.takeIf {
+                            d.media.type == MediaType.MOVIE || (it.season == st.season && it.episode == st.episode)
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.d), verticalAlignment = Alignment.CenterVertically) {
+                            if (pr != null) {
+                                PrimaryButton(
+                                    "▶  Продължи · " + Library.fmt(pr.posMs),
+                                    { onPlay(pr.torrent(), pr.posMs) },
+                                    focusRequester = playFocus, big = true
+                                )
+                            }
                             PrimaryButton(
-                                if (best != null) "▶  Гледай най-доброто" else if (st.searching) "Търсене…" else "Няма торенти",
-                                { best?.let(onPlay) },
-                                focusRequester = playFocus
+                                when {
+                                    best != null && pr != null -> "От началото"
+                                    best != null -> "▶  Гледай"
+                                    st.searching -> "Търсене…"
+                                    else -> "🌐  Няма торенти - гледай от сайт"
+                                },
+                                {
+                                    if (best != null) onPlay(best, 0L) else if (!st.searching) pickOpen = true
+                                },
+                                primary = pr == null,
+                                focusRequester = if (pr == null) playFocus else null,
+                                big = pr == null
+                            )
+                        }
+                        Spacer(Modifier.height(8.d))
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.d)) {
+                            PrimaryButton("▾ Откъде?", { pickOpen = true }, primary = false)
+                            val fav = Library.isFavorite(d.media.key)
+                            PrimaryButton(
+                                if (fav) "♥ В любими" else "♡ В любими",
+                                { Library.toggleFavorite(d.media) },
+                                primary = false
                             )
                             PrimaryButton("↻ Търси пак", { st.loadTorrents(); st.loadSubs() }, primary = false)
+                        }
+                        Spacer(Modifier.height(5.d))
+                        if (best != null && best.seeders in 0..4 && pr == null) {
+                            Text2(
+                                "⚠ Най-добрият торент има само ${best.seeders} сийдъра - може да се буферира бавно. Ако е така, избери „Откъде?“.",
+                                11, C.amber, FontWeight.Medium, 2
+                            )
+                        } else {
+                            Text2(
+                                "„Гледай“ избира торент с най-много сийдъри и добро качество. „Откъде?“ показва други торенти и уеб сайтове.",
+                                11, C.dim, FontWeight.Normal, 2
+                            )
                         }
                     }
                 }
@@ -202,7 +248,7 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
             }
             items(shown, key = { it.hash + it.source }) { t ->
                 val fit = remember(t.hash, st.subResults) { st.subFit(t) }
-                TorrentRow(t, fit) { onPlay(t) }
+                TorrentRow(t, fit) { onPlay(t, 0L) }
             }
 
             item {
@@ -245,6 +291,14 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
                     }
                 }
             }
+        }
+        if (pickOpen) {
+            SourcePicker(
+                st, null,
+                onTorrent = { onPlay(it, 0L) },
+                onWeb = { i -> app.torrtv.web.WebPlay.open(ctx, st.webSources(), i, st.webRequest()) },
+                onDismiss = { pickOpen = false }
+            )
         }
     }
 }

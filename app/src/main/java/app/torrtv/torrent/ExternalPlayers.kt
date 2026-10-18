@@ -85,7 +85,7 @@ object ExternalPlayers {
     }
 
     /** Връща true, ако плеърът е пуснат. */
-    fun launch(ctx: Context, id: String, pb: StreamController.Playback): Boolean {
+    fun launch(ctx: Context, id: String, pb: StreamController.Playback, resumeMs: Long = 0L): Boolean {
         val i = Intent(Intent.ACTION_VIEW)
         i.setDataAndType(Uri.parse(pb.url), "video/*")
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -102,6 +102,10 @@ object ExternalPlayers {
         val pkg = installedPackage(ctx, id) ?: return false
         i.setPackage(pkg)
         i.putExtra("title", pb.title)
+        // Откъде да продължи (MX / Just Player: Int милисекунди, VLC: Long милисекунди).
+        if (resumeMs > 0) {
+            if (id == "vlc") i.putExtra("position", resumeMs) else i.putExtra("position", resumeMs.toInt())
+        }
         if (pb.subs.isNotEmpty()) {
             if (id == "vlc") {
                 i.putExtra("subtitles_location", pb.subs[0].url)
