@@ -323,7 +323,7 @@ private fun DetailHeader(
 
 /** Ред от менюто вляво: избраният раздел има златна чертичка, фокусираният е светъл. */
 @Composable
-private fun SideTab(label: String, count: String, selected: Boolean, onClick: () -> Unit) {
+internal fun SideTab(label: String, count: String, selected: Boolean, onClick: () -> Unit) {
     Focusable(onClick, Modifier.fillMaxWidth(), RoundedCornerShape(10.d), 1f, ring = false) { f ->
         Row(
             Modifier.fillMaxWidth()
@@ -347,7 +347,7 @@ private fun SideTab(label: String, count: String, selected: Boolean, onClick: ()
 
 /** Филтър с една стойност: OK превключва към следващата. */
 @Composable
-private fun FilterButton(label: String, value: String, onClick: () -> Unit) {
+internal fun FilterButton(label: String, value: String, onClick: () -> Unit) {
     Focusable(onClick, Modifier.fillMaxWidth(), RoundedCornerShape(10.d), 1f, ring = false) { f ->
         Row(
             Modifier.fillMaxWidth()

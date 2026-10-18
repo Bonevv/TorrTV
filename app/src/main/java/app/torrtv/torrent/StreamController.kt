@@ -137,7 +137,11 @@ class StreamController(
      * Сваля още един субтитър по време на гледане и го добавя към наличните (най-много 6). Вика се от
      * фонова нишка. Връща новия списък (със сегашния синхрон) или null, ако не е успяло.
      */
+    @Volatile
+    var lastSubError = ""
+
     fun addSub(r: SubtitleResult): List<LocalSub>? {
+        lastSubError = ""
         val req = ui.req ?: return null
         val q = req.subQuery ?: return null
         val pb = playback ?: return null
@@ -145,9 +149,15 @@ class StreamController(
             val local = try {
                 kotlinx.coroutines.runBlocking { subStore.fetch(r, q) }
             } catch (e: Exception) {
-                AppLog.d("stream", "субтитър - грешка: ${e.message}")
+                AppLog.d("stream", "субтитър ${r.providerName} - грешка: ${e.message}")
+                lastSubError = r.providerName + ": " + (e.message ?: e.javaClass.simpleName).take(80)
                 null
-            } ?: return null
+            }
+            if (local == null) {
+                if (lastSubError.isEmpty()) lastSubError = r.providerName + ": файлът не е намерен или е празен"
+                AppLog.d("stream", "субтитър не се свали: $lastSubError")
+                return null
+            }
             baseSubs = (baseSubs + publish(local)).takeLast(6)
         }
         val out = shifted(subOffsetMs)

@@ -768,7 +768,7 @@ class PlayerActivity : AppCompatActivity() {
                 null
             }
             if (added == null) {
-                runOnUiThread { Toast.makeText(this, "Субтитрите не се свалиха. Пробвай други.", Toast.LENGTH_LONG).show() }
+                runOnUiThread { Toast.makeText(this, "Субтитрите не се свалиха" + Graph.stream.lastSubError.let { if (it.isBlank()) "" else " ($it)" } + ". Пробвай други.", Toast.LENGTH_LONG).show() }
                 return@thread
             }
             Graph.stream.rememberSubChoice(r)
