@@ -19,10 +19,10 @@ class Prefs(ctx: Context) {
         get() = str("os_key").ifBlank { "4tGuxbPYtl1GjgrC2BGflxnn4Khg7kwD" }
         set(v) = put("os_key", v)
     var osUser: String
-        get() = str("os_user").ifBlank { "xaxaoo" }
+        get() = str("os_user")
         set(v) = put("os_user", v)
     var osPass: String
-        get() = str("os_pass").ifBlank { "Lan4gogo" }
+        get() = str("os_pass")
         set(v) = put("os_pass", v)
     var subdlKey: String
         get() = str("subdl_key").ifBlank { "subdl_rXlwOT-Ef-4xAljUNAsJnUX1V7yjpSEUTP0P6hBmsFw" }
@@ -160,6 +160,13 @@ class Prefs(ctx: Context) {
         get() = sp.getStringSet("sub_langs", null)?.toSet() ?: setOf("bg", "en")
         set(v) {
             sp.edit().putStringSet("sub_langs", v).apply()
+        }
+
+    /** Дали субтитрите се свалят сами при пускане (иначе се избират в плеъра или в диалога и се теглят само тогава). */
+    var subAuto: Boolean
+        get() = sp.getBoolean("sub_auto", false)
+        set(v) {
+            sp.edit().putBoolean("sub_auto", v).apply()
         }
 
     /** Размер на субтитрите във вградения плеър: 0 малки, 1 средни, 2 големи, 3 много големи. */

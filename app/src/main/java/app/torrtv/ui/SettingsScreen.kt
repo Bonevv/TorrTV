@@ -116,6 +116,7 @@ private fun SettingsPane(section: String, modifier: Modifier) {
     var player by remember { mutableStateOf(prefs.player) }
     var metaLang by remember { mutableStateOf(prefs.metaLang) }
     var subLangs by remember { mutableStateOf(prefs.subLangs) }
+    var subAuto by remember { mutableStateOf(prefs.subAuto) }
     var subSize by remember { mutableStateOf(prefs.subSize) }
     var subEdge by remember { mutableStateOf(prefs.subEdge) }
     var subLift by remember { mutableStateOf(prefs.subLift) }
@@ -229,6 +230,15 @@ private fun SettingsPane(section: String, modifier: Modifier) {
 
         if (section == "subs") item(key = "subs") {
             Group("Субтитри") {
+                Text2("При пускане", 13, C.dim, FontWeight.Bold, 1)
+                Spacer(Modifier.height(4.d))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
+                    Chip("Избирам сам", !subAuto, { subAuto = false; prefs.subAuto = false })
+                    Chip("Свалят се сами", subAuto, { subAuto = true; prefs.subAuto = true })
+                }
+                Spacer(Modifier.height(4.d))
+                Text2("Сами: свалят се още при пускане. Иначе се избират в плеъра (бутон Субтитри) и се теглят само тогава.", 11, C.dim, FontWeight.Normal, 2)
+                Spacer(Modifier.height(10.d))
                 Text2("Размер", 13, C.dim, FontWeight.Bold, 1)
                 Spacer(Modifier.height(4.d))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
@@ -606,7 +616,7 @@ private fun SettingsPane(section: String, modifier: Modifier) {
 
             if (section == "diag") item(key = "diag") {
                 Group("Диагностика") {
-                    Text2("Проверява торент сайтовете, субтитрите, тракерите и TMDB и показва кое не работи.", 12, C.dim, FontWeight.Normal, 2)
+                    Text2("Проверява торент сайтовете, субтитрите, тракерите и TMDB. „Провери акаунтите“ тества само ключовете и влизането, без сваляне.", 12, C.dim, FontWeight.Normal, 2)
                     Spacer(Modifier.height(6.d))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.d)) {
                         PrimaryButton(if (diagRunning) "Тества се…" else "Провери източниците", {
@@ -616,6 +626,20 @@ private fun SettingsPane(section: String, modifier: Modifier) {
                             scope.launch {
                                 try {
                                     Diagnostics.run { diag.add(it) }
+                                } catch (e: kotlinx.coroutines.CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    diag.add("✗ ${e.message}")
+                                } finally { diagRunning = false }
+                            }
+                        }, primary = false)
+                        PrimaryButton(if (diagRunning) "Тества се…" else "Провери акаунтите", {
+                            if (diagRunning) return@PrimaryButton
+                            diagRunning = true
+                            diag.clear()
+                            scope.launch {
+                                try {
+                                    Diagnostics.checkAccounts { diag.add(it) }
                                 } catch (e: kotlinx.coroutines.CancellationException) {
                                     throw e
                                 } catch (e: Exception) {

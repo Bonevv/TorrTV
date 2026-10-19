@@ -38,7 +38,7 @@ class SubtitleAggregator(private val prefs: Prefs) {
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    Update(p.name, emptyList(), e.message ?: e.javaClass.simpleName)
+                    Update(p.name, emptyList(), subErrorText(e))
                 }
                 synchronized(collected) { collected.add(u) }
                 send(u)

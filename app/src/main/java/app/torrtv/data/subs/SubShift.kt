@@ -2,6 +2,9 @@ package app.torrtv.data.subs
 
 import java.util.Locale
 
+/** Една реплика: кога започва (мс, без изместване) и текстът й. */
+class SubCue(val startMs: Long, val text: String)
+
 /** Мести всички времена в субтитрите напред (+) или назад (-). Работи за SRT, VTT и ASS/SSA. */
 object SubShift {
 
@@ -86,6 +89,54 @@ object SubShift {
             if (ms > best) best = ms
         }
         return best
+    }
+
+    private val tags = Regex("<[^>]*>|\\{[^}]*\\}")
+
+    private fun clean(s: String): String = tags.replace(s, "").replace("\\N", " ").replace("\\n", " ")
+        .replace(Regex("\\s+"), " ").trim()
+
+    /** Репликите на субтитъра с начало в мс (без изместване), по ред на времето. Празните се пропускат. */
+    fun cues(text: String, ext: String): List<SubCue> {
+        val out = ArrayList<SubCue>()
+        if (ext.lowercase(Locale.US) in setOf("ass", "ssa")) {
+            for (line in text.lineSequence()) {
+                if (!line.startsWith("Dialogue:")) continue
+                val parts = line.substring(9).split(",", limit = 10)
+                if (parts.size < 10) continue
+                val m = assTime.find(parts[1].trim()) ?: continue
+                val ms = ((m.groupValues[1].toLong() * 60 + m.groupValues[2].toLong()) * 60 + m.groupValues[3].toLong()) * 1000 +
+                    m.groupValues[4].toLong() * 10
+                val t = clean(parts[9])
+                if (t.isNotEmpty()) out.add(SubCue(ms, t))
+            }
+        } else {
+            var start = -1L
+            val sb = StringBuilder()
+            fun flush() {
+                if (start >= 0) {
+                    val t = clean(sb.toString())
+                    if (t.isNotEmpty()) out.add(SubCue(start, t))
+                }
+                start = -1L
+                sb.setLength(0)
+            }
+            for (line in text.lineSequence()) {
+                if (line.contains("-->")) {
+                    flush()
+                    val f = stamp.find(line)
+                    if (f != null) {
+                        val h = f.groupValues[1].ifEmpty { "0" }.toLong()
+                        start = ((h * 60 + f.groupValues[2].toLong()) * 60 + f.groupValues[3].toLong()) * 1000 +
+                            f.groupValues[5].padEnd(3, '0').take(3).toLong()
+                    }
+                } else if (line.isBlank()) flush()
+                else if (start >= 0) sb.append(' ').append(line.trim())
+            }
+            flush()
+        }
+        out.sortBy { it.startMs }
+        return out
     }
 
     /** ext: srt | vtt | ass | ssa. offsetMs > 0 - субтитрите излизат по-късно. */

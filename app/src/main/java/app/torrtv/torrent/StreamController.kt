@@ -32,6 +32,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
+import app.torrtv.data.subs.subErrorText
 import java.io.IOException
 
 class LocalSub(val file: File, val lang: String, val label: String, val mime: String, val url: String, val uid: String = "", val id: Int = 0)
@@ -150,7 +151,7 @@ class StreamController(
                 kotlinx.coroutines.runBlocking { subStore.fetch(r, q) }
             } catch (e: Exception) {
                 AppLog.d("stream", "субтитър ${r.providerName} - грешка: ${e.message}")
-                lastSubError = r.providerName + ": " + (e.message ?: e.javaClass.simpleName).take(80)
+                lastSubError = r.providerName + ": " + subErrorText(e)
                 null
             }
             if (local == null) {

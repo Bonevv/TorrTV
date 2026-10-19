@@ -48,6 +48,20 @@ data class SubtitleResult(
 
 class SubFile(val name: String, val bytes: ByteArray)
 
+/** Кратко и разбираемо съобщение за неуспех при субтитри (вместо суров HTTP текст). */
+fun subErrorText(e: Throwable): String {
+    if (e is Http.HttpError) return when (e.code) {
+        406, 429 -> "дневният лимит е свършил, пробвай утре или друг източник"
+        401, 403 -> "грешен ключ или парола"
+        404, 410 -> "файлът вече го няма"
+        in 500..599 -> "сайтът не работи в момента"
+        else -> "грешка ${e.code}"
+    }
+    if (e is java.net.UnknownHostException || e is java.net.SocketTimeoutException || e is java.net.ConnectException) return "няма връзка със сайта"
+    val m = e.message.orEmpty().replace(Regex("^(OpenSubtitles|Subdl|SubSource|Subs\\.sab\\.bz): "), "")
+    return if (m.isBlank()) e.javaClass.simpleName else m.take(70)
+}
+
 interface SubtitleProvider {
     val id: String
     val name: String

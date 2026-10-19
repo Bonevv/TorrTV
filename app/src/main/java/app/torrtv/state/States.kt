@@ -564,7 +564,7 @@ class DetailState(val type: MediaType, val id: Int, private val deferTorrents: B
         loadSubs()
         val t = awaitTorrent(prev) ?: return null
         withTimeoutOrNull(10_000) { subJob?.join() }
-        return playRequest(t, rankedSubs(t).take(1), "builtin", 0L)
+        return playRequest(t, if (Graph.prefs.subAuto) rankedSubs(t).take(1) else emptyList(), "builtin", 0L)
     }
 
     /** Чака търсенето; щом има добър кандидат и са минали 7 секунди, не чака останалите сайтове. */
@@ -592,7 +592,7 @@ class DetailState(val type: MediaType, val id: Int, private val deferTorrents: B
     fun webRequest(): StreamController.Req {
         // Потоците от сайтове най-често са WEB-DL / WEBRip - субтитрите за такова издание са първи.
         val ranked = rankedByHint("WEB-DL")
-        val subs = ranked.distinctBy { it.lang }.take(2)
+        val subs = if (Graph.prefs.subAuto) ranked.distinctBy { it.lang }.take(2) else emptyList()
         return buildReq(null, "", subs, "builtin", 0L, ranked, null)
     }
 

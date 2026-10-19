@@ -59,6 +59,30 @@ class OpenSubtitles(private val prefs: Prefs) : SubtitleProvider {
         tk
     }
 
+    /** Проверява ключа и влизането, без да сваля субтитър (не харчи дневния лимит). Връща един ред за диагностиката. */
+    suspend fun checkAccount(): String {
+        if (!configured()) return "• OpenSubtitles: ключът не е въведен"
+        try {
+            Http.get("https://api.opensubtitles.com/api/v1/infos/formats", headers())
+        } catch (e: Exception) {
+            return "✗ OpenSubtitles: ключът - " + subErrorText(e)
+        }
+        if (prefs.osUser.isBlank() || prefs.osPass.isBlank()) return "• OpenSubtitles: ключът работи, но няма потребител и парола (без тях не се сваля)"
+        val tk = try {
+            login(true)
+        } catch (e: Exception) {
+            return "✗ OpenSubtitles: влизане - " + subErrorText(e)
+        } ?: return "• OpenSubtitles: няма потребител и парола"
+        return try {
+            val d = JSONObject(Http.get("https://$host/api/v1/infos/user", headers() + ("Authorization" to "Bearer $tk"))).optJSONObject("data")
+            val rem = d?.optInt("remaining_downloads", -1) ?: -1
+            val all = d?.optInt("allowed_downloads", -1) ?: -1
+            "✓ OpenSubtitles: ключът и влизането работят" + if (rem >= 0 && all > 0) ", остават $rem от $all сваляния" else ""
+        } catch (e: Exception) {
+            "✓ OpenSubtitles: ключът и влизането работят"
+        }
+    }
+
     override suspend fun search(q: SubtitleQuery): List<SubtitleResult> {
         val imdb = q.imdbId?.removePrefix("tt")
         val p = TreeMap<String, String>()
@@ -103,7 +127,7 @@ class OpenSubtitles(private val prefs: Prefs) : SubtitleProvider {
 
     override suspend fun download(r: SubtitleResult, q: SubtitleQuery): List<SubFile> {
         var tk = login(false)
-            ?: throw IllegalStateException("OpenSubtitles: въведи потребител и парола (Настройки)")
+            ?: throw IllegalStateException("няма потребител и парола (въведи ги от телефона)")
 
         suspend fun call(t: String): String = Http.postJson(
             "https://$host/api/v1/download",

@@ -41,6 +41,7 @@ import app.torrtv.core.endsAtText
 import app.torrtv.core.formatSpeed
 import app.torrtv.data.subs.Fit
 import app.torrtv.data.subs.Langs
+import app.torrtv.data.subs.LineSync
 import app.torrtv.data.subs.SubCheck
 import app.torrtv.data.subs.SubRank
 import app.torrtv.data.subs.SubShift
@@ -535,6 +536,9 @@ class PlayerActivity : AppCompatActivity() {
             setPadding(0, px(6), 0, 0)
         }
         syncPart.addView(row)
+        syncPart.addView(pill("Намести по реплика") { openLineSync() }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = px(8)
+        })
         syncPart.addView(hint)
         syncBar.addView(syncPart)
         showOffset()
@@ -650,7 +654,7 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun changeOffset(delta: Long) {
-        offsetMs = (offsetMs + delta).coerceIn(-30_000L, 30_000L)
+        offsetMs = (offsetMs + delta).coerceIn(-LineSync.MAX_OFFSET_MS, LineSync.MAX_OFFSET_MS)
         showOffset()
         // Няколко натискания подред се събират в едно презареждане.
         handler.removeCallbacks(applyOffset)
@@ -670,6 +674,45 @@ class PlayerActivity : AppCompatActivity() {
             if (uid != null) Graph.stream.rememberOffset(uid, ms)
             runOnUiThread { reloadSubs(subs) }
         }
+    }
+
+    /** Спира на текущото място и пита коя реплика е чута току-що; по нея се смята изместването. */
+    private fun openLineSync() {
+        val p = player ?: return
+        val sub = selectedSub()
+        if (sub == null) {
+            Toast.makeText(this, "Първо включи субтитри.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val cues = try {
+            SubShift.cues(sub.file.readText(), sub.file.extension)
+        } catch (e: Exception) {
+            emptyList()
+        }
+        val pos = p.currentPosition
+        val found = LineSync.candidates(cues, offsetMs, pos)
+        if (found.cues.isEmpty()) {
+            Toast.makeText(this, "Близо до това място няма реплики. Пробвай на друго място във филма.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val wasPlaying = p.playWhenReady
+        p.pause()
+        val items = found.cues.map { c ->
+            String.format(java.util.Locale.US, "%+.0f с   %s", (c.startMs + offsetMs - pos) / 1000.0, c.text.take(80))
+        }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Коя реплика чу току-що?")
+            .setSingleChoiceItems(items, found.nearest) { d, which ->
+                d.dismiss()
+                offsetMs = LineSync.newOffset(found.cues[which], pos)
+                showOffset()
+                handler.removeCallbacks(applyOffset)
+                player?.playWhenReady = wasPlaying
+                applyOffsetNow()
+            }
+            .setNegativeButton("Затвори") { _, _ -> player?.playWhenReady = wasPlaying }
+            .setOnCancelListener { player?.playWhenReady = wasPlaying }
+            .show()
     }
 
     // ---- Избор на субтитър и проверка по дължина ----
@@ -774,7 +817,7 @@ class PlayerActivity : AppCompatActivity() {
                 null
             }
             if (added == null) {
-                runOnUiThread { Toast.makeText(this, "Субтитрите не се свалиха" + Graph.stream.lastSubError.let { if (it.isBlank()) "" else " ($it)" } + ". Пробвай други.", Toast.LENGTH_LONG).show() }
+                runOnUiThread { Toast.makeText(this, "Субтитрите не се свалиха" + Graph.stream.lastSubError.let { if (it.isBlank()) "" else " ($it)" } + ". Пробвай друг.", Toast.LENGTH_LONG).show() }
                 return@thread
             }
             Graph.stream.rememberSubChoice(r)

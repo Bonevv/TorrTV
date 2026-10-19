@@ -75,6 +75,44 @@ object Diagnostics {
         }
     }
 
+    /** Проверка на ключовете и акаунтите (без сваляне на субтитри, за да не се харчат лимитите). */
+    suspend fun checkAccounts(report: (String) -> Unit) {
+        report("— Акаунти и ключове —")
+        try {
+            val p = withTimeoutOrNull(20_000) { Graph.tmdb.list(MediaType.MOVIE, "popular", 1) }
+            report(if (p == null) "⏱ TMDB: не отговори навреме" else "✓ TMDB: ключът работи")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            report("✗ TMDB: " + app.torrtv.data.subs.subErrorText(e))
+        }
+        val sq = SubtitleQuery(MediaType.MOVIE, "Inception", emptyList(), "2010", "tt1375666", 27205, null, null, listOf("en", "bg"))
+        for (p in Graph.subs.providers) {
+            if (p is app.torrtv.data.subs.OpenSubtitles) {
+                try {
+                    report(withTimeoutOrNull(30_000) { p.checkAccount() } ?: "⏱ OpenSubtitles: не отговори навреме")
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    report("✗ OpenSubtitles: " + app.torrtv.data.subs.subErrorText(e))
+                }
+                continue
+            }
+            if (!p.configured()) {
+                report("• ${p.name}: ключът не е въведен")
+                continue
+            }
+            try {
+                val r = withTimeoutOrNull(25_000) { p.search(sq) }
+                report(if (r == null) "⏱ ${p.name}: не отговори навреме" else "✓ ${p.name}: работи")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                report("✗ ${p.name}: " + app.torrtv.data.subs.subErrorText(e))
+            }
+        }
+    }
+
     /** Проверява вградените тракери, запомня мъртвите и ги изключва от линковете (виж Magnets.ensureTrackers). */
     suspend fun checkTrackers(report: (String) -> Unit) {
         val res = TrackerCheck.checkAll(Magnets.trackers)

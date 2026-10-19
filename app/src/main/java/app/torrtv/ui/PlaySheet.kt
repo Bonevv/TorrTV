@@ -60,8 +60,8 @@ fun PlaySheet(st: DetailState, t: TorrentResult, resumeMs: Long = 0L, onSwitch: 
     }
     val picked = remember(ranked) {
         mutableStateListOf<String>().also { l ->
-            // По подразбиране: най-добрият субтитър
-            ranked.firstOrNull()?.let { l.add(it.uid) }
+            // По подразбиране: най-добрият субтитър, но само ако свалянето е автоматично (иначе се избира сам)
+            if (Graph.prefs.subAuto) ranked.firstOrNull()?.let { l.add(it.uid) }
         }
     }
     var subsOpen by remember { mutableStateOf(false) }
