@@ -31,15 +31,6 @@ android {
 
         // Откъде приложението проверява за нови версии (GitHub Releases).
         buildConfigField("String", "UPDATE_REPO", "\"Bonevv/TorrTV\"")
-
-        // Ключовете идват от GitHub Secrets при компилация (не са в кода на репото).
-        fun key(name: String): String = (System.getenv(name) ?: "").replace("\\", "\\\\").replace("\"", "\\\"")
-        buildConfigField("String", "K_TMDB", "\"${key("TMDB_KEY")}\"")
-        buildConfigField("String", "K_OS_KEY", "\"${key("OS_KEY")}\"")
-        buildConfigField("String", "K_OS_USER", "\"${key("OS_USER")}\"")
-        buildConfigField("String", "K_OS_PASS", "\"${key("OS_PASS")}\"")
-        buildConfigField("String", "K_SUBDL", "\"${key("SUBDL_KEY")}\"")
-        buildConfigField("String", "K_SUBSOURCE", "\"${key("SUBSOURCE_KEY")}\"")
     }
 
     signingConfigs {

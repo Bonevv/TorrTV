@@ -89,8 +89,15 @@ object StremioText {
 }
 
 /** Всеки Stremio addon, който дава торенти (infoHash). Работи само с IMDb номер. */
-class StremioAddon(override val id: String, override val name: String, base: String) : TorrentSource {
-    private val base: String = normalizeBase(base) ?: base.trim().trimEnd('/')
+class StremioAddon(override val id: String, override val name: String, private val baseFn: () -> String) : TorrentSource {
+    constructor(id: String, name: String, base: String) : this(id, name, { base })
+
+    /** Адресът се чете при всяко търсене: услугата може да го смени, без да се рестартира приложението. */
+    private val base: String
+        get() {
+            val raw = baseFn()
+            return normalizeBase(raw) ?: raw.trim().trimEnd('/')
+        }
 
     override fun supports(q: SearchQuery): Boolean {
         if (q.imdbId.isNullOrBlank()) return false

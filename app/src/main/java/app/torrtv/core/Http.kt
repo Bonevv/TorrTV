@@ -86,6 +86,17 @@ object Http {
             }
         }
 
+    class Raw(val code: Int, val body: String)
+
+    /** Като postJson, но връща кода и тялото и при грешка от сървъра (за услугата за настройки). */
+    suspend fun postJsonRaw(url: String, json: String, headers: Map<String, String> = emptyMap()): Raw =
+        withContext(Dispatchers.IO) {
+            val body = json.toRequestBody("application/json".toMediaType())
+            client.newCall(request(url, headers).post(body).build()).await().use { r ->
+                Raw(r.code, r.body?.string() ?: "")
+            }
+        }
+
     suspend fun postJson(url: String, json: String, headers: Map<String, String> = emptyMap()): String =
         withContext(Dispatchers.IO) {
             val body = json.toRequestBody("application/json".toMediaType())

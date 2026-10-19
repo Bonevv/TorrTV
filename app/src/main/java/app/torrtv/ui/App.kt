@@ -46,8 +46,12 @@ fun App() {
     val streaming = Graph.stream.ui.stage != Stage.IDLE
     val tabFocus = remember { List(TAB_COUNT) { FocusRequester() } }
     var exitAsk by remember { mutableStateOf(false) }
+    // Веднъж след първото влизане с профил: какъв е боксът и какво се препоръчва.
+    var boxAsk by remember { mutableStateOf(app.torrtv.data.Remote.enabled && !Graph.prefs.boxChecked) }
 
     LaunchedEffect(Unit) { home.checkUpdate() }
+    // Първото пускане в новия месец: тиха проверка за нови настройки (само ако приложението е свързано с профил).
+    LaunchedEffect(Unit) { Graph.sync.monthlyCheck() }
 
     // Дума, изпратена от страницата на телефона: отваря се търсенето и се показват резултатите.
     val remote = Graph.search.remoteStamp
@@ -149,6 +153,7 @@ fun App() {
             PlaySheet(sh.st, sh.t, sh.resumeMs, onSwitch = { nt -> sheet = Sheet(sh.st, nt, 0L) }) { sheet = null }
         }
         if (streaming) PrepareScreen(stack.lastOrNull())
+        if (boxAsk && !streaming) BoxCheckDialog(ctx) { Graph.prefs.boxChecked = true; boxAsk = false }
         if (exitAsk && !streaming) ExitDialog({ exitAsk = false; stopApp(ctx) }, { exitAsk = false })
     }
 }

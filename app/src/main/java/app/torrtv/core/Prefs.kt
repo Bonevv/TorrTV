@@ -11,12 +11,15 @@ class Prefs(ctx: Context) {
         sp.edit().putString(key, v.trim()).apply()
     }
 
+    /** Вградените ключове се ползват само докато няма услуга за настройки (виж Remote.URL). */
+    private fun dflt(v: String): String = if (app.torrtv.data.Remote.enabled) "" else v
+
     // ---- API ключове (въвеждат се от телефона през Настройки) ----
     var tmdbKey: String
-        get() = str("tmdb_key").ifBlank { "d2c1e02ec9baf771e1ce6b4511a5aea8" }
+        get() = str("tmdb_key").ifBlank { dflt("d2c1e02ec9baf771e1ce6b4511a5aea8") }
         set(v) = put("tmdb_key", v)
     var osKey: String
-        get() = str("os_key").ifBlank { "4tGuxbPYtl1GjgrC2BGflxnn4Khg7kwD" }
+        get() = str("os_key").ifBlank { dflt("4tGuxbPYtl1GjgrC2BGflxnn4Khg7kwD") }
         set(v) = put("os_key", v)
     var osUser: String
         get() = str("os_user")
@@ -25,11 +28,49 @@ class Prefs(ctx: Context) {
         get() = str("os_pass")
         set(v) = put("os_pass", v)
     var subdlKey: String
-        get() = str("subdl_key").ifBlank { "subdl_rXlwOT-Ef-4xAljUNAsJnUX1V7yjpSEUTP0P6hBmsFw" }
+        get() = str("subdl_key").ifBlank { dflt("subdl_rXlwOT-Ef-4xAljUNAsJnUX1V7yjpSEUTP0P6hBmsFw") }
         set(v) = put("subdl_key", v)
     var subsourceKey: String
-        get() = str("subsource_key").ifBlank { "sk_7cd6bf070b192defbfe29842f7a7a4396f7f722eca793c33c889fc9b02386648" }
+        get() = str("subsource_key").ifBlank { dflt("sk_7cd6bf070b192defbfe29842f7a7a4396f7f722eca793c33c889fc9b02386648") }
         set(v) = put("subsource_key", v)
+
+    // ---- Профил от услугата за настройки (виж Remote) ----
+    var syncOk: Boolean
+        get() = sp.getBoolean("sync_ok", false)
+        set(v) {
+            sp.edit().putBoolean("sync_ok", v).apply()
+        }
+    var syncNum: String
+        get() = str("sync_num")
+        set(v) = put("sync_num", v)
+    var syncPin: String
+        get() = str("sync_pin")
+        set(v) = put("sync_pin", v)
+    var syncRev: String
+        get() = str("sync_rev")
+        set(v) = put("sync_rev", v)
+    var syncName: String
+        get() = str("sync_name")
+        set(v) = put("sync_name", v)
+    var syncAt: Long
+        get() = sp.getLong("sync_at", 0L)
+        set(v) {
+            sp.edit().putLong("sync_at", v).apply()
+        }
+
+    /** Месецът (година*100+месец) на последната проверка за нови настройки. */
+    var syncMonth: Int
+        get() = sp.getInt("sync_month", 0)
+        set(v) {
+            sp.edit().putInt("sync_month", v).apply()
+        }
+
+    /** Свои тракери (по един на ред); празно - стандартният списък. */
+    var trackersSrc: String
+        get() = str("trackers_src")
+        set(v) = put("trackers_src", v)
+    val trackersList: List<String>
+        get() = trackersSrc.lines().map { it.trim() }.filter { it.isNotEmpty() }
 
     // ---- Домейни (по желание, ако сайтът смени адреса си) ----
     var domApibay: String
@@ -44,6 +85,40 @@ class Prefs(ctx: Context) {
     var domNyaa: String
         get() = str("dom_nyaa")
         set(v) = put("dom_nyaa", v)
+    var domKnaben: String
+        get() = str("dom_knaben")
+        set(v) = put("dom_knaben", v)
+    var domCsv: String
+        get() = str("dom_csv")
+        set(v) = put("dom_csv", v)
+    var domTorrentsdb: String
+        get() = str("dom_torrentsdb")
+        set(v) = put("dom_torrentsdb", v)
+    var domTorrentio: String
+        get() = str("dom_torrentio")
+        set(v) = put("dom_torrentio", v)
+
+    /** Свои торент сайтове от услугата (един на ред, вж. GenericSite). */
+    var sitesSrc: String
+        get() = str("sites_src")
+        set(v) = put("sites_src", v)
+
+    /** Източници, които услугата е изключила за всички: не се показват и не се търси в тях. */
+    var srcOffSrc: String
+        get() = str("src_off_src")
+        set(v) = put("src_off_src", v)
+    val srcOff: Set<String>
+        get() = srcOffSrc.lines().map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+
+    /** Дистанционно от телефона по време на филм: 0 = само на силни устройства, 1 = включено, 2 = изключено. */
+    var remoteCtl: Int
+        get() = sp.getInt("remote_ctl", 0)
+        set(v) { sp.edit().putInt("remote_ctl", v).apply() }
+
+    /** Проверката на бокса след първия вход е показана. */
+    var boxChecked: Boolean
+        get() = sp.getBoolean("box_checked", false)
+        set(v) { sp.edit().putBoolean("box_checked", v).apply() }
 
     // ---- Настройки ----
     /** builtin | vlc | mx | just | ask */
@@ -248,9 +323,15 @@ class Prefs(ctx: Context) {
         "dom_yts" -> domYts
         "dom_eztv" -> domEztv
         "dom_nyaa" -> domNyaa
+        "dom_knaben" -> domKnaben
+        "dom_csv" -> domCsv
+        "dom_torrentsdb" -> domTorrentsdb
+        "dom_torrentio" -> domTorrentio
+        "sites" -> sitesSrc
         "web_movie" -> webMovieSrc
         "web_tv" -> webTvSrc
         "addons" -> addonsSrc
+        "trackers" -> trackersSrc
         else -> ""
     }
 
@@ -266,9 +347,15 @@ class Prefs(ctx: Context) {
             "dom_yts" -> domYts = value
             "dom_eztv" -> domEztv = value
             "dom_nyaa" -> domNyaa = value
+            "dom_knaben" -> domKnaben = value
+            "dom_csv" -> domCsv = value
+            "dom_torrentsdb" -> domTorrentsdb = value
+            "dom_torrentio" -> domTorrentio = value
+            "sites" -> sitesSrc = if (value.trim() == "-") "" else value
             "web_movie" -> webMovieSrc = if (value.trim() == "-") "" else value
             "web_tv" -> webTvSrc = if (value.trim() == "-") "" else value
             "addons" -> addonsSrc = if (value.trim() == "-") "" else value
+            "trackers" -> trackersSrc = if (value.trim() == "-") "" else value
         }
     }
 

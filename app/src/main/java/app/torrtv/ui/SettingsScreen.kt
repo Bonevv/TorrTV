@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -31,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import app.torrtv.core.AppLog
@@ -40,6 +42,7 @@ import app.torrtv.core.Magnets
 import app.torrtv.core.Prefs
 import app.torrtv.core.TrackerCheck
 import app.torrtv.core.agoText
+import app.torrtv.data.Remote
 import app.torrtv.data.subs.Langs
 import app.torrtv.state.Diagnostics
 import app.torrtv.state.Graph
@@ -67,6 +70,10 @@ private val ADV_TABS = listOf(
     "trk" to "Тракери", "diag" to "Диагностика", "log" to "Дневник"
 )
 
+/** Основните раздели; „Профил“ има само когато приложението е свързано с услугата за настройки. */
+private fun basicTabs(): List<Pair<String, String>> =
+    if (app.torrtv.data.Remote.enabled) listOf(BASIC_TABS.first(), "sync" to "Профил") + BASIC_TABS.drop(1) else BASIC_TABS
+
 /** Един раздел: заглавие и карта със съдържанието. Стои вдясно от панела, затова няма странични отстъпи. */
 @Composable
 private fun Group(title: String, content: @Composable () -> Unit) {
@@ -86,7 +93,7 @@ fun SettingsScreen() {
     var section by remember { mutableStateOf(if (Graph.home.update != null) "upd" else "phone") }
     Row(Modifier.fillMaxSize().padding(start = 36.d, end = 36.d, bottom = 14.d), horizontalArrangement = Arrangement.spacedBy(18.d)) {
         SidePanel {
-            items(BASIC_TABS, key = { it.first }) { (id, label) ->
+            items(basicTabs(), key = { it.first }) { (id, label) ->
                 SideTab(label, if (id == "upd" && Graph.home.update != null) "нова" else "", section == id) { section = id }
             }
             panelDivider("adiv")
@@ -122,6 +129,7 @@ private fun SettingsPane(section: String, modifier: Modifier) {
     var subLift by remember { mutableStateOf(prefs.subLift) }
     var audioLang by remember { mutableStateOf(prefs.audioLang) }
     var autoNext by remember { mutableStateOf(prefs.autoNext) }
+    var remoteCtl by remember { mutableStateOf(prefs.remoteCtl) }
     var release by remember { mutableStateOf<Updater.Release?>(Graph.home.update) }
     var updMsg by remember { mutableStateOf("") }
     var progress by remember { mutableStateOf(-1f) }
@@ -139,6 +147,9 @@ private fun SettingsPane(section: String, modifier: Modifier) {
     var cacheTick by remember { mutableStateOf(0) }
     var trkTick by remember { mutableStateOf(0) }
     var logText by remember { mutableStateOf<String?>(null) }
+    var syncBusy by remember { mutableStateOf(false) }
+    var syncMsg by remember { mutableStateOf("") }
+    var syncAsk by remember { mutableStateOf(false) }
     val srcState = remember { mutableStateListOf<Pair<String, Boolean>>().also { l -> Graph.torrents.sources.forEach { l.add(it.id to prefs.sourceEnabled(it.id)) } } }
 
     // Всеки раздел започва отгоре: скролът не се пренася от предишния.
@@ -147,7 +158,11 @@ private fun SettingsPane(section: String, modifier: Modifier) {
             Group("Настройка от телефона") {
                 val addrs = remember(tick / 4) { Graph.config.addresses() }
                 val port = Graph.config.port
-                Text2("Отвори адреса на телефона си (в същата Wi-Fi мрежа) и въведи ПИН-а. Оттам се въвеждат ключовете и може да се търси филм.", 13, C.dim, FontWeight.Normal, 3)
+                Text2(
+                    if (Remote.enabled) "Отвори адреса на телефона си (в същата Wi-Fi мрежа) и въведи ПИН-а. Оттам се търси филм и се управлява филмът."
+                    else "Отвори адреса на телефона си (в същата Wi-Fi мрежа) и въведи ПИН-а. Оттам се въвеждат ключовете и може да се търси филм.",
+                    13, C.dim, FontWeight.Normal, 3
+                )
                 Spacer(Modifier.height(6.d))
                 if (addrs.isEmpty()) Text2("Телевизорът не е свързан към мрежа.", 13, C.red, FontWeight.Medium, 2)
                 if (port != 0) addrs.forEach { Text2("http://$it:$port", 22, C.accent2, FontWeight.ExtraBold, 1) }
@@ -162,6 +177,60 @@ private fun SettingsPane(section: String, modifier: Modifier) {
                 Spacer(Modifier.height(4.d))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.d)) {
                     ok.drop(3).forEach { StatusPill(fieldLabels[it] ?: it, prefs.isSet(it)) }
+                }
+            }
+        }
+
+        if (section == "sync") item(key = "sync") {
+            Group("Профил") {
+                val sync = Graph.sync
+                val no = remember { FocusRequester() }
+                LaunchedEffect(syncAsk) { if (syncAsk) no.tryRequest() }
+                Text2("№ ${sync.number}" + if (sync.name.isNotBlank()) " · ${sync.name}" else "", 20, C.text, FontWeight.ExtraBold, 1)
+                if (sync.lastAt > 0) {
+                    Spacer(Modifier.height(2.d))
+                    Text2("Настройките са взети ${agoText(System.currentTimeMillis() - sync.lastAt)}.", 13, C.dim, FontWeight.Medium, 1)
+                }
+                Spacer(Modifier.height(6.d))
+                Text2("Ключовете и списъците идват от профила. Проверяват се сами веднъж в месеца, а тук може и веднага.", 12, C.dim, FontWeight.Normal, 3)
+                Spacer(Modifier.height(10.d))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.d), verticalAlignment = Alignment.CenterVertically) {
+                    PrimaryButton(if (syncBusy) "Проверка…" else "Обнови настройките", {
+                        if (syncBusy) return@PrimaryButton
+                        syncBusy = true
+                        syncMsg = ""
+                        scope.launch {
+                            try {
+                                val r = sync.refresh()
+                                syncMsg = when {
+                                    !r.ok -> Remote.message(r).orEmpty()
+                                    r.changed -> "Настройките са обновени."
+                                    else -> "Няма промени."
+                                }
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                syncMsg = "Не се получи."
+                            } finally { syncBusy = false }
+                        }
+                    })
+                    PrimaryButton("Излез", { syncAsk = true }, primary = false)
+                }
+                if (syncMsg.isNotBlank()) {
+                    Spacer(Modifier.height(6.d))
+                    Text2(syncMsg, 13, C.accent2, FontWeight.Medium, 2)
+                }
+                if (syncAsk) {
+                    Spacer(Modifier.height(12.d))
+                    Text2("Сигурен ли си? После пак ще трябват номер и ПИН.", 13, C.gold, FontWeight.Medium, 2)
+                    Spacer(Modifier.height(6.d))
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.d)) {
+                        PrimaryButton("Не", { syncAsk = false }, focusRequester = no)
+                        PrimaryButton("Да, излез", {
+                            syncAsk = false
+                            sync.logout()
+                        }, primary = false)
+                    }
                 }
             }
         }
@@ -190,6 +259,16 @@ private fun SettingsPane(section: String, modifier: Modifier) {
                     Chip("Автоматично", autoNext, { autoNext = true; prefs.autoNext = true })
                     Chip("Само с бутон", !autoNext, { autoNext = false; prefs.autoNext = false })
                 }
+                Spacer(Modifier.height(10.d))
+                Text2("Дистанционно от телефона", 13, C.dim, FontWeight.Bold, 1)
+                Spacer(Modifier.height(4.d))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.d)) {
+                    Chip("Само на силни", remoteCtl == 0, { remoteCtl = 0; prefs.remoteCtl = 0 })
+                    Chip("Включено", remoteCtl == 1, { remoteCtl = 1; prefs.remoteCtl = 1 })
+                    Chip("Изключено", remoteCtl == 2, { remoteCtl = 2; prefs.remoteCtl = 2 })
+                }
+                Spacer(Modifier.height(4.d))
+                Text2("Пауза, превъртане и субтитри от телефона по време на филм. Адресът и ПИН-ът се виждат в плеъра при показани контроли. На слаб бокс „Само на силни“ го държи изключено.", 11, C.dim, FontWeight.Normal, 3)
             }
         }
 
@@ -302,7 +381,8 @@ private fun SettingsPane(section: String, modifier: Modifier) {
                 }
                 Spacer(Modifier.height(6.d))
                 Text2(
-                    "Списъкът със сайтове се сменя от телефона, на същата страница като ключовете. Ако някой сайт спре да работи, махни го оттам.",
+                    if (Remote.enabled) "Списъкът със сайтове идва от профила. Ако някой спре да работи, кажи на този, който ти даде приложението."
+                    else "Списъкът със сайтове се сменя от телефона, на същата страница като ключовете. Ако някой сайт спре да работи, махни го оттам.",
                     11, C.dim, FontWeight.Normal, 3
                 )
             }

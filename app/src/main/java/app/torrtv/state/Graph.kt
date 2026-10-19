@@ -3,6 +3,7 @@ package app.torrtv.state
 import android.app.Application
 import app.torrtv.core.Prefs
 import app.torrtv.data.MediaType
+import app.torrtv.data.Remote
 import app.torrtv.data.Tmdb
 import app.torrtv.data.subs.SubtitleAggregator
 import app.torrtv.data.subs.SubtitleStore
@@ -30,11 +31,22 @@ object Graph {
     val server by lazy { LocalServer() }
     val stream by lazy { StreamController(app, subStore, server) }
     val updater by lazy { Updater(app) }
+    val sync by lazy { SyncState(prefs) }
     val config by lazy {
         ConfigServer(prefs).also { c ->
             c.recent = { RecentSearches.decode(prefs.recentSearches) }
             // Търсене от телефона: идва от нишка на сървъра, а състоянието на екраните се пипа само от главната.
             c.onSearch = { q -> scope.launch { search.fromPhone(q) } }
+            // Вход от телефона: изпълнява се на главната нишка, а нишката на сървъра чака отговора.
+            c.onLogin = { n, p ->
+                val done = kotlinx.coroutines.CompletableDeferred<String>()
+                scope.launch { done.complete(sync.login(n, p).let { r -> if (r.ok) "" else Remote.message(r).orEmpty() }) }
+                try {
+                    kotlinx.coroutines.runBlocking { kotlinx.coroutines.withTimeout(40_000) { done.await() } }
+                } catch (e: Exception) {
+                    "Няма отговор. Опитай пак."
+                }
+            }
         }
     }
 

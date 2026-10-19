@@ -2,6 +2,7 @@ package app.torrtv.data.torrents
 
 import android.util.LruCache
 import app.torrtv.core.Prefs
+import app.torrtv.core.baseUrl
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
@@ -12,14 +13,27 @@ import kotlinx.coroutines.withTimeoutOrNull
 class TorrentAggregator(private val prefs: Prefs) {
 
     private val builtIn: List<TorrentSource> = listOf(
-        Apibay(prefs), Yts(prefs), Eztv(prefs), Nyaa(prefs), Knaben(), TorrentsCsv(),
-        StremioAddon("torrentsdb", "TorrentsDB", "https://torrentsdb.com"),
-        StremioAddon("torrentio", "Torrentio", "https://torrentio.strem.fun")
+        Apibay(prefs), Yts(prefs), Eztv(prefs), Nyaa(prefs), Knaben(prefs), TorrentsCsv(prefs),
+        StremioAddon("torrentsdb", "TorrentsDB") { baseUrl(prefs.domTorrentsdb, "https://torrentsdb.com") },
+        StremioAddon("torrentio", "Torrentio") { baseUrl(prefs.domTorrentio, "https://torrentio.strem.fun") }
     )
 
-    /** Вградените плюс свои Stremio addon-и от страницата за телефона. */
+    /** Всички: вградените, свои Stremio addon-и и свои сайтове (от услугата или телефона). */
+    val allSources: List<TorrentSource>
+        get() = builtIn +
+            StremioAddon.custom(
+                prefs,
+                setOf("torrentsdb.com", "torrentio.strem.fun",
+                    StremioAddon.hostOf(baseUrl(prefs.domTorrentsdb, "https://torrentsdb.com")),
+                    StremioAddon.hostOf(baseUrl(prefs.domTorrentio, "https://torrentio.strem.fun")))
+            ) + GenericSite.parseAll(prefs.sitesSrc)
+
+    /** Тези, които се показват и в които се търси: без изключените за всички от услугата. */
     val sources: List<TorrentSource>
-        get() = builtIn + StremioAddon.custom(prefs, setOf("torrentsdb.com", "torrentio.strem.fun"))
+        get() {
+            val off = prefs.srcOff
+            return if (off.isEmpty()) allSources else allSources.filter { it.id !in off }
+        }
 
     data class Update(val source: String, val results: List<TorrentResult>, val error: String?)
 

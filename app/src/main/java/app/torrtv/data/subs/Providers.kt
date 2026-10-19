@@ -38,6 +38,13 @@ class OpenSubtitles(private val prefs: Prefs) : SubtitleProvider {
 
     override fun configured() = prefs.osKey.isNotBlank()
 
+    /** Забравя запомнения вход (при смяна на акаунта или ключа). */
+    fun reset() {
+        token = null
+        tokenAt = 0L
+        host = "api.opensubtitles.com"
+    }
+
     private fun headers(): Map<String, String> = mapOf(
         "Api-Key" to prefs.osKey,
         "User-Agent" to "TorrTV v1.0",

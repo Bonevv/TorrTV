@@ -51,6 +51,7 @@ import app.torrtv.state.Library
 import app.torrtv.torrent.ExternalPlayers
 import app.torrtv.torrent.StreamController
 import app.torrtv.torrent.LocalSub
+import app.torrtv.web.PlayerRemote
 import kotlin.concurrent.thread
 
 @androidx.annotation.OptIn(UnstableApi::class)
@@ -96,8 +97,55 @@ class PlayerActivity : AppCompatActivity() {
     private val applySeek = Runnable { applySeekNow() }
     private val hideSeek = Runnable { seekInfo.visibility = View.GONE }
     private val handler = Handler(Looper.getMainLooper())
+    private lateinit var phoneInfo: TextView
+    private var remoteOn = false
+    @Volatile private var snapshot = PlayerRemote.Snap("", 0L, 0L, false, 0L, true)
+
+    /** Дистанционното от телефона: чете се последният снимък, командите се изпълняват на главната нишка. */
+    private val remote = object : PlayerRemote {
+        override fun snap() = snapshot
+        override fun act(cmd: String, arg: Long) {
+            handler.post { runRemote(cmd, arg) }
+        }
+    }
+
+    private fun cacheSnap() {
+        val p = player ?: return
+        val dur = if (p.duration != C.TIME_UNSET && p.duration > 0) p.duration else 0L
+        val title = req?.title.orEmpty()
+        val subsOn = !p.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)
+        snapshot = PlayerRemote.Snap(title, p.currentPosition, dur, p.playWhenReady && p.playbackState != Player.STATE_ENDED, offsetMs, subsOn)
+    }
+
+    private fun runRemote(cmd: String, arg: Long) {
+        val p = player ?: return
+        when (cmd) {
+            "toggle" -> p.playWhenReady = !p.playWhenReady
+            "seek" -> if (p.isCurrentMediaItemSeekable) {
+                val max = if (p.duration != C.TIME_UNSET && p.duration > 0) (p.duration - 2_000).coerceAtLeast(0L) else Long.MAX_VALUE
+                p.seekTo((p.currentPosition + arg).coerceIn(0L, max))
+            }
+            "suboff" -> changeOffset(arg)
+            "suboff0" -> changeOffset(-offsetMs)
+            "subtoggle" -> {
+                val off = p.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)
+                p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !off).build()
+            }
+            "stop" -> finish()
+        }
+        cacheSnap()
+    }
+
+    /** Дали дистанционното е позволено: по избор от Настройки, а „само на силни“ изключва слабите кутии. */
+    private fun remoteAllowed(): Boolean = when (Graph.prefs.remoteCtl) {
+        1 -> true
+        2 -> false
+        else -> !app.torrtv.core.Device.isWeak(this)
+    }
+
     private val tick = object : Runnable {
         override fun run() {
+            cacheSnap()
             updateStats()
             if (++tickN % 10 == 0) saveProgress()
             checkSleep()
@@ -149,6 +197,16 @@ class PlayerActivity : AppCompatActivity() {
         root.addView(seekInfo, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
         popInfo = overlayText(24f).apply { gravity = Gravity.CENTER }
         root.addView(popInfo, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+        phoneInfo = TextView(this).apply {
+            setTextColor(0xFFE9B44C.toInt())
+            setBackgroundColor(0x99000000.toInt())
+            textSize = 12f
+            setPadding(px(24), px(8), px(24), px(8))
+            visibility = View.GONE
+        }
+        root.addView(phoneInfo, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.START).apply {
+            setMargins(px(32), px(110), 0, 0)
+        })
         buildSyncBar()
         root.addView(syncBar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END).apply {
             setMargins(0, px(32), px(32), 0)
@@ -228,6 +286,11 @@ class PlayerActivity : AppCompatActivity() {
         }
         p.prepare()
         p.playWhenReady = true
+        remoteOn = remoteAllowed()
+        if (remoteOn) {
+            Graph.config.remote = remote
+            Graph.config.start()
+        }
         handler.post(tick)
     }
 
@@ -871,7 +934,23 @@ class PlayerActivity : AppCompatActivity() {
         c.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
     }
 
+    private fun updatePhoneInfo() {
+        if (!remoteOn || !view.isControllerFullyVisible) {
+            phoneInfo.visibility = View.GONE
+            return
+        }
+        val ip = Graph.config.addresses().firstOrNull()
+        val port = Graph.config.port
+        if (ip == null || port == 0) {
+            phoneInfo.visibility = View.GONE
+            return
+        }
+        phoneInfo.text = "Телефон: http://$ip:$port · ПИН ${Graph.config.pin}"
+        phoneInfo.visibility = View.VISIBLE
+    }
+
     private fun updateStats() {
+        updatePhoneInfo()
         val p = player ?: return
         val buffering = p.playbackState == Player.STATE_BUFFERING
         val now = SystemClock.elapsedRealtime()
@@ -936,6 +1015,11 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        if (remoteOn) {
+            if (Graph.config.remote === remote) Graph.config.remote = null
+            Graph.config.stop()
+            remoteOn = false
+        }
         handler.removeCallbacks(tick)
         handler.removeCallbacks(applyOffset)
         handler.removeCallbacks(applySeek)

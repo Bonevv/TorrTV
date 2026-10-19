@@ -77,7 +77,7 @@ fun baseUrl(raw: String, default: String): String {
 }
 
 object Magnets {
-    val trackers = listOf(
+    private val defaultTrackers = listOf(
         "udp://tracker.opentrackr.org:1337/announce",
         "udp://open.demonii.com:1337/announce",
         "udp://tracker.torrent.eu.org:451/announce",
@@ -91,6 +91,16 @@ object Magnets {
         "udp://tracker.bittor.pw:1337/announce",
         "udp://open.tracker.cl:1337/announce"
     )
+
+    /** Тракерите, които се добавят към линковете: стандартните или свои от услугата за настройки. */
+    @Volatile
+    var trackers: List<String> = defaultTrackers
+        private set
+
+    /** Свой списък (празният връща стандартните). */
+    fun setCustom(list: List<String>) {
+        trackers = list.map { it.trim() }.filter { it.isNotEmpty() }.distinct().ifEmpty { defaultTrackers }
+    }
 
     fun build(hash: String, name: String): String {
         val sb = StringBuilder("magnet:?xt=urn:btih:").append(hash)

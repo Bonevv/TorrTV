@@ -4,6 +4,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import app.torrtv.core.Prefs
+import app.torrtv.data.Remote
+import app.torrtv.state.Graph
 import app.torrtv.data.torrents.StremioAddon
 import java.io.BufferedInputStream
 import java.io.IOException
@@ -46,6 +48,22 @@ class ConfigServer(private val prefs: Prefs) {
     /** Последните търсения - за бързи бутони на страницата. */
     @Volatile
     var recent: () -> List<String> = { emptyList() }
+
+    /** Приложението е свързано с услугата за настройки (тогава ключовете не се въвеждат от тук). Променя се само в проверките. */
+    @Volatile
+    var serviceOn: Boolean = Remote.enabled
+
+    /** Има ли вход в профила. Променя се само в проверките. */
+    @Volatile
+    var loggedIn: () -> Boolean = { Graph.sync.loggedIn }
+
+    /** Дистанционното за плеъра; има стойност само докато върви филм и е позволено. */
+    @Volatile
+    var remote: PlayerRemote? = null
+
+    /** Вход с номер и ПИН на профила от телефона. Връща "" при успех, иначе текста на грешката. */
+    @Volatile
+    var onLogin: ((String, String) -> String)? = null
 
     private var server: ServerSocket? = null
     private var users = 0
@@ -136,7 +154,8 @@ class ConfigServer(private val prefs: Prefs) {
                 if (i > 0 && l.substring(0, i).equals("content-length", true)) len = l.substring(i + 1).trim().toIntOrNull() ?: 0
             }
             val html: String
-            if (method == "POST" && (path == "/save" || path == "/search")) {
+            var ctype = "text/html; charset=utf-8"
+            if (method == "POST" && path in setOf("/save", "/search", "/login", "/state", "/ctl")) {
                 val buf = ByteArray(minOf(len, 65536))
                 var got = 0
                 while (got < buf.size) {
@@ -145,14 +164,26 @@ class ConfigServer(private val prefs: Prefs) {
                     got += n
                 }
                 val form = parseForm(String(buf, 0, got, Charsets.UTF_8))
-                html = if (path == "/search") search(form) else save(form)
+                when (path) {
+                    "/search" -> html = search(form)
+                    "/login" -> html = login(form)
+                    "/state" -> {
+                        ctype = "application/json; charset=utf-8"
+                        html = stateJson(form)
+                    }
+                    "/ctl" -> {
+                        ctype = "application/json; charset=utf-8"
+                        html = ctl(form)
+                    }
+                    else -> html = save(form)
+                }
             } else {
                 html = page(null, true)
             }
             val body = html.toByteArray(Charsets.UTF_8)
             val out = sock.getOutputStream()
             out.write(
-                ("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n").toByteArray()
+                ("HTTP/1.1 200 OK\r\nContent-Type: $ctype\r\nCache-Control: no-store\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n").toByteArray()
             )
             out.write(body)
             out.flush()
@@ -195,6 +226,48 @@ class ConfigServer(private val prefs: Prefs) {
                 "Твърде много грешни опити. ПИН-ът е сменен - виж новия на телевизора и опитай пак след $s сек."
             }
         }
+    }
+
+    private fun q(s: String): String {
+        val sb = StringBuilder("\"")
+        for (c in s) when {
+            c == '"' -> sb.append("\\\"")
+            c == '\\' -> sb.append("\\\\")
+            c < ' ' -> sb.append(' ')
+            else -> sb.append(c)
+        }
+        return sb.append('"').toString()
+    }
+
+    private fun snapJson(): String {
+        val r = remote ?: return "{\"active\":false}"
+        val s = r.snap()
+        return "{\"active\":true,\"title\":${q(s.title)},\"pos\":${s.posMs},\"dur\":${s.durMs},\"playing\":${s.playing},\"off\":${s.offsetMs},\"subs\":${s.subsOn}}"
+    }
+
+    /** Състоянието на филма за страницата (иска ПИН, но не брои успешните проверки за грешки). */
+    private fun stateJson(form: Map<String, String>): String {
+        checkPin(form)?.let { return "{\"err\":\"pin\",\"msg\":${q(it)}}" }
+        return snapJson()
+    }
+
+    private fun ctl(form: Map<String, String>): String {
+        checkPin(form)?.let { return "{\"err\":\"pin\",\"msg\":${q(it)}}" }
+        val cmd = form["cmd"].orEmpty()
+        val arg = form["arg"]?.toLongOrNull() ?: 0L
+        if (cmd in PlayerRemote.COMMANDS) remote?.act(cmd, arg.coerceIn(-3_600_000L, 3_600_000L))
+        return snapJson()
+    }
+
+    /** Вход от телефона: ПИН-ът на телевизора плюс номер и ПИН на профила. */
+    private fun login(form: Map<String, String>): String {
+        checkPin(form)?.let { return page(it, false) }
+        if (!serviceOn || loggedIn()) return page("Вече си влязъл.", true)
+        val num = form["num"].orEmpty().trim()
+        val spin = form["spin"].orEmpty().trim()
+        if (num.length < 3 || spin.length < 4) return page("Напиши номера и ПИН-а си.", false)
+        val err = onLogin?.invoke(num.take(8), spin.take(12)) ?: "Не се получи. Опитай от телевизора."
+        return if (err.isEmpty()) page("Готово, влязъл си. Телевизорът продължава сам.", true) else page(err, false)
     }
 
     /** Дума за търсене от телефона: праща се към телевизора, който отваря търсенето. */
@@ -300,6 +373,44 @@ class ConfigServer(private val prefs: Prefs) {
     private fun section(title: String, open: Boolean, body: String): String =
         "<details class='sec'${if (open) " open" else ""}><summary>$title</summary><div class='sbody'>$body</div></details>"
 
+    private fun loginForm(): String =
+        "<form method='post' action='/login'>" +
+            "<div class='desc'>Номерът и ПИН-ът са от този, който ти даде приложението.</div>" +
+            "<label>Номер</label><input name='num' inputmode='numeric' autocomplete='off' placeholder='номер'>" +
+            "<label>ПИН</label><input name='spin' type='password' inputmode='numeric' autocomplete='off' placeholder='ПИН на профила'>" +
+            "<label>ПИН от телевизора</label><div class='desc'>Виж го на екрана на телевизора.</div><input name='pin' inputmode='numeric' autocomplete='off' placeholder='4 цифри'>" +
+            "<div style='height:12px'></div><button type='submit'>Вход</button></form>"
+
+    /** Дистанционно за филма: показва се само докато върви филм и е позволено от настройките. */
+    private fun controlBox(): String =
+        "<div id='ctl'><div id='ctinfo' class='desc'>Търси се филм…</div>" +
+            "<div id='ctbtn' style='display:none'>" +
+            "<div class='row3'><button onclick=\"c('seek',-60000)\">−1 мин</button><button onclick=\"c('seek',-10000)\">−10 с</button>" +
+            "<button onclick=\"c('toggle',0)\" id='ctpp'>Пауза</button><button onclick=\"c('seek',10000)\">+10 с</button><button onclick=\"c('seek',60000)\">+1 мин</button></div>" +
+            "<div class='desc' style='margin-top:12px'>Субтитри <span id='ctoff'></span> (+ закъснява, − избързва)</div>" +
+            "<div class='row3'><button onclick=\"c('suboff',-500)\">−0,5</button><button onclick=\"c('suboff',-100)\">−0,1</button>" +
+            "<button onclick=\"c('suboff0',0)\">0</button><button onclick=\"c('suboff',100)\">+0,1</button><button onclick=\"c('suboff',500)\">+0,5</button></div>" +
+            "<div class='row3' style='margin-top:10px'><button onclick=\"c('subtoggle',0)\" id='ctsub'>Субтитри</button><button class='stop' onclick=\"if(confirm('Да се спре ли филмът?'))c('stop',0)\">Спри филма</button></div></div>" +
+            "<div id='ctpinbox' style='display:none'><label>ПИН от телевизора</label><input id='ctpininp' inputmode='numeric' autocomplete='off' placeholder='4 цифри'>" +
+            "<div style='height:10px'></div><button type='button' onclick='setPin()'>Свържи</button></div></div>" +
+            "<script>(function(){var pin='';try{pin=localStorage.getItem('tvpin')||''}catch(e){}" +
+            "var info=document.getElementById('ctinfo'),btn=document.getElementById('ctbtn'),pb=document.getElementById('ctpinbox'),timer=null;" +
+            "function post(path,data,cb){var x=new XMLHttpRequest();x.open('POST',path);x.setRequestHeader('Content-Type','application/x-www-form-urlencoded');" +
+            "x.onload=function(){try{cb(JSON.parse(x.responseText))}catch(e){}};x.send('pin='+encodeURIComponent(pin)+data)}" +
+            "function f(ms){ms=Math.max(0,Math.floor(ms/1000));var h=Math.floor(ms/3600),m=Math.floor(ms%3600/60),s=ms%60;return(h?h+':'+(m<10?'0':''):'')+m+':'+(s<10?'0':'')+s}" +
+            "function show(j){if(j.err){stop();btn.style.display='none';pb.style.display='block';info.textContent=j.msg||'Въведи ПИН-а от телевизора.';return}" +
+            "pb.style.display='none';if(!j.active){btn.style.display='none';info.textContent='Сега не върви филм.';return}" +
+            "btn.style.display='block';info.textContent=j.title+'  '+f(j.pos)+' / '+f(j.dur);" +
+            "document.getElementById('ctpp').textContent=j.playing?'Пауза':'Пусни';" +
+            "document.getElementById('ctoff').textContent=(j.off>=0?'+':'')+(j.off/1000).toFixed(1)+' с';" +
+            "document.getElementById('ctsub').textContent=j.subs?'Изключи субтитрите':'Включи субтитрите'}" +
+            "function poll(){if(!pin){return}post('/state','',show)}" +
+            "function stop(){if(timer){clearInterval(timer);timer=null}}" +
+            "function start(){stop();poll();timer=setInterval(poll,2000)}" +
+            "window.c=function(cmd,arg){post('/ctl','&cmd='+cmd+'&arg='+arg,show)};" +
+            "window.setPin=function(){var v=document.getElementById('ctpininp').value.trim();if(!v)return;pin=v;try{localStorage.setItem('tvpin',v)}catch(e){}start()};" +
+            "if(pin){start()}else{pb.style.display='block';info.textContent='Въведи ПИН-а от телевизора.'}})()</script>"
+
     private fun page(msg: String?, ok: Boolean): String {
         val sb = StringBuilder()
         sb.append("<!doctype html><html lang='bg'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>TorrTV настройки</title><style>")
@@ -319,12 +430,27 @@ class ConfigServer(private val prefs: Prefs) {
         sb.append(".box{background:#141a26;border-radius:10px;padding:10px 14px;margin-top:8px;color:#c6cddd;font-size:14px}.box ol,.box ul{margin:6px 0;padding-left:20px}.box li{margin:4px 0}")
         sb.append("code{background:#1d2536;color:#f2d58f;padding:1px 6px;border-radius:6px;font-size:13px}.step{display:flex;gap:10px;margin:8px 0}.step b{flex:none;width:26px;height:26px;border-radius:50%;background:#e9b44c;color:#1a1305;text-align:center;line-height:26px}")
         sb.append(".desc{color:#98a2b8;font-size:13px;margin:0 0 6px}")
+        sb.append(".row3{display:flex;gap:6px;margin-top:6px}.row3 button{flex:1;padding:12px 4px;font-size:15px;border-radius:10px}button.stop{background:#3a1620;color:#ff8c98}")
         sb.append(".chips{margin:10px 0 0}.chip{display:inline-block;margin:0 6px 6px 0;padding:6px 12px;border-radius:50px;background:#1d2536;color:#f3f5fa;text-decoration:none;font-size:14px}")
         sb.append("</style></head><body><h1>Torr<b>TV</b></h1><div class='sub'>Настройки от телефона</div>")
         if (msg != null) sb.append("<div class='msg ").append(if (ok) "good" else "bad").append("'>").append(esc(msg)).append("</div>")
 
+        // Скрива ПИН-а на телефона в самия браузър, за да не се пише пак (само в този браузър).
+        val pinScript = "<script>try{var p=localStorage.getItem('tvpin');var f=document.querySelectorAll('input[name=pin]');" +
+            "if(p){for(var i=0;i<f.length;i++)f[i].value=p}" +
+            "var fs=document.querySelectorAll('form');for(var j=0;j<fs.length;j++){fs[j].addEventListener('submit',function(){" +
+            "var e=this.querySelector('input[name=pin]');if(e&&e.value)localStorage.setItem('tvpin',e.value)})}}catch(x){}</script>"
+
+        // Приложението е свързано с услугата, но още няма вход: само вход.
+        if (serviceOn && !loggedIn()) {
+            sb.append(section("Вход", true, loginForm()))
+            sb.append(pinScript).append("</body></html>")
+            return sb.toString()
+        }
+
         // ---------- Търсене ----------
         sb.append(section("Търсене на филм", true, searchForm()))
+        sb.append(section("Дистанционно", true, controlBox()))
 
         // ---------- Упътване ----------
         sb.append(section("Как се ползва", true,
@@ -337,6 +463,7 @@ class ConfigServer(private val prefs: Prefs) {
                         "<li>Ако пише „Грешен ПИН“, виж го пак на екрана. ПИН-ът е един и същ, докато приложението е пуснато; след пет грешни опита се сменя и за минута не се приема нищо.</li>" +
                         "<li>Всичко се пази само на телевизора. Ключовете се изпращат единствено към самите услуги (TMDB, OpenSubtitles и т.н.).</li></ul>")))
 
+        if (!serviceOn) {
         sb.append("<form method='post' action='/save'>")
 
         // ---------- Ключове ----------
@@ -428,11 +555,8 @@ class ConfigServer(private val prefs: Prefs) {
 
         sb.append("<div class='savebar'><label style='margin-top:0'>ПИН от телевизора</label><div class='desc'>Четирите цифри от Настройки на телевизора. Така никой друг в мрежата не може да променя нищо.</div><input name='pin' inputmode='numeric' autocomplete='off' placeholder='4 цифри'><div style='height:10px'></div><button type='submit'>Запази</button></div>")
         sb.append("</form>")
-        // ПИН-ът се помни в самия телефон (само в този браузър), за да не се пише пак при всяко търсене.
-        sb.append("<script>try{var p=localStorage.getItem('tvpin');var f=document.querySelectorAll('input[name=pin]');")
-        sb.append("if(p){for(var i=0;i<f.length;i++)f[i].value=p}")
-        sb.append("var fs=document.querySelectorAll('form');for(var j=0;j<fs.length;j++){fs[j].addEventListener('submit',function(){")
-        sb.append("var e=this.querySelector('input[name=pin]');if(e&&e.value)localStorage.setItem('tvpin',e.value)})}}catch(x){}</script>")
+        }
+        sb.append(pinScript)
         sb.append("</body></html>")
         return sb.toString()
     }

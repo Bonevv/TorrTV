@@ -228,7 +228,7 @@ class Nyaa(private val prefs: Prefs) : TorrentSource {
 
 // ---------------------------------------------------------------- Knaben (агрегатор, JSON API)
 
-class Knaben : TorrentSource {
+class Knaben(private val prefs: Prefs) : TorrentSource {
     override val id = "knaben"
     override val name = "Knaben"
     override fun supports(q: SearchQuery) = true
@@ -247,7 +247,7 @@ class Knaben : TorrentSource {
             .put("from", 0)
             .put("size", 60)
             .put("hide_unsafe", true)
-        val resp = JSONObject(Http.postJson("https://api.knaben.org/v1", body.toString()))
+        val resp = JSONObject(Http.postJson(baseUrl(prefs.domKnaben, "https://api.knaben.org") + "/v1", body.toString()))
         val hits = resp.optJSONArray("hits") ?: return emptyList()
         val out = ArrayList<TorrentResult>()
         for (i in 0 until hits.length()) {
@@ -271,7 +271,7 @@ class Knaben : TorrentSource {
 
 // ---------------------------------------------------------------- Torrents-CSV (отворена база, JSON)
 
-class TorrentsCsv : TorrentSource {
+class TorrentsCsv(private val prefs: Prefs) : TorrentSource {
     override val id = "csv"
     override val name = "Torrents-CSV"
     override fun supports(q: SearchQuery) = true
@@ -281,7 +281,7 @@ class TorrentsCsv : TorrentSource {
     }
 
     private suspend fun fetch(text: String, q: SearchQuery): List<TorrentResult> {
-        val resp = JSONObject(Http.get("https://torrents-csv.com/service/search?q=${enc(text)}&size=50"))
+        val resp = JSONObject(Http.get(baseUrl(prefs.domCsv, "https://torrents-csv.com") + "/service/search?q=${enc(text)}&size=50"))
         val arr = resp.optJSONArray("torrents") ?: return emptyList()
         val out = ArrayList<TorrentResult>()
         for (i in 0 until arr.length()) {

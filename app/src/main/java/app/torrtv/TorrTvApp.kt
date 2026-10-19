@@ -29,6 +29,7 @@ class TorrTvApp : Application(), ImageLoaderFactory {
         if (torrentProc) return
 
         Graph.app = this
+        app.torrtv.core.Magnets.setCustom(Graph.prefs.trackersList)
         app.torrtv.core.Magnets.setDead(Graph.prefs.deadTrackers)
         AppLog.d("app", "Старт ${BuildConfig.VERSION_NAME}, Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}), ${Build.MANUFACTURER} ${Build.MODEL}")
         // Остатъци от предишна сесия (недоизтрити торенти и субтитри) - на заден план, да не бавим старта.
