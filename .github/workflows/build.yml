@@ -28,13 +28,20 @@ jobs:
       - name: Ключ за подписване
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          if [ -n "$KEYSTORE_BASE64" ]; then
-            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
-            echo "KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
-          else
-            echo "Няма KEYSTORE_BASE64 - ще се подпише с debug ключ"
-          fi
+          set -euo pipefail
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Липсва $name. Публикуването изисква постоянния release ключ."
+              exit 1
+            fi
+          done
+          umask 077
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
 
       - name: Компилиране
         env:
@@ -42,13 +49,12 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          chmod +x gradlew
-          ./gradlew --no-daemon assembleRelease \
+          bash gradlew --no-daemon testDebugUnitTest assembleRelease \
             -PappVersionName=1.0.${{ github.run_number }} \
             -PappVersionCode=${{ github.run_number }}
 
       - name: Преименуване
-        run: cp app/build/outputs/apk/release/*.apk TorrTV.apk
+        run: cp app/build/outputs/apk/release/app-release.apk TorrTV.apk
 
       - name: Публикуване на издание
         uses: softprops/action-gh-release@v2

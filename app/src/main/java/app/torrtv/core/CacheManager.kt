@@ -90,14 +90,17 @@ object CacheManager {
 
     /**
      * Чисти кеша. Файловете на активния стрийм не се пипат.
-     * [all] = false (автоматичното чистене): само торенти, субтитри и свалени обновления. Описанията от TMDB и
+     * [all] = false (автоматичното чистене): торенти и свалени обновления. Субтитрите се запазват до 64 MB,
+     * за да не изразходват повторно квотата за сваляне. Описанията от TMDB и
      * картинките имат свои лимити и сами си се подмятат, затова се трият само от бутона в Настройки.
      */
     fun clear(ctx: Context, streamActive: Boolean, all: Boolean = true) {
         try {
             val c = ctx.cacheDir
             if (!streamActive) deleteTorrents(ctx)
-            File(c, "subs").deleteRecursively()
+            if (!streamActive) kotlinx.coroutines.runBlocking {
+                if (all) Graph.subStore.clear() else Graph.subStore.trimToSize(64L * 1024 * 1024)
+            }
             File(c, "updates").deleteRecursively()
             if (all) {
                 File(c, "tmdb").deleteRecursively()
@@ -105,7 +108,7 @@ object CacheManager {
             }
             if (!streamActive) AppLog.trim(200)
             Graph.prefs.lastClean = System.currentTimeMillis()
-            AppLog.d("cache", if (all) "кешът е изчистен" else "автоматично чистене (торенти и субтитри)")
+            AppLog.d("cache", if (all) "кешът е изчистен" else "автоматично чистене (субтитрите се запазват до 64 MB)")
         } catch (e: Exception) {
             AppLog.d("cache", "грешка при чистене: ${e.message}")
         }
@@ -114,6 +117,7 @@ object CacheManager {
     /** Връща true, ако е почистило. Вика се при старт и периодично. */
     fun maybeAutoClean(ctx: Context, streamActive: Boolean): Boolean {
         if (streamActive) return false
+        kotlinx.coroutines.runBlocking { Graph.subStore.trimToSize(64L * 1024 * 1024) }
         // По размер: щом кешът надхвърли лимита, чисти се веднага (не чака часовете).
         val limit = Graph.prefs.cacheLimitMb
         if (limit > 0) {

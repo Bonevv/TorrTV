@@ -115,13 +115,15 @@ class StreamController(
     /** Всички субтитри с адреси, изместени с offsetMs (0 = оригиналите). */
     private fun shifted(offsetMs: Long): List<LocalSub> = baseSubs.map { s ->
         if (offsetMs == 0L) {
+            server.remove("/sub${s.id}.shift.${s.file.extension.ifBlank { "srt" }}")
             s
         } else {
             val ext = s.file.extension.ifBlank { "srt" }
             val text = SubShift.shift(s.file.readText(), ext, offsetMs)
-            val path = "/sub${s.id}.o$offsetMs.$ext"
+            // Постоянен маршрут: заменяме старото копие, вместо да пазим всяко изместване в паметта.
+            val path = "/sub${s.id}.shift.$ext"
             server.set(path, LocalServer.BytesContent(text.toByteArray(Charsets.UTF_8), s.mime))
-            LocalSub(s.file, s.lang, s.label, s.mime, "http://127.0.0.1:${server.port}$path", s.uid, s.id)
+            LocalSub(s.file, s.lang, s.label, s.mime, "http://127.0.0.1:${server.port}$path?offset=$offsetMs", s.uid, s.id)
         }
     }
 
@@ -159,7 +161,12 @@ class StreamController(
                 AppLog.d("stream", "субтитър не се свали: $lastSubError")
                 return null
             }
-            baseSubs = (baseSubs + publish(local)).takeLast(6)
+            val updated = baseSubs + publish(local)
+            updated.dropLast(6).forEach {
+                server.remove("/sub${it.id}.${it.file.extension}")
+                server.remove("/sub${it.id}.shift.${it.file.extension}")
+            }
+            baseSubs = updated.takeLast(6)
         }
         val out = shifted(subOffsetMs)
         playback = Playback(pb.url, pb.title, out, pb.headers, pb.webHost)
@@ -194,6 +201,7 @@ class StreamController(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var job: Job? = null
+    private val nextPreparation = StreamPreparation(scope)
     private var pick: CompletableDeferred<Int>? = null
     private var subsJob: Deferred<List<SubtitleStore.Local>>? = null
 
@@ -241,20 +249,18 @@ class StreamController(
         if (switching) return true
         switching = true
         ui = Ui(stage = Stage.CONNECTING, message = "Търсене на торент за ${n.label}…", req = cur)
-        scope.launch {
-            try {
-                val r = n.prepare()
+        nextPreparation.start(
+            prepare = { n.prepare() },
+            ready = { r ->
                 if (r != null) start(r)
                 else ui = ui.copy(stage = Stage.ERROR, error = "Няма торент за ${n.label}. Може още да не е излязъл - опитай по-късно.")
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Throwable) {
+            },
+            failed = { e ->
                 AppLog.e("stream", "следващ епизод - грешка", e)
                 ui = ui.copy(stage = Stage.ERROR, error = e.message ?: e.javaClass.simpleName)
-            } finally {
-                switching = false
-            }
-        }
+            },
+            finished = { switching = false }
+        )
         return true
     }
 
@@ -437,6 +443,8 @@ class StreamController(
 
     fun close() {
         AppLog.d("stream", "затваряне")
+        nextPreparation.cancel()
+        switching = false
         job?.cancel()
         job = null
         pick?.cancel()

@@ -20,7 +20,7 @@ private fun JSONObject.flat(name: String): String {
     val v = opt(name)
     return when (v) {
         null, JSONObject.NULL -> ""
-        is JSONArray -> if (v.length() > 0) v.optString(0, "") else ""
+        is JSONArray -> (0 until v.length()).map { v.optString(it, "") }.filter { it.isNotBlank() }.joinToString("\n")
         else -> v.toString()
     }
 }
@@ -125,7 +125,8 @@ class OpenSubtitles(private val prefs: Prefs) : SubtitleProvider {
                     ref = fileId.toString(),
                     downloads = a.intOr("download_count"),
                     trusted = a.optBoolean("from_trusted", false),
-                    hearing = a.optBoolean("hearing_impaired", false)
+                    hearing = a.optBoolean("hearing_impaired", false),
+                    fileName = files.getJSONObject(0).str("file_name")
                 )
             )
         }
@@ -189,11 +190,12 @@ class Subdl(private val prefs: Prefs) : SubtitleProvider {
                 SubtitleResult(
                     provider = id, providerName = name,
                     lang = Langs.norm(o.str("language").ifBlank { o.str("lang") }),
-                    release = o.str("release_name").ifBlank { o.str("name") },
+                    release = o.flat("release_name").ifBlank { o.flat("releases") }.ifBlank { o.str("name") },
                     ref = url,
                     downloads = 0,
                     trusted = false,
-                    hearing = o.optBoolean("hi", false)
+                    hearing = o.optBoolean("hi", false),
+                    fileName = o.str("name")
                 )
             )
         }
@@ -295,7 +297,7 @@ class SabBz : SubtitleProvider {
             val id = Regex("attach_id=(\\d+)").find(a.attr("href"))?.groupValues?.get(1) ?: continue
             if (!seen.add(id)) continue
             val row = a.closest("tr")?.text()?.trim().orEmpty()
-            val label = a.text().ifBlank { a.attr("title") }.ifBlank { row }.take(140)
+            val label = a.attr("title").ifBlank { a.text() }.ifBlank { row }
             out.add(
                 SubtitleResult(
                     provider = this.id, providerName = name, lang = "bg",

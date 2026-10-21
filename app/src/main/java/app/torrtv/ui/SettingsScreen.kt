@@ -316,7 +316,7 @@ private fun SettingsPane(section: String, modifier: Modifier) {
                     Chip("Свалят се сами", subAuto, { subAuto = true; prefs.subAuto = true })
                 }
                 Spacer(Modifier.height(4.d))
-                Text2("Сами: свалят се още при пускане. Иначе се избират в плеъра (бутон Субтитри) и се теглят само тогава.", 11, C.dim, FontWeight.Normal, 2)
+                Text2("Търсенето и сравнението не свалят файлове. Сами: избират се при пускане. При ръчен избор се теглят само потвърдените. Вече свалените се ползват от кеша (до 64 MB, пази се и след рестарт).", 11, C.dim, FontWeight.Normal, 4)
                 Spacer(Modifier.height(10.d))
                 Text2("Размер", 13, C.dim, FontWeight.Bold, 1)
                 Spacer(Modifier.height(4.d))

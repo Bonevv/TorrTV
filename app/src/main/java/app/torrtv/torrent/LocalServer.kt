@@ -70,6 +70,10 @@ class LocalServer {
         routes[path] = c
     }
 
+    fun remove(path: String) {
+        routes.remove(path)
+    }
+
     fun clearRoutes() {
         routes.clear()
     }

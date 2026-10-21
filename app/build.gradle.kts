@@ -36,7 +36,11 @@ android {
     signingConfigs {
         create("release") {
             val ks = System.getenv("KEYSTORE_PATH")
-            if (ks != null && File(ks).exists()) {
+            if (!ks.isNullOrBlank()) {
+                require(File(ks).isFile) { "KEYSTORE_PATH не сочи към файл за подписване" }
+                for (name in listOf("KEYSTORE_PASSWORD", "KEY_ALIAS", "KEY_PASSWORD")) {
+                    require(!System.getenv(name).isNullOrBlank()) { "Липсва $name за release подписване" }
+                }
                 storeFile = File(ks)
                 storePassword = System.getenv("KEYSTORE_PASSWORD")
                 keyAlias = System.getenv("KEY_ALIAS")
@@ -50,7 +54,8 @@ android {
             // R8 чупи JNI на libtorrent4j, а APK-то така е достатъчно малко.
             isMinifyEnabled = false
             val rel = signingConfigs.getByName("release")
-            signingConfig = if (rel.storeFile != null) rel else signingConfigs.getByName("debug")
+            // Локално може unsigned release; публикуваните издания винаги изискват постоянния release ключ.
+            signingConfig = if (rel.storeFile != null) rel else null
         }
     }
 
@@ -71,6 +76,8 @@ android {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     implementation(platform("androidx.compose:compose-bom:2024.10.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")

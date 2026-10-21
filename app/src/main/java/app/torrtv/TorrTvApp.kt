@@ -37,7 +37,7 @@ class TorrTvApp : Application(), ImageLoaderFactory {
             app.torrtv.core.CrashInfo.logRecent(this, 6)
             try {
                 app.torrtv.core.CacheManager.deleteTorrents(this)
-                File(cacheDir, "subs").deleteRecursively()
+                // Субтитрите се пазят между сесиите: повторното сваляне изразходва дневната квота.
                 app.torrtv.core.CacheManager.maybeAutoClean(this, false)
             } catch (_: Exception) {
             }

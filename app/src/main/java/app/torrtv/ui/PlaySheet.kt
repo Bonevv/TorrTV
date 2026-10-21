@@ -58,10 +58,18 @@ fun PlaySheet(st: DetailState, t: TorrentResult, resumeMs: Long = 0L, onSwitch: 
     var player by remember {
         mutableStateOf(Graph.prefs.player.let { if (it in options) it else "builtin" })
     }
-    val picked = remember(ranked) {
+    var selectionTouched by remember(t.hash) { mutableStateOf(false) }
+    val picked = remember(t.hash) {
         mutableStateListOf<String>().also { l ->
             // По подразбиране: най-добрият субтитър, но само ако свалянето е автоматично (иначе се избира сам)
             if (Graph.prefs.subAuto) ranked.firstOrNull()?.let { l.add(it.uid) }
+        }
+    }
+    LaunchedEffect(ranked) {
+        // Нови резултати не отменят ръчния избор и не добавят нежелани сваляния.
+        if (Graph.prefs.subAuto && !selectionTouched) {
+            picked.clear()
+            ranked.firstOrNull()?.let { picked.add(it.uid) }
         }
     }
     var subsOpen by remember { mutableStateOf(false) }
@@ -170,7 +178,7 @@ fun PlaySheet(st: DetailState, t: TorrentResult, resumeMs: Long = 0L, onSwitch: 
             if (firstPicked != null) {
                 Spacer(Modifier.height(5.d))
                 when (firstPicked) {
-                    Fit.EXACT -> Text2("Субтитрите са за това издание и трябва да пасват.", 11, C.green, FontWeight.Medium, 2)
+                    Fit.EXACT -> Text2("Вероятно пасват: съвпадат групата и източникът. Синхронът не е гарантиран.", 11, C.green, FontWeight.Medium, 2)
                     Fit.SIMILAR -> Text2("Субтитрите са за подобно издание и може да се разминават малко. В плеъра можеш да ги наместиш.", 11, C.amber, FontWeight.Medium, 2)
                     Fit.OTHER -> Text2("Субтитрите са за друго издание и вероятно ще се разминават. Избери други субтитри или ги намести в плеъра.", 11, C.amber, FontWeight.Medium, 2)
                     Fit.UNKNOWN -> Text2("Не се знае за кое издание са тези субтитри. Ако се разминават, намести ги в плеъра.", 11, C.dim, FontWeight.Normal, 2)
@@ -179,12 +187,13 @@ fun PlaySheet(st: DetailState, t: TorrentResult, resumeMs: Long = 0L, onSwitch: 
             if (subsOpen && ranked.isNotEmpty()) {
                 Spacer(Modifier.height(6.d))
                 LazyColumn(Modifier.heightIn(max = 190.d), verticalArrangement = Arrangement.spacedBy(4.d)) {
-                    items(ranked, key = { it.uid }) { s -> SubRow(s, fits[s.uid] ?: Fit.UNKNOWN, s.uid in picked) {
+                    items(ranked, key = { it.uid }) { s -> SubRow(s, t.title, fits[s.uid] ?: Fit.UNKNOWN, s.uid in picked) {
+                        selectionTouched = true
                         if (s.uid in picked) picked.remove(s.uid) else if (picked.size < 4) picked.add(s.uid)
                     } }
                 }
                 Spacer(Modifier.height(4.d))
-                Text2("Избери до 4 - превключваш ги в плеъра. Най-подходящият е най-горе.", 10, C.dim, FontWeight.Normal, 1)
+                Text2("Прегледът не сваля файлове. При „Пусни“ се теглят избраните (до 4); вече свалените се ползват от кеша.", 10, C.dim, FontWeight.Normal, 3)
             }
         }
     }
@@ -199,7 +208,7 @@ fun PlaySheet(st: DetailState, t: TorrentResult, resumeMs: Long = 0L, onSwitch: 
 }
 
 @Composable
-private fun SubRow(s: SubtitleResult, fit: Fit, on: Boolean, toggle: () -> Unit) {
+private fun SubRow(s: SubtitleResult, torrentTitle: String, fit: Fit, on: Boolean, toggle: () -> Unit) {
     Focusable(toggle, Modifier.fillMaxWidth(), RoundedCornerShape(8.d), 1.02f) { f ->
         Row(
             Modifier.fillMaxWidth().background(if (f) C.cardHi else C.card).padding(horizontal = 10.d, vertical = 6.d),
@@ -211,7 +220,7 @@ private fun SubRow(s: SubtitleResult, fit: Fit, on: Boolean, toggle: () -> Unit)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.d), verticalAlignment = Alignment.CenterVertically) {
                     Pill(Langs.choices.firstOrNull { it.first == s.lang }?.second ?: s.lang.uppercase(), C.cardHi, C.text)
                     when (fit) {
-                        Fit.EXACT -> Pill("точно издание", Color(0x333DDC84), C.green)
+                        Fit.EXACT -> Pill("вероятно пасват", Color(0x333DDC84), C.green)
                         Fit.SIMILAR -> Pill("подобно", Color(0x33FFB020), C.amber)
                         Fit.OTHER -> Pill("друго издание", Color(0x33FF5C6C), C.red)
                         Fit.UNKNOWN -> Pill("неясно", C.cardHi, C.dim)
@@ -221,7 +230,13 @@ private fun SubRow(s: SubtitleResult, fit: Fit, on: Boolean, toggle: () -> Unit)
                     Text2(s.providerName, 10, C.dim, FontWeight.Normal, 1)
                 }
                 Spacer(Modifier.height(2.d))
-                Text2(s.release.ifBlank { "(без име на издание)" }, 11, C.text, FontWeight.Normal, 2)
+                Text2(s.displayName, 11, C.text, FontWeight.Normal, if (f) Int.MAX_VALUE else 2)
+                if (f) {
+                    s.names.filter { it != s.displayName }.forEach {
+                        Text2(it, 11, C.dim, FontWeight.Normal, Int.MAX_VALUE)
+                    }
+                    Text2(SubRank.reason(s, torrentTitle), 11, C.dim, FontWeight.Normal, Int.MAX_VALUE)
+                }
             }
         }
     }

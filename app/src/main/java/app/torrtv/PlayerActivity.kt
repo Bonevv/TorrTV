@@ -845,8 +845,8 @@ class PlayerActivity : AppCompatActivity() {
         if (s.trusted) tags.add("доверен")
         if (s.hearing) tags.add("за глухи")
         if (loaded) tags.add("зареден")
-        val rel = s.release.ifBlank { "(без име на издание)" }.take(70)
-        return Langs.short(s.lang) + "   " + fit + rel + if (tags.isEmpty()) "" else "   [" + tags.joinToString(", ") + "]"
+        return Langs.short(s.lang) + "   " + fit + s.displayName + "\n" + s.providerName +
+            if (tags.isEmpty()) "" else "   [" + tags.joinToString(", ") + "]"
     }
 
     private fun openSubPicker() {
@@ -859,12 +859,21 @@ class PlayerActivity : AppCompatActivity() {
         val loaded = Graph.stream.playback?.subs.orEmpty()
         val cur = selectedSub()?.uid
         val items = all.map { subLine(it, r.fitTitle, loaded.any { l -> l.uid == it.uid }) }.toTypedArray()
-        val title = if (r.fitTitle != null) "Субтитри   (✓ точно издание · ~ подобно · ✗ друго)" else "Субтитри"
+        val title = if (r.fitTitle != null) "Субтитри   (✓ вероятно пасват · ~ подобно · ? неясно)" else "Субтитри"
         AlertDialog.Builder(this)
             .setTitle(title)
             .setSingleChoiceItems(items, all.indexOfFirst { it.uid == cur }) { d, which ->
                 d.dismiss()
-                chooseSub(all[which])
+                val sub = all[which]
+                val details = sub.names.joinToString("\n\n").ifBlank { "(без име на издание)" } +
+                    "\n\n${sub.providerName} · ${Langs.label(sub.lang)}\n\n" + SubRank.reason(sub, r.fitTitle) +
+                    "\n\nПрегледът не сваля файл. При потвърждение се използва кешът или се сваля само този субтитър."
+                AlertDialog.Builder(this)
+                    .setTitle("Издание на субтитрите")
+                    .setMessage(details)
+                    .setPositiveButton("Използвай") { _, _ -> chooseSub(sub) }
+                    .setNegativeButton("Назад") { _, _ -> openSubPicker() }
+                    .show()
             }
             .setNegativeButton("Затвори", null)
             .show()

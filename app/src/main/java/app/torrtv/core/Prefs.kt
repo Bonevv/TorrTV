@@ -11,15 +11,12 @@ class Prefs(ctx: Context) {
         sp.edit().putString(key, v.trim()).apply()
     }
 
-    /** Вградените ключове се ползват само докато няма услуга за настройки (виж Remote.URL). */
-    private fun dflt(v: String): String = if (app.torrtv.data.Remote.enabled) "" else v
-
     // ---- API ключове (въвеждат се от телефона през Настройки) ----
     var tmdbKey: String
-        get() = str("tmdb_key").ifBlank { dflt("d2c1e02ec9baf771e1ce6b4511a5aea8") }
+        get() = str("tmdb_key")
         set(v) = put("tmdb_key", v)
     var osKey: String
-        get() = str("os_key").ifBlank { dflt("4tGuxbPYtl1GjgrC2BGflxnn4Khg7kwD") }
+        get() = str("os_key")
         set(v) = put("os_key", v)
     var osUser: String
         get() = str("os_user")
@@ -28,10 +25,10 @@ class Prefs(ctx: Context) {
         get() = str("os_pass")
         set(v) = put("os_pass", v)
     var subdlKey: String
-        get() = str("subdl_key").ifBlank { dflt("subdl_rXlwOT-Ef-4xAljUNAsJnUX1V7yjpSEUTP0P6hBmsFw") }
+        get() = str("subdl_key")
         set(v) = put("subdl_key", v)
     var subsourceKey: String
-        get() = str("subsource_key").ifBlank { dflt("sk_7cd6bf070b192defbfe29842f7a7a4396f7f722eca793c33c889fc9b02386648") }
+        get() = str("subsource_key")
         set(v) = put("subsource_key", v)
 
     // ---- Профил от услугата за настройки (виж Remote) ----

@@ -608,7 +608,7 @@ fun TorrentRow(
             Column(Modifier.width(116.d), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.d)) {
                 status?.let { Pill(it.first, it.second, it.third) }
                 when (fit) {
-                    app.torrtv.data.subs.Fit.EXACT -> Text2("✓ точни субтитри", 11, C.green, FontWeight.Medium, 1)
+                    app.torrtv.data.subs.Fit.EXACT -> Text2("✓ вероятно пасват", 11, C.green, FontWeight.Medium, 1)
                     app.torrtv.data.subs.Fit.SIMILAR -> Text2("~ подобни субтитри", 11, C.amber, FontWeight.Medium, 1)
                     else -> {}
                 }

@@ -7,6 +7,8 @@ import app.torrtv.data.torrents.Relevance
 import com.github.junrar.Junrar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.nio.ByteBuffer
@@ -14,6 +16,7 @@ import java.nio.charset.CharacterCodingException
 import java.nio.charset.Charset
 import java.nio.charset.CodingErrorAction
 import java.util.Locale
+import java.security.MessageDigest
 import java.util.zip.ZipInputStream
 
 data class SubtitleQuery(
@@ -38,12 +41,16 @@ data class SubtitleResult(
     val ref: String,
     val downloads: Int,
     val trusted: Boolean,
-    val hearing: Boolean
+    val hearing: Boolean,
+    val fileName: String = ""
 ) {
     val uid: String get() = "$provider|$ref"
 
     /** Разчетеното издание (кешира се - сметка по име се прави веднъж). */
     val fx: Release by lazy { Release.parse(release) }
+
+    val names: List<String> get() = listOf(release, fileName).map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+    val displayName: String get() = names.maxByOrNull { Release.parse(it).facets } ?: "(без име на издание)"
 }
 
 class SubFile(val name: String, val bytes: ByteArray)
@@ -187,29 +194,65 @@ class SubtitleStore(private val cacheDir: File, private val providers: List<Subt
     class Local(val file: File, val lang: String, val label: String, val mime: String, val uid: String = "")
 
     private val dir: File get() = File(cacheDir, "subs").also { it.mkdirs() }
+    private val lock = Mutex()
+    private val extensions = listOf("srt", "ass", "ssa", "vtt")
 
     suspend fun fetch(r: SubtitleResult, q: SubtitleQuery): Local? = withContext(Dispatchers.IO) {
-        val provider = providers.firstOrNull { it.id == r.provider } ?: return@withContext null
-        val files = provider.download(r, q)
-        val f = Archives.pick(files, q.season, q.episode) ?: return@withContext null
-        val text = SubText.decode(f.bytes, r.lang)
-        val ext = f.name.substringAfterLast('.', "srt").lowercase(Locale.US).let {
-            if (it in setOf("ass", "ssa", "vtt", "srt")) it else "srt"
+        // Един и същ файл не се сваля два пъти и при едновременни заявки.
+        lock.withLock {
+            val key = listOf(r.uid, r.lang, q.type.path, q.tmdbId, q.season, q.episode).joinToString("|")
+            val stem = MessageDigest.getInstance("SHA-256").digest(key.toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }
+            val cached = extensions.map { File(dir, "$stem.$it") }.firstOrNull { it.isFile && it.length() > 0 }
+            if (cached != null) {
+                cached.setLastModified(System.currentTimeMillis())
+                return@withContext local(cached, r)
+            }
+            val provider = providers.firstOrNull { it.id == r.provider } ?: return@withContext null
+            val files = provider.download(r, q)
+            val f = Archives.pick(files, q.season, q.episode) ?: return@withContext null
+            val text = SubText.decode(f.bytes, r.lang)
+            val ext = f.name.substringAfterLast('.', "srt").lowercase(Locale.US).let {
+                if (it in setOf("ass", "ssa", "vtt", "srt")) it else "srt"
+            }
+            if (text.isBlank()) return@withContext null
+            val out = File(dir, "$stem.$ext")
+            val tmp = File.createTempFile(stem, ".part", dir)
+            try {
+                tmp.writeText(text, Charsets.UTF_8)
+                check(tmp.renameTo(out)) { "Неуспешен запис на субтитрите" }
+            } finally {
+                tmp.delete()
+            }
+            local(out, r)
         }
-        val out = File(dir, "${(r.uid + q.season + q.episode).hashCode().toUInt().toString(16)}.$ext")
-        out.writeText(text, Charsets.UTF_8)
-        val mime = when (ext) {
+    }
+
+    private fun local(file: File, r: SubtitleResult): Local {
+        val mime = when (file.extension) {
             "ass", "ssa" -> "text/x-ssa"
             "vtt" -> "text/vtt"
             else -> "application/x-subrip"
         }
         // Името на изданието е в етикета, за да се вижда в менюто на плеъра за кой филм е всеки субтитър.
-        val rel = r.release.trim().take(40)
-        Local(out, r.lang, if (rel.isNotEmpty()) "${Langs.short(r.lang)} · $rel" else "${Langs.short(r.lang)} · ${r.providerName}", mime, r.uid)
+        return Local(file, r.lang, "${Langs.short(r.lang)} · ${r.displayName}", mime, r.uid)
     }
 
-    fun clear() {
-        dir.deleteRecursively()
+    suspend fun clear() = withContext(Dispatchers.IO) {
+        lock.withLock { dir.deleteRecursively() }
+    }
+
+    /** Само когато няма активен поток; запазва най-скоро използваните файлове. */
+    suspend fun trimToSize(maxBytes: Long) = withContext(Dispatchers.IO) {
+        lock.withLock {
+            val files = dir.listFiles().orEmpty().filter { it.isFile }.sortedBy { it.lastModified() }
+            var size = files.sumOf { it.length() }
+            for (f in files) {
+                if (size <= maxBytes) break
+                val bytes = f.length()
+                if (f.delete()) size -= bytes
+            }
+        }
     }
 }
 
@@ -217,7 +260,7 @@ class SubtitleStore(private val cacheDir: File, private val providers: List<Subt
 enum class Fit { EXACT, SIMILAR, OTHER, UNKNOWN }
 
 /** Отличителните части от името на изданието - те определят дали времената на субтитъра ще паснат на звука. */
-class Release(val res: String, val src: String, val codec: String, val groups: Set<String>) {
+class Release(val res: String, val src: String, val codec: String, val groups: Set<String>, val editions: Set<String> = emptySet()) {
     val facets: Int get() = listOf(res, src, codec).count { it.isNotEmpty() } + (if (groups.isNotEmpty()) 1 else 0)
 
     companion object {
@@ -225,19 +268,21 @@ class Release(val res: String, val src: String, val codec: String, val groups: S
             "yts", "yify", "rarbg", "ntb", "flux", "evo", "ion10", "galaxy", "galaxytv", "psa", "sparks", "geckos",
             "amiable", "cmrg", "fgt", "ethel", "playweb", "tgx", "mkvcinema", "tigole", "qxr", "joy", "pahe", "bone",
             "dimension", "lol", "mixed", "avs", "kogi", "ntg", "btn", "cakes", "strife", "tepes", "edith", "smurf",
-            "hone", "ctrlhd", "decibel", "sigma", "framestor", "etrg", "megusta", "eztv", "ettv", "amzn", "nf",
-            "dsnp", "atvp", "hmax", "ion", "shortbrehd", "rbg", "ganool", "tomdoc", "kingdom", "vxt", "swty"
+            "hone", "ctrlhd", "decibel", "sigma", "framestor", "etrg", "megusta", "eztv", "ettv",
+            "ion", "shortbrehd", "rbg", "ganool", "tomdoc", "kingdom", "vxt", "swty"
         )
         private val notGroup = setOf(
             "x264", "x265", "h264", "h265", "hevc", "avc", "aac", "ac3", "dts", "mp4", "mkv", "avi", "srt", "sub", "subs",
             "bg", "en", "eng", "bul", "bluray", "webrip", "webdl", "web", "hdtv", "dvdrip", "bdrip", "brrip", "remux",
-            "dl", "rip", "ray", "hdr", "dv", "atmos", "1080p", "720p", "2160p", "480p", "hdrip", "proper", "repack", "extended", "unrated", "multi", "dual"
+            "dl", "rip", "ray", "hdr", "dv", "atmos", "1080p", "720p", "2160p", "480p", "hdrip", "proper", "repack", "extended", "unrated", "multi", "dual",
+            "amzn", "nf", "dsnp", "atvp", "hmax"
         )
         private val tail = Regex("-\\s*\\[?([A-Za-z0-9]{2,12})\\]?\\s*(?:\\.[A-Za-z0-9]{2,4})?\\s*$")
 
         fun parse(name: String): Release {
             val n = app.torrtv.data.torrents.Relevance.norm(name)
-            val tk = n.split(' ').filter { it.isNotEmpty() }.toSet()
+            val tokens = n.split(' ').filter { it.isNotEmpty() }
+            val tk = tokens.toSet()
             val res = when {
                 "2160p" in tk || "4k" in tk || "uhd" in tk -> "2160p"
                 "1080p" in tk || "1080i" in tk -> "1080p"
@@ -261,11 +306,17 @@ class Release(val res: String, val src: String, val codec: String, val groups: S
                 else -> ""
             }
             val groups = HashSet<String>()
-            tk.filterTo(groups) { it in knownGroups }
+            // Думи като Joy и Dimension може да са заглавието, а не групата на изданието.
+            val technical = setOf("2160p", "1080p", "1080i", "720p", "480p", "4k", "uhd", "web", "webdl",
+                "webrip", "hdtv", "bluray", "blu", "bdrip", "brrip", "dvdrip", "x264", "x265", "h264", "h265", "hevc", "avc", "av1")
+            val releaseAt = tokens.indexOfFirst { it in technical }
+            if (releaseAt >= 0) tokens.drop(releaseAt).filterTo(groups) { it in knownGroups }
             tail.find(name.trim())?.groupValues?.get(1)?.lowercase(Locale.US)?.let {
                 if (it !in notGroup && !it.all { c -> c.isDigit() }) groups.add(it)
             }
-            return Release(res, src, codec, groups)
+            val editions = tk.intersect(setOf("extended", "unrated", "uncut", "theatrical", "imax")) +
+                if (Regex("\\bdirector ?s? cut\\b").containsMatchIn(n)) setOf("directors-cut") else emptySet()
+            return Release(res, src, codec, groups, editions)
         }
     }
 }
@@ -277,25 +328,46 @@ class SubPref(val lang: String, val provider: String, val groups: Set<String>)
 object SubRank {
 
     fun fit(sub: Release, tor: Release): Fit {
-        if (sub.facets == 0) return Fit.UNKNOWN
+        if (sub.facets == 0 || tor.facets == 0) return Fit.UNKNOWN
         val groupMatch = sub.groups.any { it in tor.groups }
         val srcSame = sub.src.isNotEmpty() && sub.src == tor.src
         val srcDiff = sub.src.isNotEmpty() && tor.src.isNotEmpty() && sub.src != tor.src
-        val resDiff = sub.res.isNotEmpty() && tor.res.isNotEmpty() && sub.res != tor.res
-        val codecDiff = sub.codec.isNotEmpty() && tor.codec.isNotEmpty() && sub.codec != tor.codec
-        if (srcDiff) return Fit.OTHER
-        if (groupMatch) return Fit.EXACT
-        // Същият вид и качество, но и двете имат група и тя е различна -> подобно, не точно.
-        val groupsDiffer = sub.groups.isNotEmpty() && tor.groups.isNotEmpty()
-        if (srcSame && !groupsDiffer && sub.res == tor.res && sub.res.isNotEmpty() && sub.codec == tor.codec && sub.codec.isNotEmpty()) return Fit.EXACT
-        if (srcSame && !resDiff && !codecDiff) return Fit.SIMILAR
-        if (sub.src.isEmpty() && sub.res.isNotEmpty() && sub.res == tor.res) return Fit.SIMILAR
+        if (srcDiff || sub.editions != tor.editions) return Fit.OTHER
+        if (groupMatch && srcSame) return Fit.EXACT
+        if (groupMatch) return Fit.SIMILAR
         if (srcSame) return Fit.SIMILAR
-        return Fit.OTHER
+        return Fit.UNKNOWN
     }
 
+    private fun bestRelease(sub: SubtitleResult, tor: Release): Release =
+        sub.names.flatMap { it.lines() }.map { Release.parse(it) }.minByOrNull { fit(it, tor).ordinal } ?: sub.fx
+
     fun fit(sub: SubtitleResult, torrentTitle: String?): Fit =
-        if (torrentTitle == null) Fit.UNKNOWN else fit(sub.fx, Release.parse(torrentTitle))
+        if (torrentTitle == null) Fit.UNKNOWN else Release.parse(torrentTitle).let { fit(bestRelease(sub, it), it) }
+
+    fun reason(sub: SubtitleResult, torrentTitle: String?): String {
+        if (torrentTitle == null) return "Няма данни за изданието на видеото."
+        val tor = Release.parse(torrentTitle)
+        val rel = bestRelease(sub, tor)
+        val shared = rel.groups.intersect(tor.groups).sorted().joinToString(", ")
+        return when (fit(rel, tor)) {
+            Fit.EXACT -> "Същата група ($shared) и източник (${sourceName(rel.src)}). Синхронът не е гарантиран."
+            Fit.SIMILAR -> if (shared.isNotEmpty()) "Същата група ($shared), но липсват данни за източника."
+                else "Същият източник (${sourceName(rel.src)}); няма потвърдена обща група."
+            Fit.OTHER -> if (rel.editions != tor.editions) "Имената посочват различни версии или едното не уточнява версията (extended / режисьорска)."
+                else "Различни източници: ${sourceName(rel.src)} / ${sourceName(tor.src)}."
+            Fit.UNKNOWN -> "Недостатъчно данни за сравнение. Еднаква резолюция или кодек не доказват синхрон."
+        }
+    }
+
+    private fun sourceName(src: String): String = when (src) {
+        "web" -> "WEB-DL / WEBRip"
+        "bd" -> "BluRay"
+        "tv" -> "TV"
+        "dvd" -> "DVD"
+        "cam" -> "CAM / TS"
+        else -> "неизвестен"
+    }
 
     /** Най-доброто съвпадение измежду субтитрите (за белега на торента в списъка). */
     fun bestFit(subs: List<SubtitleResult>, torrentTitle: String): Fit {
@@ -304,7 +376,7 @@ object SubRank {
         var best = Fit.UNKNOWN
         var any = false
         for (r in subs) {
-            val f = fit(r.fx, tor)
+            val f = fit(bestRelease(r, tor), tor)
             if (f == Fit.EXACT) return Fit.EXACT
             if (f == Fit.UNKNOWN) continue
             any = true
@@ -321,7 +393,7 @@ object SubRank {
         val tor = releaseHint?.let { Release.parse(it) }
         val order = if (prefer != null && prefer.lang in langOrder) listOf(prefer.lang) + (langOrder - prefer.lang) else langOrder
         fun score(r: SubtitleResult): Int {
-            val f = if (tor == null) Fit.UNKNOWN else fit(r.fx, tor)
+            val f = if (tor == null) Fit.UNKNOWN else fit(bestRelease(r, tor), tor)
             val fitScore = when (f) {
                 Fit.EXACT -> 300
                 Fit.SIMILAR -> 120
