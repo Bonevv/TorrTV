@@ -14,6 +14,8 @@ class TorrentAggregator(private val prefs: Prefs) {
 
     private val builtIn: List<TorrentSource> = listOf(
         Apibay(prefs), Yts(prefs), Eztv(prefs), Nyaa(prefs), Knaben(prefs), TorrentsCsv(prefs), Bitsearch(prefs),
+        // Magnetz: безплатно JSON API без ключ (25 резултата на страница). Полетата са по документацията му.
+        GenericSite("magnetz", "Magnetz", "https://magnetz.eu/api/magnets/search?query={q}", "json", "data", "name", "info_hash", "magnet_link", "seeders", "size"),
         StremioAddon("torrentsdb", "TorrentsDB") { baseUrl(prefs.domTorrentsdb, "https://torrentsdb.com") },
         StremioAddon("torrentio", "Torrentio") { baseUrl(prefs.domTorrentio, "https://torrentio.strem.fun") }
     )
