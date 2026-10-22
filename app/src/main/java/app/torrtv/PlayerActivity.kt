@@ -834,19 +834,35 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    private fun subLine(s: SubtitleResult, fitTitle: String?, loaded: Boolean): String {
-        val fit = if (fitTitle == null) "" else when (SubRank.fit(s, fitTitle)) {
-            Fit.EXACT -> "✓ "
-            Fit.SIMILAR -> "~ "
-            Fit.OTHER -> "✗ "
-            Fit.UNKNOWN -> "? "
+    private fun subLine(s: SubtitleResult, fitTitle: String?, loaded: Boolean): CharSequence {
+        val (word, color) = if (fitTitle == null) "" to 0 else when (SubRank.fit(s, fitTitle)) {
+            Fit.EXACT -> "вероятно пасват" to 0xFF2E9E5B.toInt()
+            Fit.SIMILAR -> "подобно издание" to 0xFFC77D00.toInt()
+            Fit.OTHER -> "друго издание" to 0xFFD64545.toInt()
+            Fit.UNKNOWN -> "неясно" to 0xFF8A8A8A.toInt()
         }
         val tags = ArrayList<String>()
         if (s.trusted) tags.add("доверен")
         if (s.hearing) tags.add("за глухи")
         if (loaded) tags.add("зареден")
-        return Langs.short(s.lang) + "   " + fit + s.displayName + "\n" + s.providerName +
-            if (tags.isEmpty()) "" else "   [" + tags.joinToString(", ") + "]"
+        val sb = android.text.SpannableStringBuilder()
+        fun add(t: String, vararg spans: Any) {
+            val from = sb.length
+            sb.append(t)
+            for (sp in spans) sb.setSpan(sp, from, sb.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        val bold = android.text.style.StyleSpan(android.graphics.Typeface.BOLD)
+        add(Langs.short(s.lang), bold)
+        if (word.isNotEmpty()) {
+            add("   ")
+            add(word, android.text.style.ForegroundColorSpan(color), android.text.style.StyleSpan(android.graphics.Typeface.BOLD))
+        }
+        add("\n")
+        add(s.displayName)
+        add("\n")
+        val dim = listOf(s.providerName) + tags
+        add(dim.joinToString("  ·  "), android.text.style.ForegroundColorSpan(0xFF8A8A8A.toInt()), android.text.style.RelativeSizeSpan(0.85f))
+        return sb
     }
 
     private fun openSubPicker() {
@@ -858,7 +874,7 @@ class PlayerActivity : AppCompatActivity() {
         }
         val loaded = Graph.stream.playback?.subs.orEmpty()
         val cur = selectedSub()?.uid
-        val items = all.map { subLine(it, r.fitTitle, loaded.any { l -> l.uid == it.uid }) }.toTypedArray()
+        val items: Array<CharSequence> = all.map { subLine(it, r.fitTitle, loaded.any { l -> l.uid == it.uid }) }.toTypedArray()
         val title = if (r.fitTitle != null) "Субтитри   (✓ вероятно пасват · ~ подобно · ? неясно)" else "Субтитри"
         AlertDialog.Builder(this)
             .setTitle(title)

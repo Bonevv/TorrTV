@@ -49,8 +49,19 @@ data class SubtitleResult(
     /** Разчетеното издание (кешира се - сметка по име се прави веднъж). */
     val fx: Release by lazy { Release.parse(release) }
 
-    val names: List<String> get() = listOf(release, fileName).map { it.trim() }.filter { it.isNotEmpty() }.distinct()
-    val displayName: String get() = names.maxByOrNull { Release.parse(it).facets } ?: "(без име на издание)"
+    val names: List<String> by lazy { listOf(release, fileName).map { it.trim() }.filter { it.isNotEmpty() }.distinct() }
+
+    /** Отделните имена на издания (един ред - едно издание), разчетени веднъж. */
+    val parsed: List<Release> by lazy { lines.map { Release.parse(it) } }
+    private val lines: List<String> by lazy {
+        names.flatMap { it.lines() }.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+    }
+
+    /** Име на един ред - най-пълното от наличните (не се съкращава: показва се цялото). */
+    val displayName: String by lazy {
+        val best = lines.indices.maxByOrNull { parsed[it].facets }?.let { lines[it] }
+        best ?: "(без име на издание)"
+    }
 }
 
 class SubFile(val name: String, val bytes: ByteArray)
@@ -332,20 +343,36 @@ object SubRank {
         val groupMatch = sub.groups.any { it in tor.groups }
         val srcSame = sub.src.isNotEmpty() && sub.src == tor.src
         val srcDiff = sub.src.isNotEmpty() && tor.src.isNotEmpty() && sub.src != tor.src
-        if (srcDiff || sub.editions != tor.editions) return Fit.OTHER
-        if (groupMatch && srcSame) return Fit.EXACT
-        if (groupMatch) return Fit.SIMILAR
-        if (srcSame) return Fit.SIMILAR
-        return Fit.UNKNOWN
+        if (srcDiff) return Fit.OTHER
+        // Субтитър, който сам казва, че е за друга версия, е друго издание. Субтитър без дума за версия
+        // не е доказано различен, но и не е сигурен: най-много "подобни".
+        val editionsDiffer = sub.editions != tor.editions
+        if (editionsDiffer && sub.editions.isNotEmpty()) return Fit.OTHER
+        val r = when {
+            groupMatch && srcSame -> Fit.EXACT
+            groupMatch || srcSame -> Fit.SIMILAR
+            else -> Fit.UNKNOWN
+        }
+        return if (editionsDiffer && r == Fit.EXACT) Fit.SIMILAR else r
     }
 
     private fun bestRelease(sub: SubtitleResult, tor: Release): Release =
-        sub.names.flatMap { it.lines() }.map { Release.parse(it) }.minByOrNull { fit(it, tor).ordinal } ?: sub.fx
+        sub.parsed.minByOrNull { fit(it, tor).ordinal } ?: sub.fx
 
     fun fit(sub: SubtitleResult, torrentTitle: String?): Fit =
         if (torrentTitle == null) Fit.UNKNOWN else Release.parse(torrentTitle).let { fit(bestRelease(sub, it), it) }
 
     fun reason(sub: SubtitleResult, torrentTitle: String?): String {
+        val base = reasonBase(sub, torrentTitle)
+        if (torrentTitle == null) return base
+        val tor = Release.parse(torrentTitle)
+        val rel = bestRelease(sub, tor)
+        return if (rel.editions != tor.editions && rel.editions.isEmpty() && fit(rel, tor) != Fit.OTHER)
+            "$base Видеото е за специална версия (extended / режисьорска), а в името на субтитрите я няма."
+        else base
+    }
+
+    private fun reasonBase(sub: SubtitleResult, torrentTitle: String?): String {
         if (torrentTitle == null) return "Няма данни за изданието на видеото."
         val tor = Release.parse(torrentTitle)
         val rel = bestRelease(sub, tor)
@@ -354,7 +381,7 @@ object SubRank {
             Fit.EXACT -> "Същата група ($shared) и източник (${sourceName(rel.src)}). Синхронът не е гарантиран."
             Fit.SIMILAR -> if (shared.isNotEmpty()) "Същата група ($shared), но липсват данни за източника."
                 else "Същият източник (${sourceName(rel.src)}); няма потвърдена обща група."
-            Fit.OTHER -> if (rel.editions != tor.editions) "Имената посочват различни версии или едното не уточнява версията (extended / режисьорска)."
+            Fit.OTHER -> if (rel.editions != tor.editions) "Субтитрите са за друга версия (extended / режисьорска) от видеото."
                 else "Различни източници: ${sourceName(rel.src)} / ${sourceName(tor.src)}."
             Fit.UNKNOWN -> "Недостатъчно данни за сравнение. Еднаква резолюция или кодек не доказват синхрон."
         }

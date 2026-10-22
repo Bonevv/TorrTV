@@ -59,4 +59,17 @@ class SubRankTest {
         val specific = sub("Film", "$torrent.srt")
         assertEquals(specific, SubRank.rank(listOf(generic, specific), listOf("bg"), torrent).first())
     }
+
+    @Test fun subtitleWithoutEditionIsNotCalledADifferentCut() {
+        val extended = "Film.2024.Extended.1080p.WEB-DL.x264-FLUX"
+        assertEquals(Fit.SIMILAR, SubRank.fit(sub("Film.2024.1080p.WEB-DL.x264-FLUX"), extended))
+        assertEquals(Fit.OTHER, SubRank.fit(sub("Film.2024.Extended.1080p.WEB-DL.x264-FLUX"), torrent))
+        assertTrue(SubRank.reason(sub("Film.2024.1080p.WEB-DL.x264-FLUX"), extended).contains("специална версия"))
+    }
+
+    @Test fun displayNameIsOneLine() {
+        val s = sub("Film.WEB-DL-A\nFilm.1080p.WEB-DL.x264-FLUX\n" + "Film.".repeat(40))
+        assertFalse(s.displayName.contains('\n'))
+        assertEquals("Film.1080p.WEB-DL.x264-FLUX", s.displayName)
+    }
 }

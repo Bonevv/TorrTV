@@ -165,10 +165,11 @@ object RowWarmUp {
     fun count(lastVisibleRow: Int, total: Int): Int = minOf(total, maxOf(lastVisibleRow, -1) + 1 + AHEAD)
 }
 
-class BrowseState(val type: MediaType) {
+class BrowseState(initialType: MediaType, val forceAnime: Boolean = false) {
+    var type by mutableStateOf(initialType)
     var genre by mutableStateOf<Int?>(null)
     var sort by mutableStateOf(0) // 0 популярни, 1 най-нови, 2 най-високо оценени
-    var anime by mutableStateOf(false)
+    var anime by mutableStateOf(forceAnime)
     var paged by mutableStateOf(make())
     val gridState = LazyGridState()
     var focusKey: String? = null
@@ -182,6 +183,14 @@ class BrowseState(val type: MediaType) {
             2 -> Graph.tmdb.discover(type, genre, p, "vote_average.desc", if (anime) 250 else 600, 0.0, anime)
             else -> Graph.tmdb.discover(type, genre, p, "popularity.desc", 60, 0.0, anime)
         }
+    }
+
+    /** Само за раздел "Аниме": смяна между филми и сериали (жанрът започва отначало). */
+    fun changeType(t: MediaType) {
+        if (t == type) return
+        type = t
+        genre = null
+        paged = make()
     }
 
     fun apply(newGenre: Int?, newSort: Int, newAnime: Boolean = anime) {
@@ -582,7 +591,8 @@ class DetailState(val type: MediaType, val id: Int, private val deferTorrents: B
     /** Най-доброто съвпадение на намерените субтитри с този торент (за белега в списъка). */
     fun subFit(t: TorrentResult): Fit {
         val langs = Langs.choices.map { it.first }.filter { it in Graph.prefs.subLangs }.ifEmpty { listOf("bg", "en") }
-        return SubRank.bestFit(subResults.filter { it.lang in langs }, t.title)
+        // Само онези, които наистина се показват в списъка на торента - иначе белегът обещава субтитри, които не се виждат.
+        return SubRank.bestFit(rankedSubs(t).take(14).filter { it.lang in langs }, t.title)
     }
 
     fun playRequest(t: TorrentResult, subs: List<SubtitleResult>, player: String, resumeMs: Long = 0L): StreamController.Req =

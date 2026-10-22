@@ -56,7 +56,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /** Иконите на панела са нарисувани с линии - няма нужда от файлове с картинки. */
-internal enum class Glyph { HOME, MOVIES, SERIES, HEART, SEARCH, DICE, SETTINGS, POWER }
+internal enum class Glyph { HOME, MOVIES, SERIES, HEART, SEARCH, DICE, ANIME, SETTINGS, POWER }
 
 /** Позиция в панела: кой таб отваря (индексът в App), име и иконка. */
 private class RailEntry(val tab: Int, val label: String, val glyph: Glyph)
@@ -65,6 +65,7 @@ private val entries = listOf(
     RailEntry(0, "Начало", Glyph.HOME),
     RailEntry(1, "Филми", Glyph.MOVIES),
     RailEntry(2, "Сериали", Glyph.SERIES),
+    RailEntry(7, "Аниме", Glyph.ANIME),
     RailEntry(3, "Любими", Glyph.HEART),
     RailEntry(5, "Търсене", Glyph.SEARCH),
     RailEntry(4, "Зарче", Glyph.DICE),
@@ -144,7 +145,7 @@ private fun RailItem(
     enabled: Boolean = true
 ) {
     Focusable(
-        onClick, Modifier.focusProperties { canFocus = enabled }.width(64.d).height(50.d), RoundedCornerShape(12.d), 1.05f,
+        onClick, Modifier.focusProperties { canFocus = enabled }.width(64.d).height(46.d), RoundedCornerShape(12.d), 1.05f,
         ring = false, focusRequester = focusRequester
     ) { f ->
         val fg = when {
@@ -234,6 +235,17 @@ internal fun GlyphIcon(glyph: Glyph, color: Color, modifier: Modifier) {
                 for ((x, y) in listOf(8.5f to 8.5f, 15.5f to 8.5f, 12f to 12f, 8.5f to 15.5f, 15.5f to 15.5f)) {
                     drawCircle(color, radius = 1.15f * s, center = o(x, y))
                 }
+            }
+            Glyph.ANIME -> {
+                // Четирилъчева искра
+                val p = Path()
+                p.moveTo(12f * s, 3.5f * s)
+                p.cubicTo(12.8f * s, 9f * s, 15f * s, 11.2f * s, 20.5f * s, 12f * s)
+                p.cubicTo(15f * s, 12.8f * s, 12.8f * s, 15f * s, 12f * s, 20.5f * s)
+                p.cubicTo(11.2f * s, 15f * s, 9f * s, 12.8f * s, 3.5f * s, 12f * s)
+                p.cubicTo(9f * s, 11.2f * s, 11.2f * s, 9f * s, 12f * s, 3.5f * s)
+                p.close()
+                drawPath(p, color, style = line)
             }
             Glyph.SETTINGS -> {
                 drawCircle(color, radius = 3.3f * s, center = o(12f, 12f), style = line)

@@ -25,7 +25,7 @@ import app.torrtv.state.Library
 import app.torrtv.torrent.StreamController.Stage
 
 /** Брой раздели в страничния панел (виж SideRail); 6 е "Настройки". */
-private const val TAB_COUNT = 7
+private const val TAB_COUNT = 8
 private const val TAB_SEARCH = 5
 private const val TAB_SETTINGS = 6
 
@@ -141,6 +141,7 @@ fun App() {
                         1 -> BrowseScreen(Graph.browseMovies, ::open)
                         2 -> BrowseScreen(Graph.browseTv, ::open)
                         3 -> FavoritesScreen(::open)
+                        7 -> BrowseScreen(Graph.browseAnime, ::open)
                         4 -> DiceScreen(Graph.dice, ::open)
                         TAB_SEARCH -> SearchScreen(Graph.search, ::open)
                         else -> SettingsScreen()

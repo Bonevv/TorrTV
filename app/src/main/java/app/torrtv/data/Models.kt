@@ -49,6 +49,12 @@ data class Detail(
 
 /** Статични имена на жанровете - без излишни заявки към мрежата. */
 object Genres {
+    /** Жанровете за раздел "Аниме": без Анимация (тя вече е в основата) и без неподходящите. */
+    fun forAnime(type: MediaType): List<Genre> {
+        val skip = setOf(16, 99, 10764, 10766, 10767, 10763, 10762, 37, 10402)
+        return forType(type).filter { it.id !in skip }
+    }
+
     val movie: List<Genre> = listOf(
         Genre(28, "Екшън"), Genre(12, "Приключенски"), Genre(16, "Анимация"), Genre(35, "Комедия"),
         Genre(80, "Криминален"), Genre(99, "Документален"), Genre(18, "Драма"), Genre(10751, "Семеен"),

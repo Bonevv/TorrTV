@@ -54,6 +54,7 @@ object Graph {
     val home by lazy { HomeState() }
     val browseMovies by lazy { BrowseState(MediaType.MOVIE) }
     val browseTv by lazy { BrowseState(MediaType.TV) }
+    val browseAnime by lazy { BrowseState(MediaType.TV, forceAnime = true) }
     val search by lazy { SearchState() }
     val dice by lazy { DiceState() }
 }

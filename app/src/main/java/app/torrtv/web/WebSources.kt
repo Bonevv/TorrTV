@@ -18,7 +18,18 @@ object WebSources {
         "https://vidspark.to/movie/{tmdb}",
         "https://vidsrc.me/embed/movie/{tmdb}",
         "https://vsembed.ru/embed/movie/{tmdb}",
-        "https://yapgrid.com/embed/movie/{tmdb}"
+        "https://yapgrid.com/embed/movie/{tmdb}",
+        "https://autoembed.co/movie/tmdb/{tmdb}",
+        "https://embedwave.cc/embed/movie/{tmdb}",
+        "https://primesrc.me/embed/movie?tmdb={tmdb}",
+        "https://embed.vidsrc.pk/movie/{tmdb}",
+        "https://embed.vidrift.net/embed/movie/{tmdb}",
+        "https://cinesrc.st/embed/movie/{tmdb}",
+        "https://vidfast.to/embed/movie/{tmdb}",
+        "https://player.videasy.ws/embed/movie/{tmdb}",
+        "https://stellar.rip/en/watch/embed/movie/{tmdb}",
+        "https://flix.screenscape.me/embed?tmdb={tmdb}&type=movie",
+        "https://vidy.st/movie/{tmdb}"
     )
 
     val defaultTv = listOf(
@@ -28,7 +39,18 @@ object WebSources {
         "https://vidspark.to/tv/{tmdb}/{season}/{episode}",
         "https://vidsrc.me/embed/tv/{tmdb}/{season}/{episode}",
         "https://vsembed.ru/embed/tv/{tmdb}/{season}/{episode}",
-        "https://yapgrid.com/embed/tv/{tmdb}/{season}/{episode}"
+        "https://yapgrid.com/embed/tv/{tmdb}/{season}/{episode}",
+        "https://autoembed.co/tv/tmdb/{tmdb}-{season}-{episode}",
+        "https://embedwave.cc/embed/tv/{tmdb}/{season}/{episode}",
+        "https://primesrc.me/embed/tv?tmdb={tmdb}&season={season}&episode={episode}",
+        "https://embed.vidsrc.pk/tv/{tmdb}/{season}/{episode}",
+        "https://embed.vidrift.net/embed/tv/{tmdb}/{season}/{episode}",
+        "https://cinesrc.st/embed/tv/{tmdb}?s={season}&e={episode}",
+        "https://vidfast.to/embed/tv/{tmdb}/{season}/{episode}",
+        "https://player.videasy.ws/embed/tv/{tmdb}/{season}/{episode}",
+        "https://stellar.rip/en/watch/embed/tv/{tmdb}-{season}-{episode}",
+        "https://flix.screenscape.me/embed?tmdb={tmdb}&type=tv&s={season}&e={episode}",
+        "https://vidy.st/tv/{tmdb}/{season}/{episode}"
     )
 
     /** Един ред - един шаблон; празните редове и коментарите (#) се прескачат. */

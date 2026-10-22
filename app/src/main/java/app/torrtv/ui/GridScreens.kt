@@ -1,5 +1,6 @@
 package app.torrtv.ui
 
+import app.torrtv.data.MediaType
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -109,19 +110,23 @@ fun PosterGrid(
     }
 }
 
-/** Филми и Сериали: вляво панел с подредба, "Аниме" и жанрове, вдясно мрежа с плакати. */
+/** Филми, Сериали и Аниме: вляво панел с подредба и жанрове, вдясно мрежа с плакати. */
 @Composable
 fun BrowseScreen(st: BrowseState, onOpen: (Media) -> Unit) {
     val sorts = listOf("Популярни", "Най-нови", "Най-високо оценени")
     // Пролуката е малка, защото мрежата има свой отстъп (12): блясъкът на фокусирания плакат не се отрязва.
     Row(Modifier.fillMaxSize().padding(start = 36.d, end = 36.d, bottom = 14.d), horizontalArrangement = Arrangement.spacedBy(6.d)) {
         SidePanel {
+            if (st.forceAnime) {
+                item(key = "tm") { SideTab("Филми", "", st.type == MediaType.MOVIE) { st.changeType(MediaType.MOVIE) } }
+                item(key = "ts") { SideTab("Сериали", "", st.type == MediaType.TV) { st.changeType(MediaType.TV) } }
+                panelDivider("tdiv")
+            }
             items(sorts.size, key = { "s$it" }) { i -> SideTab(sorts[i], "", st.sort == i) { st.apply(st.genre, i) } }
-            panelDivider("adiv")
-            item(key = "anime") { SideTab("Аниме", if (st.anime) "вкл." else "", st.anime) { st.apply(st.genre, st.sort, !st.anime) } }
             panelDivider("gdiv")
             item(key = "all") { SideTab("Всички жанрове", "", st.genre == null) { st.apply(null, st.sort) } }
-            items(Genres.forType(st.type), key = { "g" + it.id }) { g -> SideTab(g.name, "", st.genre == g.id) { st.apply(g.id, st.sort) } }
+            val genres = if (st.forceAnime) Genres.forAnime(st.type) else Genres.forType(st.type)
+            items(genres, key = { "g" + it.id }) { g -> SideTab(g.name, "", st.genre == g.id) { st.apply(g.id, st.sort) } }
         }
         PosterGrid(
             st.paged, st.gridState, { st.focusKey }, { st.focusKey = it }, onOpen,
