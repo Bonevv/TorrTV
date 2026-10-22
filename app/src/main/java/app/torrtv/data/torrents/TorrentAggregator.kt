@@ -13,9 +13,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 class TorrentAggregator(private val prefs: Prefs) {
 
     private val builtIn: List<TorrentSource> = listOf(
-        Apibay(prefs), Yts(prefs), Eztv(prefs), Nyaa(prefs), Knaben(prefs), TorrentsCsv(prefs), Bitsearch(prefs),
-        // Magnetz: безплатно JSON API без ключ (25 резултата на страница). Полетата са по документацията му.
-        GenericSite("magnetz", "Magnetz", "https://magnetz.eu/api/magnets/search?query={q}", "json", "data", "name", "info_hash", "magnet_link", "seeders", "size"),
+        Apibay(prefs), Yts(prefs), Eztv(prefs), Nyaa(prefs), Knaben(prefs), TorrentsCsv(prefs),
         StremioAddon("torrentsdb", "TorrentsDB") { baseUrl(prefs.domTorrentsdb, "https://torrentsdb.com") },
         StremioAddon("torrentio", "Torrentio") { baseUrl(prefs.domTorrentio, "https://torrentio.strem.fun") }
     )
@@ -28,7 +26,7 @@ class TorrentAggregator(private val prefs: Prefs) {
                 setOf("torrentsdb.com", "torrentio.strem.fun",
                     StremioAddon.hostOf(baseUrl(prefs.domTorrentsdb, "https://torrentsdb.com")),
                     StremioAddon.hostOf(baseUrl(prefs.domTorrentio, "https://torrentio.strem.fun")))
-            ) + GenericSite.parseAll(prefs.sitesSrc)
+            ) + GenericSite.effective(prefs.sitesSrc)
 
     /** Тези, които се показват и в които се търси: без изключените за всички от услугата. */
     val sources: List<TorrentSource>

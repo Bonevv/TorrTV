@@ -71,7 +71,7 @@ class GenericSite(
     private fun jsonRows(body: String): List<Raw> {
         val t = body.trim()
         val arr: JSONArray = if (list.isBlank()) {
-            if (t.startsWith("[")) JSONArray(t) else throw IllegalStateException("отговорът не е списък")
+            if (t.startsWith("[")) JSONArray(t) else findList(JSONObject(t)) ?: throw IllegalStateException("отговорът не е списък")
         } else {
             var node: Any? = if (t.startsWith("[")) JSONArray(t) else JSONObject(t)
             for (seg in list.split('.')) node = (node as? JSONObject)?.opt(seg)
@@ -91,6 +91,16 @@ class GenericSite(
             )
         }
         return out
+    }
+
+    /** Без посочен път: масивът е на обичайните места (results, data, data.results, torrents, items). */
+    private fun findList(o: JSONObject): JSONArray? {
+        for (path in listOf("results", "data", "data.results", "torrents", "items", "data.torrents")) {
+            var n: Any? = o
+            for (seg in path.split('.')) n = (n as? JSONObject)?.opt(seg)
+            if (n is JSONArray) return n
+        }
+        return null
     }
 
     private fun rssRows(body: String): List<Raw> {
@@ -114,6 +124,16 @@ class GenericSite(
     }
 
     companion object {
+        /** Стандартните свои сайтове: ползват се, когато профилът няма свой списък (в панела са зад бутона "Стандартни"). */
+        val defaultLines = listOf(
+            "Magnetz|https://magnetz.eu/api/magnets/search?query={q}|json|data|name|info_hash|magnet_link|seeders|size",
+            "Bitsearch|https://bitsearch.eu/api/v1/search?q={q}|json"
+        )
+
+        /** Сайтовете от настройките; празният списък дава стандартните. */
+        fun effective(text: String): List<GenericSite> =
+            parseAll(if (text.isBlank()) defaultLines.joinToString("\n") else text)
+
         private val HASH_RE = Regex("[0-9a-f]{40}")
 
         private fun jsonGet(o: JSONObject, path: String): String {

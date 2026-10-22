@@ -80,6 +80,8 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
     val playFocus = remember { FocusRequester() }
     var quality by remember(st) { mutableStateOf("all") }
     var site by remember(st) { mutableStateOf("all") }
+    var pickSite by remember(st) { mutableStateOf(false) }
+    var pickQuality by remember(st) { mutableStateOf(false) }
     var tab by remember(st) { mutableStateOf(if (st.type == MediaType.TV) TAB_EPS else TAB_TOR) }
     val ctx = androidx.compose.ui.platform.LocalContext.current
 
@@ -150,6 +152,17 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
             !it.nextUp && (d.media.type == MediaType.MOVIE || (it.season == st.season && it.episode == st.episode))
         }
 
+        if (pickSite) PickDialog(
+            "Сайт",
+            listOf(PickOption("all", "Всички сайтове", "${st.torrents.size}")) + siteList.map { PickOption(it.first, it.first, "${it.second}") },
+            siteSel, { site = it; pickSite = false }, { pickSite = false }
+        )
+        if (pickQuality) PickDialog(
+            "Качество",
+            qOptions.map { q -> PickOption(q, if (q == "all") "Всички" else q, "${if (q == "all") st.torrents.size else st.torrents.count { it.quality == q }}") },
+            qSel, { quality = it; pickQuality = false }, { pickQuality = false }
+        )
+
         Column(Modifier.fillMaxSize()) {
             // Горната част е извън всеки списък: нищо не я плъзга, затова заглавието винаги се вижда.
             DetailHeader(st, d, best, pr, playFocus, onPlay) { tab = TAB_WEB }
@@ -176,13 +189,13 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
                             FilterButton(
                                 "Качество",
                                 if (qSel == "all") "Всички · ${st.torrents.size}" else "$qSel · ${st.torrents.count { it.quality == qSel }}"
-                            ) { quality = nextOption(qOptions, qSel) }
+                            ) { pickQuality = true }
                         }
                         if (siteList.size > 1) item(key = "fs") {
                             FilterButton(
                                 "Сайт",
                                 if (siteSel == "all") "Всички сайтове" else "$siteSel · ${siteList.firstOrNull { it.first == siteSel }?.second ?: 0}"
-                            ) { site = nextOption(listOf("all") + siteList.map { it.first }, siteSel) }
+                            ) { pickSite = true }
                         }
                     }
                     if (st.subResults.isNotEmpty() || st.subStatus.isNotEmpty() || st.subSearching) {
