@@ -13,7 +13,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 class TorrentAggregator(private val prefs: Prefs) {
 
     private val builtIn: List<TorrentSource> = listOf(
-        Apibay(prefs), Yts(prefs), Eztv(prefs), Nyaa(prefs), Knaben(prefs), TorrentsCsv(prefs),
+        Apibay(prefs), Yts(prefs), Eztv(prefs), Nyaa(prefs), Knaben(prefs), TorrentsCsv(prefs), Bitsearch(prefs),
         StremioAddon("torrentsdb", "TorrentsDB") { baseUrl(prefs.domTorrentsdb, "https://torrentsdb.com") },
         StremioAddon("torrentio", "Torrentio") { baseUrl(prefs.domTorrentio, "https://torrentio.strem.fun") }
     )

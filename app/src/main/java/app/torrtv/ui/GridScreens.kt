@@ -45,6 +45,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.torrtv.data.Genres
+import app.torrtv.data.Platforms
 import app.torrtv.data.Media
 import app.torrtv.state.BrowseState
 import app.torrtv.state.Graph
@@ -123,6 +124,12 @@ fun BrowseScreen(st: BrowseState, onOpen: (Media) -> Unit) {
                 panelDivider("tdiv")
             }
             items(sorts.size, key = { "s$it" }) { i -> SideTab(sorts[i], "", st.sort == i) { st.apply(st.genre, i) } }
+            if (!st.forceAnime) {
+                panelDivider("pdiv")
+                item(key = "pall") { SideTab("Всички платформи", "", st.provider == null) { st.pickProvider(null) } }
+                items(Platforms.all, key = { "p" + it.id }) { pl -> SideTab(pl.name, "", st.provider == pl.id) { st.pickProvider(pl.id) } }
+                if (st.provider != null) item(key = "jw") { Text2("Данни: JustWatch", 10, C.dim, FontWeight.Normal, 1, Modifier.padding(start = 14.d, top = 2.d)) }
+            }
             panelDivider("gdiv")
             item(key = "all") { SideTab("Всички жанрове", "", st.genre == null) { st.apply(null, st.sort) } }
             val genres = if (st.forceAnime) Genres.forAnime(st.type) else Genres.forType(st.type)

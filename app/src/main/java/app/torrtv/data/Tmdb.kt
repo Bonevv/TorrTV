@@ -147,7 +147,8 @@ class Tmdb(private val prefs: Prefs, diskDir: File? = null) {
         minVotes: Int,
         minRating: Double,
         anime: Boolean = false,
-        withoutGenre: Int? = null
+        withoutGenre: Int? = null,
+        provider: Int? = null
     ): Page<Media> {
         val p = LinkedHashMap<String, String>()
         p["page"] = page.toString()
@@ -160,6 +161,12 @@ class Tmdb(private val prefs: Prefs, diskDir: File? = null) {
         if (genres.isNotEmpty()) p["with_genres"] = genres.joinToString(",")
         if (anime) p["with_original_language"] = "ja"
         if (withoutGenre != null) p["without_genres"] = withoutGenre.toString()
+        // Платформа: само каквото се предлага с абонамент в България (данните на TMDB идват от JustWatch).
+        if (provider != null) {
+            p["with_watch_providers"] = provider.toString()
+            p["watch_region"] = "BG"
+            p["with_watch_monetization_types"] = "flatrate"
+        }
         return parsePage(call("/discover/${type.path}", p), type)
     }
 

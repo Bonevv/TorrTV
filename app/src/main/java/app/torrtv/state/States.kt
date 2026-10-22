@@ -170,6 +170,7 @@ class BrowseState(initialType: MediaType, val forceAnime: Boolean = false) {
     var genre by mutableStateOf<Int?>(null)
     var sort by mutableStateOf(0) // 0 популярни, 1 най-нови, 2 най-високо оценени
     var anime by mutableStateOf(forceAnime)
+    var provider by mutableStateOf<Int?>(null)
     var paged by mutableStateOf(make())
     val gridState = LazyGridState()
     var focusKey: String? = null
@@ -178,11 +179,19 @@ class BrowseState(initialType: MediaType, val forceAnime: Boolean = false) {
 
     private suspend fun fetchPage(p: Int): Page<Media> {
         val movie = type == MediaType.MOVIE
+        val pv = provider
+        // Каталозите на платформите са по-малки: с по-нисък праг на гласовете, за да не остане списъкът почти празен.
         return when (sort) {
-            1 -> Graph.tmdb.discover(type, genre, p, if (movie) "primary_release_date.desc" else "first_air_date.desc", 40, 0.0, anime)
-            2 -> Graph.tmdb.discover(type, genre, p, "vote_average.desc", if (anime) 250 else 600, 0.0, anime)
-            else -> Graph.tmdb.discover(type, genre, p, "popularity.desc", 60, 0.0, anime)
+            1 -> Graph.tmdb.discover(type, genre, p, if (movie) "primary_release_date.desc" else "first_air_date.desc", if (pv != null) 10 else 40, 0.0, anime, null, pv)
+            2 -> Graph.tmdb.discover(type, genre, p, "vote_average.desc", if (pv != null) 150 else if (anime) 250 else 600, 0.0, anime, null, pv)
+            else -> Graph.tmdb.discover(type, genre, p, "popularity.desc", if (pv != null) 20 else 60, 0.0, anime, null, pv)
         }
+    }
+
+    fun pickProvider(id: Int?) {
+        if (provider == id) return
+        provider = id
+        paged = make()
     }
 
     /** Само за раздел "Аниме": смяна между филми и сериали (жанрът започва отначало). */

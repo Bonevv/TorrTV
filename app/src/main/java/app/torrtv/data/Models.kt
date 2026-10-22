@@ -48,6 +48,16 @@ data class Detail(
 )
 
 /** Статични имена на жанровете - без излишни заявки към мрежата. */
+/** Най-известните платформи (номерата са на TMDB / JustWatch). */
+object Platforms {
+    class Platform(val id: Int, val name: String)
+
+    val all: List<Platform> = listOf(
+        Platform(8, "Netflix"), Platform(1899, "HBO Max"), Platform(350, "Apple TV+"),
+        Platform(337, "Disney+"), Platform(9, "Prime Video"), Platform(531, "Paramount+")
+    )
+}
+
 object Genres {
     /** Жанровете за раздел "Аниме": без Анимация (тя вече е в основата) и без неподходящите. */
     fun forAnime(type: MediaType): List<Genre> {
