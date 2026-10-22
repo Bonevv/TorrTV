@@ -48,14 +48,37 @@ data class Detail(
 )
 
 /** Статични имена на жанровете - без излишни заявки към мрежата. */
-/** Най-известните платформи (номерата са на TMDB / JustWatch). */
+/** Най-известните платформи. Кои от тях има в България и с какви номера, се взема от TMDB (виж [resolve]). */
 object Platforms {
-    class Platform(val id: Int, val name: String)
+    /** [id] е един или няколко номера на TMDB, разделени с "|" (платформата има и вариант с реклами). */
+    class Platform(val id: String, val name: String)
 
-    val all: List<Platform> = listOf(
-        Platform(8, "Netflix"), Platform(1899, "HBO Max"), Platform(350, "Apple TV+"),
-        Platform(337, "Disney+"), Platform(9, "Prime Video"), Platform(531, "Paramount+")
+    /** Ако списъкът за България не може да се вземе. */
+    val fallback: List<Platform> = listOf(
+        Platform("8", "Netflix"), Platform("1899", "HBO Max"), Platform("350", "Apple TV+"), Platform("337", "Disney+")
     )
+
+    private class Want(val name: String, val re: Regex)
+
+    private val wanted = listOf(
+        Want("Netflix", Regex("^netflix$")),
+        Want("HBO Max", Regex("^(hbo max|max)$")),
+        Want("Apple TV+", Regex("^apple tv( plus|\\+)?$")),
+        Want("Disney+", Regex("^disney( plus|\\+)$")),
+        Want("Prime Video", Regex("^(amazon )?prime video( with ads)?$")),
+        Want("SkyShowtime", Regex("^skyshowtime$")),
+        Want("Paramount+", Regex("^paramount( plus|\\+)$"))
+    )
+
+    /** [providers] - (номер, име) от TMDB за България. Връща само познатите платформи, които ги има там. */
+    fun resolve(providers: List<Pair<Int, String>>): List<Platform> {
+        val out = ArrayList<Platform>()
+        for (w in wanted) {
+            val ids = providers.filter { w.re.matches(it.second.trim().lowercase(java.util.Locale.ROOT)) }.map { it.first }.distinct()
+            if (ids.isNotEmpty()) out.add(Platform(ids.joinToString("|"), w.name))
+        }
+        return out
+    }
 }
 
 object Genres {

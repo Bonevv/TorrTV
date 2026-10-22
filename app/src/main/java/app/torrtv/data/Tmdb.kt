@@ -148,7 +148,7 @@ class Tmdb(private val prefs: Prefs, diskDir: File? = null) {
         minRating: Double,
         anime: Boolean = false,
         withoutGenre: Int? = null,
-        provider: Int? = null
+        provider: String? = null
     ): Page<Media> {
         val p = LinkedHashMap<String, String>()
         p["page"] = page.toString()
@@ -163,11 +163,22 @@ class Tmdb(private val prefs: Prefs, diskDir: File? = null) {
         if (withoutGenre != null) p["without_genres"] = withoutGenre.toString()
         // Платформа: само каквото се предлага с абонамент в България (данните на TMDB идват от JustWatch).
         if (provider != null) {
-            p["with_watch_providers"] = provider.toString()
+            p["with_watch_providers"] = provider
             p["watch_region"] = "BG"
             p["with_watch_monetization_types"] = "flatrate"
         }
         return parsePage(call("/discover/${type.path}", p), type)
+    }
+
+    /** Платформите, които TMDB (JustWatch) познава за България: (номер, име). */
+    suspend fun watchProviders(type: MediaType): List<Pair<Int, String>> {
+        val arr = call("/watch/providers/${type.path}", mapOf("watch_region" to "BG")).optJSONArray("results") ?: return emptyList()
+        val out = ArrayList<Pair<Int, String>>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            out.add(o.optInt("provider_id") to o.optString("provider_name"))
+        }
+        return out
     }
 
     suspend fun search(query: String, page: Int): Page<Media> =

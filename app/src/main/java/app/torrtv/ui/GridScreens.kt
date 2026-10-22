@@ -45,7 +45,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.torrtv.data.Genres
-import app.torrtv.data.Platforms
+import app.torrtv.state.PlatformCatalog
 import app.torrtv.data.Media
 import app.torrtv.state.BrowseState
 import app.torrtv.state.Graph
@@ -114,6 +114,7 @@ fun PosterGrid(
 /** Филми, Сериали и Аниме: вляво панел с подредба и жанрове, вдясно мрежа с плакати. */
 @Composable
 fun BrowseScreen(st: BrowseState, onOpen: (Media) -> Unit) {
+    LaunchedEffect(Unit) { if (!st.forceAnime) PlatformCatalog.ensure() }
     val sorts = listOf("Популярни", "Най-нови", "Най-високо оценени")
     // Пролуката е малка, защото мрежата има свой отстъп (12): блясъкът на фокусирания плакат не се отрязва.
     Row(Modifier.fillMaxSize().padding(start = 36.d, end = 36.d, bottom = 14.d), horizontalArrangement = Arrangement.spacedBy(6.d)) {
@@ -127,7 +128,7 @@ fun BrowseScreen(st: BrowseState, onOpen: (Media) -> Unit) {
             if (!st.forceAnime) {
                 panelDivider("pdiv")
                 item(key = "pall") { SideTab("Всички платформи", "", st.provider == null) { st.pickProvider(null) } }
-                items(Platforms.all, key = { "p" + it.id }) { pl -> SideTab(pl.name, "", st.provider == pl.id) { st.pickProvider(pl.id) } }
+                items(PlatformCatalog.list, key = { "p" + it.id }) { pl -> SideTab(pl.name, "", st.provider == pl.id) { st.pickProvider(pl.id) } }
                 if (st.provider != null) item(key = "jw") { Text2("Данни: JustWatch", 10, C.dim, FontWeight.Normal, 1, Modifier.padding(start = 14.d, top = 2.d)) }
             }
             panelDivider("gdiv")

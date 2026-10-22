@@ -165,12 +165,33 @@ object RowWarmUp {
     fun count(lastVisibleRow: Int, total: Int): Int = minOf(total, maxOf(lastVisibleRow, -1) + 1 + AHEAD)
 }
 
+/** Платформите за избор: взимат се веднъж от TMDB за България; докато не се вземат (или при грешка) - кратък стандартен списък. */
+object PlatformCatalog {
+    var list by mutableStateOf(app.torrtv.data.Platforms.fallback)
+    private var loaded = false
+
+    suspend fun ensure() {
+        if (loaded) return
+        try {
+            val all = Graph.tmdb.watchProviders(MediaType.MOVIE) + Graph.tmdb.watchProviders(MediaType.TV)
+            val r = app.torrtv.data.Platforms.resolve(all)
+            if (r.isNotEmpty()) {
+                list = r
+                loaded = true
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+        }
+    }
+}
+
 class BrowseState(initialType: MediaType, val forceAnime: Boolean = false) {
     var type by mutableStateOf(initialType)
     var genre by mutableStateOf<Int?>(null)
     var sort by mutableStateOf(0) // 0 популярни, 1 най-нови, 2 най-високо оценени
     var anime by mutableStateOf(forceAnime)
-    var provider by mutableStateOf<Int?>(null)
+    var provider by mutableStateOf<String?>(null)
     var paged by mutableStateOf(make())
     val gridState = LazyGridState()
     var focusKey: String? = null
@@ -188,7 +209,7 @@ class BrowseState(initialType: MediaType, val forceAnime: Boolean = false) {
         }
     }
 
-    fun pickProvider(id: Int?) {
+    fun pickProvider(id: String?) {
         if (provider == id) return
         provider = id
         paged = make()
