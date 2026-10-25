@@ -131,13 +131,14 @@ class TorrentClient(private val app: Application) {
     }
 
     /** Започва стрийма на избрания файл; връща къде е локалният сървър. */
-    suspend fun play(index: Int, windowMb: Int = 0): Started {
+    suspend fun play(index: Int, windowMb: Int = 0, runtimeMin: Int = 0): Started {
         val d = CompletableDeferred<Started>()
         startedWait = d
         live = null
         post(Proto.C_PLAY) {
             putInt("index", index)
             putInt("window", windowMb)
+            putInt("runtime", runtimeMin)
         }
         return within(40_000, "Файлът не стартира навреме") { d.await() }
     }

@@ -206,10 +206,13 @@ class TorrentEngine(val baseDir: File, val profile: Int = 0) {
             }
         }
 
-    /** windowMb = 0: класически режим (целият файл се тегли); иначе - най-много толкова MB напред от позицията. */
-    fun startStream(meta: MetaSession, fileIndex: Int, windowMb: Int = 0): StreamSession {
+    /**
+     * windowMb = 0: класически режим (целият файл се тегли); иначе - най-много толкова MB напред от позицията.
+     * runtimeMin: дължина на видеото (0 = не се знае) - по нея се смятат сроковете на парчетата.
+     */
+    fun startStream(meta: MetaSession, fileIndex: Int, windowMb: Int = 0, runtimeMin: Int = 0): StreamSession {
         val f = meta.files.first { it.index == fileIndex }
-        return StreamSession(this, meta, f, useDeadlines, windowMb)
+        return StreamSession(this, meta, f, useDeadlines, windowMb, PieceDeadlines.bytesPerSec(f.size, runtimeMin))
     }
 }
 
@@ -218,7 +221,9 @@ class StreamSession internal constructor(
     private val meta: MetaSession,
     val file: TFile,
     private val deadlines: Boolean,
-    private val windowMb: Int = 0
+    private val windowMb: Int = 0,
+    /** Колко байта в секунда иска видеото (за сроковете на парчетата). */
+    bytesPerSec: Long = PieceDeadlines.DEFAULT_BPS
 ) : LocalServer.Content {
 
     private val h = meta.handle
@@ -230,6 +235,12 @@ class StreamSession internal constructor(
     private val tail: List<Int>
     private var raf: RandomAccessFile? = null
     private var lastWindow = -1000
+
+    /** Половината от времето, което едно парче покрива при гледане. */
+    private val stepMs = PieceDeadlines.stepMs(pieceLen, bytesPerSec)
+
+    /** Подреждането на парчетата става от една нишка наведнъж (след превъртане четат две връзки). */
+    private val prioLock = Any()
 
     /** Само при ограничен режим: кои парчета вече са разрешени за теглене. */
     private val limited = windowMb > 0
@@ -252,9 +263,9 @@ class StreamSession internal constructor(
         }
     }
 
-    /** Спешно: време (deadline) или най-висок приоритет, според режима. */
-    private fun urgent(piece: Int, rank: Int) {
-        if (deadlines) h.setPieceDeadline(piece, 100 + rank * 150) else h.piecePriority(piece, Priority.TOP_PRIORITY)
+    /** Спешно: срок в мс (deadline) или най-висок приоритет, според режима. */
+    private fun urgent(piece: Int, deadlineMs: Int) {
+        if (deadlines) h.setPieceDeadline(piece, deadlineMs) else h.piecePriority(piece, Priority.TOP_PRIORITY)
     }
 
     init {
@@ -269,10 +280,11 @@ class StreamSession internal constructor(
         head = (firstPiece..min(lastPiece, firstPiece + headCount - 1)).toList()
         tail = (max(firstPiece, lastPiece - tailCount + 1)..lastPiece).toList()
         // Началото (за старта) и краят (MP4/MKV индексите) са най-спешни.
-        head.forEachIndexed { i, p -> urgent(p, i) }
+        head.forEachIndexed { i, p -> urgent(p, PieceDeadlines.start(i)) }
         trace("init: началото е насрочено (${head.size} парчета)")
-        tail.forEachIndexed { i, p -> urgent(p, i + 1) }
+        tail.forEachIndexed { i, p -> urgent(p, PieceDeadlines.start(i + 1)) }
         trace("init: краят е насрочен (${tail.size} парчета), деадлайни=$deadlines")
+        trace("init: видеото иска ${bytesPerSec / 1024} KB/s, парче ${pieceLen / 1024} KB, срок по $stepMs ms на парче")
         if (limited) {
             // Всичко извън началото и края е забранено за теглене; прозорецът се отваря напред, докато се гледа.
             allowed = BooleanArray(lastPiece - firstPiece + 1)
@@ -349,21 +361,48 @@ class StreamSession internal constructor(
         }
     }
 
-    /** Подрежда следващите ~24 MB след позицията на плеъра като най-спешни. */
+    /** Колко парчета (около 24 MB) пред позицията на плеъра са спешни. */
+    private val window = max(6, min(40, ((24L * 1024 * 1024) / pieceLen).toInt()))
+
+    /**
+     * Подрежда следващите ~24 MB след позицията на плеъра като най-спешни.
+     * При скок (превъртане, продължаване от запазено място) старите спешни парчета се отменят,
+     * за да не се теглят преди новото място.
+     */
     private fun prioritize(posInFile: Long) {
-        val p0 = ((file.offset + posInFile) / pieceLen).toInt()
-        if (p0 == lastWindow) return
-        val window = max(6, min(40, ((24L * 1024 * 1024) / pieceLen).toInt()))
-        openWindow(p0)
-        try {
-            for (i in 0 until window) {
-                val p = p0 + i
-                if (p > lastPiece) break
-                if (!h.havePiece(p)) urgent(p, i)
+        synchronized(prioLock) {
+            val p0 = ((file.offset + posInFile) / pieceLen).toInt()
+            if (p0 == lastWindow) return
+            openWindow(p0)
+            try {
+                val missing = ArrayList<Int>(window)
+                for (i in 0 until window) {
+                    val p = p0 + i
+                    if (p > lastPiece) break
+                    if (!h.havePiece(p)) missing.add(p)
+                }
+                val old = lastWindow
+                val jumped = old >= 0 && (p0 < old || p0 > old + window)
+                // Ако новото място вече е изтеглено (напр. плеърът чете края на файла), нищо не се разбърква.
+                if (jumped && missing.isNotEmpty()) forget(old, p0)
+                for (p in missing) urgent(p, PieceDeadlines.ahead(p - p0, stepMs))
+            } catch (_: Exception) {
             }
-        } catch (_: Exception) {
+            lastWindow = p0
         }
-        lastWindow = p0
+    }
+
+    /** Отменя спешността на парчетата около старото място old (новото е от p0 нататък). */
+    private fun forget(old: Int, p0: Int) {
+        AppLog.d("ss", "скок от парче $old на $p0: старите спешни парчета се отменят")
+        if (deadlines) {
+            h.clearPieceDeadlines()
+            return
+        }
+        for (p in max(firstPiece, old)..min(lastPiece, old + window)) {
+            if (p >= p0 && p < p0 + window) continue
+            if (!h.havePiece(p)) h.piecePriority(p, Priority.DEFAULT)
+        }
     }
 
     private fun waitPiece(p: Int) {

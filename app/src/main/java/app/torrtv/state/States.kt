@@ -652,6 +652,9 @@ class DetailState(val type: MediaType, val id: Int, private val deferTorrents: B
         val epName = if (type == MediaType.TV) {
             NextEpisode.label(season, episode, episodes.firstOrNull { it.number == episode }?.name.orEmpty())
         } else ""
+        val runtimeMin = if (type == MediaType.TV) {
+            episodes.firstOrNull { it.number == episode }?.runtime?.takeIf { it > 0 } ?: (d?.runtime ?: 0)
+        } else d?.runtime ?: 0
         return StreamController.Req(
             magnet = magnet,
             title = title,
@@ -667,7 +670,8 @@ class DetailState(val type: MediaType, val id: Int, private val deferTorrents: B
             resumeMs = resumeMs,
             allSubs = all.take(40),
             fitTitle = fitTitle,
-            next = if (t != null) nextTarget()?.let { nt -> StreamController.NextEp(nt.label, nt.season, nt.episode) { nextRequest(t) } } else null
+            next = if (t != null) nextTarget()?.let { nt -> StreamController.NextEp(nt.label, nt.season, nt.episode) { nextRequest(t) } } else null,
+            runtimeMin = runtimeMin
         )
     }
 }

@@ -30,6 +30,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -53,6 +54,10 @@ import app.torrtv.torrent.StreamController
 import app.torrtv.torrent.LocalSub
 import app.torrtv.web.PlayerRemote
 import kotlin.concurrent.thread
+
+/** Колко чака вграденият плеър локалния торент сървър: свързване и всяко четене. */
+private const val TORRENT_CONNECT_MS = 10_000
+private const val TORRENT_READ_MS = 30_000
 
 @androidx.annotation.OptIn(UnstableApi::class)
 /** Вграденият плеър: ExoPlayer, който чете от локалния HTTP сървър на торент стрийма. */
@@ -234,6 +239,13 @@ class PlayerActivity : AppCompatActivity() {
                 .setDefaultRequestProperties(props)
             if (ua != null) http.setUserAgent(ua)
             builder.setMediaSourceFactory(DefaultMediaSourceFactory(this).setDataSourceFactory(http))
+        } else if (pb.url.startsWith("http://127.0.0.1")) {
+            // Торент поток: локалният сървър чака, докато парчето се изтегли. Плеърът чака до 30 сек.
+            // (вместо стандартните 8), така че при бавен торент показва „Зареждане“, а не прекъсва и дава грешка.
+            val http = DefaultHttpDataSource.Factory()
+                .setConnectTimeoutMs(TORRENT_CONNECT_MS)
+                .setReadTimeoutMs(TORRENT_READ_MS)
+            builder.setMediaSourceFactory(DefaultMediaSourceFactory(this).setDataSourceFactory(DefaultDataSource.Factory(this, http)))
         }
         val p = builder.build()
         player = p

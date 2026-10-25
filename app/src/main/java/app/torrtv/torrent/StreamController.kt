@@ -67,7 +67,9 @@ class StreamController(
         /** Името на торента, с което се сравнява изданието на субтитрите (празно за уеб поток). */
         val fitTitle: String? = null,
         /** Следващият епизод на сериала (null за филм, последен епизод или уеб поток). */
-        val next: NextEp? = null
+        val next: NextEp? = null,
+        /** Дължина на филма / епизода в минути (0 = не се знае) - по нея се смятат сроковете на парчетата. */
+        val runtimeMin: Int = 0
     )
 
     enum class Stage { IDLE, CONNECTING, METADATA, PICK_FILE, BUFFERING, READY, ERROR }
@@ -305,7 +307,7 @@ class StreamController(
         if (files.isEmpty()) throw IOException("В торента няма видео файл")
 
         val idx = chooseFile(req, files)
-        val started = client.play(idx, Graph.prefs.streamWindowMb)
+        val started = client.play(idx, Graph.prefs.streamWindowMb, req.runtimeMin)
         server.start()
         AppLog.d("stream", "файл: ${started.name} (${started.size / 1048576} MB)")
         ui = ui.copy(stage = Stage.BUFFERING, fileName = started.name, message = "Буфериране…")
