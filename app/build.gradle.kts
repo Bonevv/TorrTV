@@ -51,8 +51,10 @@ android {
 
     buildTypes {
         release {
-            // R8 чупи JNI на libtorrent4j, а APK-то така е достатъчно малко.
-            isMinifyEnabled = false
+            // R8 маха неизползвания код и оптимизира останалия: по-плавни екрани и по-малък APK.
+            // proguard-rules.pro пази торент двигателя (вика Java частите по име от C++).
+            isMinifyEnabled = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             val rel = signingConfigs.getByName("release")
             // Локално може unsigned release; публикуваните издания винаги изискват постоянния release ключ.
             signingConfig = if (rel.storeFile != null) rel else null
