@@ -24,6 +24,13 @@ class WebSeriesResolverTest {
         assertEquals(12,MovieEpisodes.number("example-3x12/"))
         assertEquals(-1,MovieEpisodes.season("A show 2025 season-42755"))
     }
+    @Test fun nullAndInvalidProviderIdsDoNotHideOtherwiseMatchingSeries() {
+        val json="""{"data":[{"title":"Example Season 1","slug":"example-season-1","year":2020,"type":"series","tmdb_id":"null","imdb_id":"null","isBgAudio":false}]}"""
+        val doc=org.jsoup.nodes.Document.createShell("https://cdn.filmi9.com/movies/?type=series");doc.body().text(json)
+        val e=MovieSources.parse(MovieSources.Provider.NINE,doc).entries.single()
+        assertEquals("",e.tmdb);assertEquals("",e.imdb)
+        assertTrue(BgWebIndex.matches(media,e))
+    }
     @Test fun jsonSeasonsKeepTheirOwnEpisodesPlayersAndAudio()=runBlocking {
         val html="""<script>{"movie":{"title":"Example Season 2","isBgAudio":true,"episodes":[{"episodeNumber":1,"videoUrl":"https://player.example.com/s2e1"}]},"seasons":[{"title":"Example Season 1","slug":"example-season-1","year":2020,"isBgAudio":false,"episodes":[{"episodeNumber":2,"videoUrl":"https://player.example.com/s1e2"}]}]}</script>"""
         val resolver=WebSeriesResolver({html})

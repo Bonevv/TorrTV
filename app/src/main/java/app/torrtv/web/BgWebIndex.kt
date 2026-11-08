@@ -303,6 +303,7 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
         it.imdb=j.optString("imdb");it.series=j.optBoolean("series");it.bgAudio=j.optBoolean("bgAudio")
         it.embed=j.optString("embed")
         it.audioVerified=j.optBoolean("audioVerified");it.season=j.optInt("season",-1);it.seriesYear=j.optInt("seriesYear")
+        MovieSources.cleanIds(it)
     }
     private fun encode(r: List<Record>) = JSONArray(r.map { JSONObject().put("entry", encodeEntry(it.entry)).put("checkedAt", it.checkedAt) }).toString()
     private fun decode(s: String): List<Record> {

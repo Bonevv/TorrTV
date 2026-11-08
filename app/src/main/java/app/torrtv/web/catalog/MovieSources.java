@@ -91,7 +91,7 @@ public final class MovieSources {
             if(inBgCategory(p,doc.location())) e.bgAudio=true;
             String genre=text(card,".item__poster-category"); if(!genre.isEmpty()) e.genres.add(genreName(genre));
             if(p==Provider.NINE) { Element g=card.selectFirst("p:last-child"); if(g!=null) for(String t:g.text().split(" · ")) if(year(t)==0 && !t.matches(".*\\d.*")) e.genres.add(genreName(t)); }
-            if(!e.title.isEmpty()) result.entries.add(e);
+            cleanIds(e);if(!e.title.isEmpty()) result.entries.add(e);
         }
         for(Element a:doc.select("a[href]")) {
             String t=a.text().trim().toLowerCase(Locale.ROOT), rel=a.attr("rel");
@@ -135,7 +135,7 @@ public final class MovieSources {
                 entry.embed=item.optString("videoUrl");
                 JSONArray players=item.optJSONArray("sources");if(entry.embed.isEmpty() && players!=null && players.optJSONObject(0)!=null)entry.embed=players.optJSONObject(0).optString("url");
                 JSONArray genres=item.optJSONArray("genres");if(genres!=null)for(int g=0;g<genres.length();g++){Object value=genres.opt(g);String name=genreName(value instanceof JSONObject?((JSONObject)value).optString("name"):String.valueOf(value));if(COMMON_GENRES.contains(name))entry.genres.add(name);}
-                if(!entry.title.isEmpty())page.entries.add(entry);
+                cleanIds(entry);if(!entry.title.isEmpty())page.entries.add(entry);
             }
             Matcher limit=Pattern.compile("[?&]limit=([0-9]+)").matcher(doc.location());int size=limit.find()?Integer.parseInt(limit.group(1)):10;
             Matcher number=Pattern.compile("([?&]page=)([0-9]+)").matcher(doc.location());if(data.length()>=size && number.find())page.next=number.replaceFirst(number.group(1)+(Integer.parseInt(number.group(2))+1));
@@ -227,7 +227,11 @@ public final class MovieSources {
         if(e.embed.isEmpty() && e.provider.equals("ZT")){
             Element frame=doc.selectFirst(".movieplay iframe[src]");if(frame!=null && frame.absUrl("src").startsWith("http"))e.embed=frame.absUrl("src");
         }
-        e.detailed=true; return e;
+        cleanIds(e);e.detailed=true; return e;
+    }
+    public static void cleanIds(MovieCatalog.Entry e) {
+        if(!e.tmdb.matches("[1-9][0-9]*"))e.tmdb="";
+        if(!e.imdb.matches("tt[0-9]{5,}"))e.imdb="";
     }
     public static void readEpisodes(MovieCatalog.Entry e,Document doc){
         LinkedHashMap<String,MovieCatalog.Episode> found=new LinkedHashMap<>();
