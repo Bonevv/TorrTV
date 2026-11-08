@@ -16,7 +16,9 @@ data class Media(
     val rating: Double,
     val votes: Int,
     val genreIds: List<Int>,
-    val originalLanguage: String
+    val originalLanguage: String,
+    val popularity:Double = 0.0,
+    val releaseDate:String = ""
 ) {
     val key: String get() = "${type.path}-$id"
 }

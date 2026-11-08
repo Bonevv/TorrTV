@@ -15,6 +15,9 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import app.torrtv.web.BgWebIndex
+import app.torrtv.web.catalog.MovieCatalog
+import app.torrtv.web.catalog.MovieEpisodes
 
 class Tmdb(private val prefs: Prefs, diskDir: File? = null) {
 
@@ -41,8 +44,8 @@ class Tmdb(private val prefs: Prefs, diskDir: File? = null) {
             val orig = o.str(if (movie) "original_title" else "original_name")
             val date = o.str(if (movie) "release_date" else "first_air_date")
             val genres = ArrayList<Int>()
-            val ga = o.optJSONArray("genre_ids")
-            if (ga != null) for (i in 0 until ga.length()) genres.add(ga.optInt(i))
+            val ga = o.optJSONArray("genre_ids") ?: o.optJSONArray("genres")
+            if (ga != null) for (i in 0 until ga.length()) genres.add(ga.optJSONObject(i)?.optInt("id") ?: ga.optInt(i))
             return Media(
                 id = id,
                 type = type,
@@ -55,7 +58,8 @@ class Tmdb(private val prefs: Prefs, diskDir: File? = null) {
                 rating = o.dbl("vote_average"),
                 votes = o.intOr("vote_count"),
                 genreIds = genres,
-                originalLanguage = o.str("original_language")
+                originalLanguage = o.str("original_language"),
+                popularity = o.dbl("popularity"), releaseDate = date
             )
         }
 
@@ -213,6 +217,42 @@ class Tmdb(private val prefs: Prefs, diskDir: File? = null) {
     }
 
     suspend fun actors(query: String): List<Actor> = parseActors(call("/search/person", mapOf("query" to query)))
+    private val webMatches=object:LinkedHashMap<String,Media>(128,0.75f,true){override fun removeEldestEntry(eldest:MutableMap.MutableEntry<String,Media>?)=size>256}
+    suspend fun webMedia(e:MovieCatalog.Entry):Media? {
+        val type=if(e.series)MediaType.TV else MediaType.MOVIE
+        val key="${e.page}|${e.tmdb}|${e.imdb}|${e.year}|${e.seriesYear}"
+        synchronized(webMatches){webMatches[key]}?.let{return it}
+        val found=if(e.tmdb.toIntOrNull()?.let{it>0}==true){
+            parseMedia(call("/${type.path}/${e.tmdb}"),type)
+        }else if(e.imdb.matches(Regex("tt[0-9]{5,}"))){
+            val array=call("/find/${e.imdb}",mapOf("external_source" to "imdb_id")).optJSONArray(if(e.series)"tv_results" else "movie_results")
+            if(array?.length()==1)parseMedia(array.getJSONObject(0),type) else null
+        }else{
+            val name=if(e.series)MovieEpisodes.baseTitle(e.original.ifBlank{e.title}) else e.original.ifBlank{e.title}.replace(Regex("\\s*\\((19|20)\\d{2}\\)\\s*$"),"")
+            if(name.isBlank())return null
+            val matches=parsePage(call("/search/${type.path}",mapOf("query" to name)),type).items
+            val exact=matches.filter{candidate->
+                val labels=if(e.series)setOf(MovieEpisodes.baseTitle(e.title),MovieEpisodes.baseTitle(e.original)) else
+                    setOf(e.title,e.original).map{BgWebIndex.normalize(it.replace(Regex("\\s*\\((19|20)\\d{2}\\)\\s*$"),""))}.toSet()
+                listOf(candidate.title,candidate.originalTitle).any{(if(e.series)MovieEpisodes.baseTitle(it) else BgWebIndex.normalize(it)) in labels}
+            }
+            val sameYear=exact.filter{BgWebIndex.matches(it,e)}
+            if(sameYear.size==1)sameYear.single() else if(e.series && exact.size==1 && e.season>1 && e.year>0){
+                val candidate=exact.single()
+                val seasons=call("/tv/${candidate.id}").optJSONArray("seasons")?:JSONArray()
+                val valid=(0 until seasons.length()).any{i->val s=seasons.getJSONObject(i);s.optInt("season_number")==e.season && s.optString("air_date").take(4)==e.year.toString()}
+                candidate.takeIf{valid}
+            }else null
+        }
+        val media=found?.takeIf{it.posterPath!=null} ?: return null
+        synchronized(webMatches){webMatches[key]=media}
+        return media
+    }
+    suspend fun availableOn(m:Media,provider:String):Boolean {
+        val ids=provider.split('|').mapNotNull{it.toIntOrNull()}.toSet()
+        val a=call("/${m.type.path}/${m.id}/watch/providers").optJSONObject("results")?.optJSONObject("BG")?.optJSONArray("flatrate")?:return false
+        return (0 until a.length()).any{a.getJSONObject(it).optInt("provider_id") in ids}
+    }
     suspend fun actorCredits(id: Int): List<Media> = parseCredits(call("/person/$id/combined_credits"))
 
     suspend fun recommendations(type: MediaType, id: Int, page: Int): Page<Media> {

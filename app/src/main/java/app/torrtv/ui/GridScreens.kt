@@ -78,7 +78,7 @@ fun PosterGrid(
         if (!paged.started) paged.loadNext()
         snapshotFlow {
             val li = gridState.layoutInfo
-            (li.visibleItemsInfo.lastOrNull()?.index ?: 0) to li.totalItemsCount
+            minOf(li.visibleItemsInfo.lastOrNull()?.index ?: -1,paged.items.size-1) to paged.items.size
         }.collect { (last, total) -> if (total > 0 && last >= total - 12) paged.loadNext() }
     }
     BoxWithConstraints(modifier.fillMaxSize()) {
@@ -106,6 +106,11 @@ fun PosterGrid(
             }
             if (paged.error != null) item(span = { GridItemSpan(maxLineSpan) }) {
                 ErrorLine(paged.error ?: "", { scope.launch { paged.retry() } })
+            }
+            if(!paged.loading && !paged.exhausted && paged.error==null && paged.items.isNotEmpty()) item(span={GridItemSpan(maxLineSpan)}){
+                Box(Modifier.fillMaxWidth().padding(vertical=8.d),contentAlignment=Alignment.Center){
+                    PrimaryButton("Зареди още",{scope.launch{paged.loadNext()}})
+                }
             }
         }
         if (paged.items.isEmpty() && paged.started && !paged.loading && paged.error == null) {

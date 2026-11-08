@@ -3,6 +3,12 @@ import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 class TmdbSearchTest {
+    @Test fun directCatalogueCardsKeepGenresAndSortingMetadata() {
+        val m=Tmdb.parseMedia(JSONObject("""{"id":557,"title":"Spider-Man","release_date":"2002-05-01","genres":[{"id":28},{"id":12}],"popularity":42.5}"""),MediaType.MOVIE)!!
+        assertEquals(listOf(28,12),m.genreIds)
+        assertEquals(42.5,m.popularity,0.0)
+        assertEquals("2002-05-01",m.releaseDate)
+    }
     @Test fun browseAndSearchUseTheCorrectYearFieldForEachMediaType() {
         assertEquals(mapOf("primary_release_year" to "2002"), Tmdb.yearParams(MediaType.MOVIE, 2002))
         assertEquals(mapOf("first_air_date_year" to "2020"), Tmdb.yearParams(MediaType.TV, 2020))
