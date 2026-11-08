@@ -14,7 +14,14 @@ object WebPlay {
 
     fun open(ctx: Context, sources: List<WebSources.Source>, start: Int, req: StreamController.Req) {
         if (sources.isEmpty()) return
-        pending = Pending(sources, start.coerceIn(0, sources.size - 1), req)
+        val selected = sources[start.coerceIn(0, sources.size - 1)]
+        if (selected.direct) {
+            val request = req.copy(fitTitle = selected.release.ifBlank { null })
+            app.torrtv.state.Graph.stream.playWeb(selected.url, selected.headers, request, selected.host)
+            return
+        }
+        val pages = sources.filter { !it.direct }
+        pending = Pending(pages, pages.indexOfFirst { it.url == selected.url }.coerceAtLeast(0), req)
         AppLog.d("web", "отварям уеб източник: ${sources[start.coerceIn(0, sources.size - 1)].host} (${sources.size} общо)")
         ctx.startActivity(Intent(ctx, WebSourceActivity::class.java))
     }

@@ -237,6 +237,7 @@ class SearchState {
     val gridState = LazyGridState()
     var focusKey: String? = null
     private var job: Job? = null
+    private var generation = 0
 
     /** Последните търсения (до 8) - за бързи бутони, когато полето е празно. */
     val recent = mutableStateListOf<String>()
@@ -248,19 +249,98 @@ class SearchState {
         recent.addAll(RecentSearches.decode(Graph.prefs.recentSearches))
     }
 
+    var actorMode by mutableStateOf(false)
+        private set
+    var actor by mutableStateOf<app.torrtv.data.Actor?>(null)
+        private set
+    val actors = mutableStateListOf<app.torrtv.data.Actor>()
+    var actorLoading by mutableStateOf(false)
+        private set
+    var actorError by mutableStateOf<String?>(null)
+        private set
+    var year by mutableStateOf<Int?>(null)
+        private set
+    var bgOnly by mutableStateOf(false)
+        private set
+
     fun onQuery(q: String, delayMs: Long = 450L) {
         query = q
+        actor = null
+        restart(delayMs)
+    }
+    fun chooseActorMode(value: Boolean) { actorMode = value; actor = null; restart(0) }
+    fun pickActor(value: app.torrtv.data.Actor) { actor = value; restart(0) }
+    fun chooseYear(value: Int?) { year = value; restart(0) }
+    fun chooseBgOnly(value: Boolean) { bgOnly = value; restart(0) }
+    fun clearFilters() { year = null; bgOnly = false; restart(0) }
+    fun refreshBg() {
         job?.cancel()
-        val t = q.trim()
-        if (t.length < 2) {
-            paged = null
-            return
-        }
         job = Graph.scope.launch {
-            if (delayMs > 0) delay(delayMs)
-            val p = Paged<Media>(120, { page -> Graph.tmdb.search(t, page) }) { it.key }
-            paged = p
-            p.loadNext()
+            try { Graph.bgWeb.refresh(force = true); Graph.bgWeb.sweep() }
+            catch (ex: CancellationException) { throw ex } catch (_: Exception) { }
+            restart(0)
+        }
+    }
+
+    private fun restart(delayMs: Long) {
+        val ticket = ++generation
+        job?.cancel()
+        paged = null
+        actors.clear()
+        actorError = null
+        actorLoading = false
+        val q = query.trim()
+        val selected = actor
+        val selectedYear = year
+        val onlyBg = bgOnly
+        val people = actorMode
+        if (q.length < 2 && (people || selectedYear == null && !onlyBg)) return
+        job = Graph.scope.launch {
+            try {
+                if (delayMs > 0) delay(delayMs)
+                if (people && selected == null) {
+                    actorLoading = true
+                    val result = Graph.tmdb.actors(q)
+                    if (ticket == generation) actors.addAll(result)
+                    return@launch
+                }
+                if (!onlyBg && selected == null && q.length >= 2 && Graph.prefs.webEnabled) launch {
+                    Graph.bgWeb.refresh(q)
+                }
+                val credits = selected?.let { Graph.tmdb.actorCredits(it.id) }
+                    ?.filter { selectedYear == null || it.year == selectedYear.toString() }
+                val p = Paged<Media>(200, { requested ->
+                    if (onlyBg) {
+                        Graph.bgWeb.refresh()
+                        if (selected == null && q.length >= 2) Graph.bgWeb.refresh(q)
+                        if (Graph.bgWeb.count() == 0 && Graph.bgWeb.status.value.contains("не отговориха"))
+                            throw java.io.IOException(Graph.bgWeb.status.value)
+                    }
+                    if (credits != null) {
+                        val filtered = if (onlyBg) credits.filter { Graph.bgWeb.has(it) } else credits
+                        app.torrtv.data.Page(filtered.drop((requested - 1) * 20).take(20), requested, maxOf(1, (filtered.size + 19) / 20))
+                    } else {
+                        val found = ArrayList<Media>()
+                        var page = requested
+                        var total = requested
+                        var rounds = 0
+                        do {
+                            val result = Graph.tmdb.search(q, page, selectedYear)
+                            total = result.totalPages
+                            found.addAll(if (onlyBg) result.items.filter { Graph.bgWeb.has(it) } else result.items)
+                            rounds++
+                            if (!onlyBg || found.size >= 20 || page >= total || rounds >= 8) break
+                            page++
+                        } while (true)
+                        app.torrtv.data.Page(found.distinctBy { it.key }, page, total)
+                    }
+                }) { it.key }
+                if (ticket != generation) return@launch
+                paged = p
+                p.loadNext()
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { if (ticket == generation) actorError = e.message ?: "Търсенето не успя" }
+            finally { if (ticket == generation) actorLoading = false }
         }
     }
 
@@ -389,6 +469,34 @@ class DetailState(val type: MediaType, val id: Int, private val deferTorrents: B
     private var torrentJob: Job? = null
     private var subJob: Job? = null
 
+    var apiWebSources by mutableStateOf<List<app.torrtv.web.WebSources.Source>>(emptyList())
+    var bgWebSources by mutableStateOf<List<app.torrtv.web.WebSources.Source>>(emptyList())
+        private set
+    private var webJob: Job? = null
+    private var webApiJob: Job? = null
+    private fun loadWeb() {
+        webJob?.cancel()
+        webApiJob?.cancel()
+        bgWebSources = emptyList()
+        apiWebSources = emptyList()
+        val d = detail ?: return
+        val s = season; val e = episode
+        webJob = scope.launch {
+            try { if (Graph.prefs.webEnabled) bgWebSources = Graph.bgWeb.sources(d.media, d.imdbId, s, e) }
+            catch (ex: CancellationException) { throw ex }
+            catch (_: Exception) { }
+        }
+        webApiJob = scope.launch {
+            try {
+                val urls = app.torrtv.web.WebSources.templates(Graph.prefs, type == MediaType.TV).map {
+                    it.replace("{tmdb}", id.toString()).replace("{season}", s.toString()).replace("{episode}", e.toString())
+                }
+                val result = if (Graph.prefs.webEnabled) app.torrtv.web.WebApiClient.resolve(urls) else emptyList()
+                if (s == season && e == episode) { apiWebSources = result }
+            } catch (ex: CancellationException) { throw ex } catch (_: Exception) { }
+        }
+    }
+
     var detail by mutableStateOf<Detail?>(null)
     var error by mutableStateOf<String?>(null)
 
@@ -430,6 +538,7 @@ class DetailState(val type: MediaType, val id: Int, private val deferTorrents: B
                 }
                 if (!deferTorrents) loadTorrents()
                 loadSubs()
+                loadWeb()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -547,6 +656,7 @@ class DetailState(val type: MediaType, val id: Int, private val deferTorrents: B
             loadEpisodes()
             loadTorrents()
             loadSubs()
+            loadWeb()
         }
     }
 
@@ -555,6 +665,7 @@ class DetailState(val type: MediaType, val id: Int, private val deferTorrents: B
         episode = n
         loadTorrents()
         loadSubs()
+        loadWeb()
     }
 
     /** Субтитри, подредени за конкретен торент (по езици и съвпадение с релийза). */
@@ -640,7 +751,7 @@ class DetailState(val type: MediaType, val id: Int, private val deferTorrents: B
     fun webSources(): List<app.torrtv.web.WebSources.Source> {
         val d = detail ?: return emptyList()
         if (!Graph.prefs.webEnabled) return emptyList()
-        return app.torrtv.web.WebSources.sources(Graph.prefs, type == MediaType.TV, id, d.imdbId, season, episode)
+        return (bgWebSources + apiWebSources + app.torrtv.web.WebSources.sources(Graph.prefs, type == MediaType.TV, id, d.imdbId, season, episode)).distinctBy { it.url }
     }
 
     private fun buildReq(

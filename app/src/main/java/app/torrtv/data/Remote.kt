@@ -23,7 +23,7 @@ object Remote {
     )
 
     /** Списъците (един елемент на ред): уеб сайтове, addon-и и тракери. */
-    val LIST_FIELDS = listOf("web_movie", "web_tv", "addons", "trackers", "sites")
+    val LIST_FIELDS = listOf("web_movie", "web_tv", "web_bg_providers", "addons", "trackers", "sites")
 
     enum class Err { NONE, BAD, LOCKED, DISABLED, TOO_MANY, NETWORK, SERVER }
 

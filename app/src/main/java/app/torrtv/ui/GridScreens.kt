@@ -26,6 +26,9 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -106,7 +109,10 @@ fun PosterGrid(
             }
         }
         if (paged.items.isEmpty() && paged.started && !paged.loading && paged.error == null) {
-            Text2("Няма резултати.", 14, C.dim, FontWeight.Medium, 1, Modifier.align(Alignment.Center))
+            Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text2(if (paged.exhausted) "Няма резултати." else "Няма съвпадения в проверените страници.", 14, C.dim, FontWeight.Medium, 2)
+                if (!paged.exhausted) PrimaryButton("Провери още", { scope.launch { paged.loadNext() } })
+            }
         }
     }
 }
@@ -147,6 +153,8 @@ fun BrowseScreen(st: BrowseState, onOpen: (Media) -> Unit) {
 fun SearchScreen(st: SearchState, onOpen: (Media) -> Unit) {
     val kb = LocalSoftwareKeyboardController.current
     val inputFocus = remember { FocusRequester() }
+    var yearOpen by remember { mutableStateOf(false) }
+    val bgStatus by Graph.bgWeb.status.collectAsState()
     // Страницата за телефона работи и докато е отворено търсенето: оттам може да се напише думата.
     DisposableEffect(Unit) {
         Graph.config.start()
@@ -170,10 +178,35 @@ fun SearchScreen(st: SearchState, onOpen: (Media) -> Unit) {
                     keyboardActions = KeyboardActions(onSearch = { kb?.hide(); st.commit() }),
                     modifier = Modifier.fillMaxWidth().focusRequesterCompat(inputFocus),
                     decorationBox = { inner ->
-                        if (st.query.isEmpty()) Text2("Търси филм или сериал (OK отваря клавиатурата)", 16, C.dim, FontWeight.Normal, 1)
+                        if (st.query.isEmpty()) Text2("Заглавие или име на актьор (OK отваря клавиатурата)", 16, C.dim, FontWeight.Normal, 1)
                         inner()
                     }
                 )
+            }
+        }
+        LazyRow(Modifier.padding(horizontal = 36.d, vertical = 4.d), horizontalArrangement = Arrangement.spacedBy(8.d)) {
+            item { Chip("Филми / сериали", !st.actorMode, { st.chooseActorMode(false) }) }
+            item { Chip("Актьор", st.actorMode, { st.chooseActorMode(true) }) }
+            item { Chip("Година: ${st.year ?: "Всички"} ▾", st.year != null, { yearOpen = true }) }
+            item { Chip((if (st.bgOnly) "☑ " else "☐ ") + "Само с БГ аудио", st.bgOnly, { st.chooseBgOnly(!st.bgOnly) }) }
+            if (st.bgOnly) item { Chip("Обнови БГ наличностите", false, { st.refreshBg() }) }
+            if (st.year != null || st.bgOnly) item { Chip("Изчисти филтрите", false, { st.clearFilters() }) }
+        }
+        if (yearOpen) PickDialog("Година на издаване", listOf(PickOption("all", "Всички години")) +
+            (java.util.Calendar.getInstance().get(java.util.Calendar.YEAR) + 1 downTo 1900).map { PickOption(it.toString(), it.toString()) },
+            st.year?.toString() ?: "all", { st.chooseYear(it.toIntOrNull()); yearOpen = false }, { yearOpen = false })
+        if (st.bgOnly) Text2(bgStatus.ifBlank { "Търсят се потвърдени БГ версии. Проверката може да е частична." },
+            11, C.dim, FontWeight.Normal, 2, Modifier.padding(horizontal = 36.d, vertical = 3.d))
+        if (st.actor != null) Text2("В ролите: ${st.actor?.name}", 14, C.accent2, FontWeight.Bold, 1, Modifier.padding(horizontal = 36.d))
+        if (st.actorMode && st.actor == null && st.actors.isNotEmpty()) LazyRow(
+            Modifier.padding(horizontal = 36.d, vertical = 8.d), horizontalArrangement = Arrangement.spacedBy(10.d)) {
+            items(st.actors.toList(), key = { it.id }) { person ->
+                Focusable({ st.pickActor(person) }) {
+                    Column(Modifier.size(width = 100.d, height = 112.d).background(if (it) C.cardHi else C.card).padding(6.d)) {
+                        Img(app.torrtv.data.Tmdb.img(person.photo, "w185"), Modifier.fillMaxWidth().height(72.d))
+                        Text2(person.name, 11, C.text, FontWeight.Medium, 2)
+                    }
+                }
             }
         }
         val p = st.paged
@@ -190,7 +223,12 @@ fun SearchScreen(st: SearchState, onOpen: (Media) -> Unit) {
                 }
                 PhoneSearchHint()
                 Spacer(Modifier.height(20.d))
-                Text2("Въведи поне 2 букви.", 13, C.dim, FontWeight.Medium, 1)
+                when {
+                    st.actorLoading -> Spinner()
+                    st.actorError != null -> Text2(st.actorError.orEmpty(), 13, C.red, FontWeight.Medium, 3)
+                    st.actorMode && st.query.trim().length >= 2 -> if (st.actors.isEmpty()) Text2("Няма намерени актьори.", 13, C.dim, FontWeight.Medium, 1)
+                    else -> Text2("Въведи поне 2 букви или избери година.", 13, C.dim, FontWeight.Medium, 1)
+                }
             }
         } else {
             PosterGrid(p, st.gridState, { st.focusKey }, { st.focusKey = it }, { st.commit(); onOpen(it) })

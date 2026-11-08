@@ -305,8 +305,14 @@ class Prefs(ctx: Context) {
     companion object {
         val FIELD_NAMES = listOf(
             "tmdb_key", "os_key", "os_user", "os_pass", "subdl_key", "subsource_key",
-            "dom_apibay", "dom_yts", "dom_eztv", "dom_nyaa", "web_movie", "web_tv", "addons"
+            "dom_apibay", "dom_yts", "dom_eztv", "dom_nyaa", "web_movie", "web_tv", "web_bg_providers", "addons"
         )
+    }
+
+    val bgWebProviders: Set<String> get() {
+        val raw = str("web_bg_providers")
+        if (raw.isBlank()) return setOf("NINE", "TWO_K", "ZENO", "ALL", "FEN", "ZT", "ZIP")
+        return raw.lines().map { it.trim() }.filter { it.isNotEmpty() && it != "-" }.toSet()
     }
 
     fun get(name: String): String = when (name) {
@@ -325,6 +331,7 @@ class Prefs(ctx: Context) {
         "dom_torrentsdb" -> domTorrentsdb
         "dom_torrentio" -> domTorrentio
         "sites" -> sitesSrc
+        "web_bg_providers" -> str("web_bg_providers")
         "web_movie" -> webMovieSrc
         "web_tv" -> webTvSrc
         "addons" -> addonsSrc
@@ -349,6 +356,7 @@ class Prefs(ctx: Context) {
             "dom_torrentsdb" -> domTorrentsdb = value
             "dom_torrentio" -> domTorrentio = value
             "sites" -> sitesSrc = if (value.trim() == "-") "" else value
+            "web_bg_providers" -> put("web_bg_providers", value)
             "web_movie" -> webMovieSrc = if (value.trim() == "-") "" else value
             "web_tv" -> webTvSrc = if (value.trim() == "-") "" else value
             "addons" -> addonsSrc = if (value.trim() == "-") "" else value

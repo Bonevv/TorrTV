@@ -64,6 +64,7 @@ class WebSourceActivity : AppCompatActivity() {
     private var pageUrl: String? = null
     private var pageDone = false
     private var captured: Cap? = null
+    private val siteSubtitles = LinkedHashMap<String, app.torrtv.data.subs.SubtitleResult>()
     private var countdown = 0
     private var handedOff = false
     private var asked = false
@@ -161,6 +162,9 @@ class WebSourceActivity : AppCompatActivity() {
         CookieManager.getInstance().setAcceptThirdPartyCookies(w, true)
         w.webViewClient = client
         w.webChromeClient = chrome
+        if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            androidx.webkit.WebViewCompat.addDocumentStartJavaScript(w, WebSubtitleProvider.probeScript, setOf("*"))
+        }
         root.addView(w, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
         cursor = CursorView(this)
@@ -218,6 +222,7 @@ class WebSourceActivity : AppCompatActivity() {
         val src = sources[idx]
         pageDone = false
         captured = null
+        siteSubtitles.clear()
         pageUrl = null
         asked = false
         hinted = false
@@ -277,6 +282,7 @@ class WebSourceActivity : AppCompatActivity() {
 
         override fun onPageFinished(view: WebView, url: String?) {
             if (url == null || !url.startsWith("http")) return
+            view.evaluateJavascript(WebSubtitleProvider.probeScript, null)
             pageDone = true
             ui.removeCallbacks(loadTimeout)
             updateBar("готово · блокирани реклами: $blockedCount")
@@ -305,6 +311,16 @@ class WebSourceActivity : AppCompatActivity() {
     }
 
     private val chrome = object : WebChromeClient() {
+        override fun onConsoleMessage(message: android.webkit.ConsoleMessage): Boolean {
+            val text = message.message()
+            if (text.startsWith("TORRTV_SUB:")) {
+                WebSubtitleProvider.caption(text.removePrefix("TORRTV_SUB:"))?.let {
+                    if (siteSubtitles.size < 16) siteSubtitles[it.uid] = it
+                }
+                return true
+            }
+            return super.onConsoleMessage(message)
+        }
         override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: android.os.Message): Boolean = false // без изскачащи прозорци
 
         override fun onJsAlert(view: WebView, url: String, message: String, result: JsResult): Boolean {
@@ -390,6 +406,7 @@ class WebSourceActivity : AppCompatActivity() {
 
     /** Страницата пусна видео: според настройката питаме, прехвърляме сами или само подсказваме. */
     private fun onCaptured() {
+        web?.evaluateJavascript("window.__torrtvScanSubs && window.__torrtvScanSubs()", null)
         when (Graph.prefs.webHandoff) {
             1 -> startCountdown()
             2 -> if (!hinted) {
@@ -455,7 +472,12 @@ class WebSourceActivity : AppCompatActivity() {
         if (!cookie.isNullOrBlank() && !headers.containsKey("Cookie")) headers["Cookie"] = cookie
         if (!headers.containsKey("User-Agent")) headers["User-Agent"] = DESKTOP_UA
         AppLog.d("web", "предавам на вградения плеър: ${Uri.parse(c.url).host}")
-        Graph.stream.playWeb(c.url, headers, p.req, sources[idx].host)
+        val captions = siteSubtitles.values.toList()
+        val req = p.req.copy(
+            allSubs = (captions + p.req.allSubs).distinctBy { it.uid },
+            subs = if (Graph.prefs.subAuto && captions.isNotEmpty()) captions.take(1) else p.req.subs
+        )
+        Graph.stream.playWeb(c.url, headers, req, sources[idx].host)
         finish()
     }
 

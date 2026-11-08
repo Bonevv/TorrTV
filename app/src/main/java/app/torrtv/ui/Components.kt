@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,6 +50,7 @@ import app.torrtv.data.Media
 import app.torrtv.data.MediaType
 import app.torrtv.data.Tmdb
 import app.torrtv.state.Library
+import app.torrtv.state.Graph
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.delay
@@ -218,6 +220,8 @@ fun Poster(
     onFocus: () -> Unit = {},
     focusRequester: FocusRequester? = null
 ) {
+    val bgRevision by Graph.bgWeb.revision.collectAsState()
+    val bgAudio = remember(media, bgRevision) { Graph.bgWeb.has(media) }
     Focusable(
         onClick, modifier.width(width).height(width * 1.5f), RoundedCornerShape(12.d), 1.09f,
         onFocus = onFocus, focusRequester = focusRequester
@@ -243,6 +247,9 @@ fun Poster(
                 )
                 if (media.year.isNotBlank()) Text(media.year, color = C.dim, fontSize = 10.t)
             }
+        }
+        if (bgAudio) Box(Modifier.align(Alignment.BottomStart).padding(start = 5.d, bottom = if (f) 76.d else 5.d)) {
+            Pill("🇧🇬 БГ аудио · Уеб", Color(0xEE133723), C.green)
         }
     }
 }

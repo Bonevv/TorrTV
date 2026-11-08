@@ -47,7 +47,7 @@ fun SourcePicker(
     val torrents = remember(st.torrents, excludeHash) {
         st.torrents.filter { !it.isCam && it.hash != excludeHash }.sortedByDescending { it.seeders }.take(12)
     }
-    val web = remember(st.detail, st.season, st.episode) { st.webSources() }
+    val web = remember(st.detail, st.season, st.episode, st.bgWebSources, st.apiWebSources) { st.webSources() }
     val webOn = Graph.prefs.webEnabled
     // По подразбиране са торентите; уеб сайтовете се избират със стрелките наляво/надясно.
     var tab by remember { mutableStateOf(0) }
@@ -109,8 +109,8 @@ fun SourcePicker(
                     }
                     itemsIndexed(web, key = { i, s -> "w$i" + s.host }) { i, s ->
                         PickRow(
-                            left = "WEB", title = s.host,
-                            sub = if (i == 0) "основен" else "резервен " + i,
+                            left = if (s.bgAudio) "🇧🇬" else "WEB", title = s.host,
+                            sub = if (s.bgAudio) "Потвърдена БГ аудио версия" else if (i == 0) "основен" else "резервен " + i,
                             right = "▶", rightColor = C.accent
                         ) { onDismiss(); onWeb(i) }
                     }

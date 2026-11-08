@@ -127,7 +127,7 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
         val shown = remember(st.torrents, qSel, siteSel) {
             st.torrents.filter { (qSel == "all" || it.quality == qSel) && (siteSel == "all" || it.onSite(siteSel)) }.take(60)
         }
-        val web = remember(st.detail, st.season, st.episode) { st.webSources() }
+        val web = remember(st.detail, st.season, st.episode, st.bgWebSources, st.apiWebSources) { st.webSources() }
         val webOn = Graph.prefs.webEnabled
         // Свободно място на избраното място и измерени скорости - за етикетите „събира се“ и „гладко“.
         val place = remember { Storage.chosen(ctx, Graph.prefs.storageId) }
@@ -271,6 +271,7 @@ private fun DetailHeader(
                 if (meta.isNotEmpty()) Text2(meta.joinToString("  ·  "), 13, C.dim, FontWeight.Medium, 1)
                 if (d.genres.isNotEmpty()) Text2(d.genres.take(4).joinToString(" · ") { it.name }, 12, C.accent2, FontWeight.Medium, 1, Modifier.weight(1f))
             }
+            if (st.bgWebSources.any { it.bgAudio }) Text2("🇧🇬 Има БГ аудио версия във уеб", 13, C.green, FontWeight.Bold, 1)
             Spacer(Modifier.height(6.d))
             Text2(d.media.overview.ifBlank { "Няма описание." }, 13, Color(0xFFD5DAE6), FontWeight.Normal, 2)
             Spacer(Modifier.height(10.d))
@@ -500,8 +501,8 @@ private fun WebPane(st: DetailState, web: List<WebSources.Source>, webOn: Boolea
                 ) {
                     itemsIndexed(web, key = { i, s -> "w$i" + s.host }) { i, s ->
                         PickRow(
-                            left = "WEB", title = s.host,
-                            sub = if (i == 0) "основен" else "резервен " + i,
+                            left = if (s.bgAudio) "🇧🇬" else "WEB", title = s.host,
+                            sub = if (s.bgAudio) "Потвърдена БГ аудио версия" else if (i == 0) "основен" else "резервен " + i,
                             right = "▶", rightColor = C.accent
                         ) { app.torrtv.web.WebPlay.open(ctx, web, i, st.webRequest()) }
                     }

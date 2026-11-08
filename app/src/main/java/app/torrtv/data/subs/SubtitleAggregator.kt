@@ -12,7 +12,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 class SubtitleAggregator(private val prefs: Prefs) {
 
     val providers: List<SubtitleProvider> = listOf(
-        OpenSubtitles(prefs), Subdl(prefs), SubSource(prefs), SabBz()
+        OpenSubtitles(prefs), Subdl(prefs), SubSource(prefs), SabBz(), app.torrtv.web.WebSubtitleProvider()
     )
 
     data class Update(val provider: String, val results: List<SubtitleResult>, val error: String?)

@@ -2,6 +2,8 @@ package app.torrtv.data
 
 enum class MediaType(val path: String) { MOVIE("movie"), TV("tv") }
 
+data class Actor(val id: Int, val name: String, val photo: String?)
+
 data class Media(
     val id: Int,
     val type: MediaType,

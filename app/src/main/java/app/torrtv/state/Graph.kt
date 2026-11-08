@@ -12,6 +12,7 @@ import app.torrtv.torrent.LocalServer
 import app.torrtv.torrent.StreamController
 import app.torrtv.update.Updater
 import app.torrtv.web.ConfigServer
+import app.torrtv.web.BgWebIndex
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -28,6 +29,7 @@ object Graph {
     val torrents by lazy { TorrentAggregator(prefs) }
     val subs by lazy { SubtitleAggregator(prefs) }
     val subStore by lazy { SubtitleStore(app.cacheDir, subs.providers) }
+    val bgWeb by lazy { BgWebIndex(java.io.File(app.cacheDir, "bg-web"), enabled = { prefs.bgWebProviders }, allowNetwork = { stream.ui.stage == StreamController.Stage.IDLE || stream.ui.stage == StreamController.Stage.ERROR }) }
     val server by lazy { LocalServer() }
     val stream by lazy { StreamController(app, subStore, server) }
     val updater by lazy { Updater(app) }

@@ -36,6 +36,7 @@ class SyncState(private val prefs: Prefs) {
 
     private fun applySet(set: JSONObject) {
         Remote.apply(set) { k, v -> prefs.set(k, v) }
+        Graph.bgWeb.settingsChanged()
         Magnets.setCustom(prefs.trackersList)
         // Изключените за всички се скриват; махнатите от списъка се връщат включени. Личният избор за другите не се пипа.
         val off = Remote.disabledSources(set)
@@ -100,6 +101,7 @@ class SyncState(private val prefs: Prefs) {
         for (f in Remote.STR_FIELDS) empty.put(f, "")
         applySet(empty)
         for (f in Remote.LIST_FIELDS) prefs.set(f, "")
+        Graph.bgWeb.settingsChanged()
         Magnets.setCustom(emptyList())
         loggedIn = false
     }

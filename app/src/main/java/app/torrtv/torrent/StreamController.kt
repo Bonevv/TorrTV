@@ -49,7 +49,7 @@ class StreamController(
     /** Следващият епизод: етикет за показване и подготовка на заявката за него (търси торент и субтитри). */
     class NextEp(val label: String, val season: Int, val episode: Int, val prepare: suspend () -> Req?)
 
-    class Req(
+    data class Req(
         val magnet: String,
         val title: String,
         val subtitle: String,

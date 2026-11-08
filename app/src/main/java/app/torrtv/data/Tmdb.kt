@@ -25,6 +25,52 @@ class Tmdb(private val prefs: Prefs, diskDir: File? = null) {
         /** size: w185, w342, w500, w780, w1280, original */
         fun img(path: String?, size: String): String? =
             if (path.isNullOrBlank()) null else "$IMG/$size$path"
+        internal fun parseMedia(o: JSONObject, forced: MediaType?): Media? {
+            if (o.optBoolean("adult")) return null
+            val type = forced ?: when (o.str("media_type")) {
+                "movie" -> MediaType.MOVIE
+                "tv" -> MediaType.TV
+                else -> return null
+            }
+            val movie = type == MediaType.MOVIE
+            val id = o.intOr("id", -1)
+            if (id < 0) return null
+            val title = o.str(if (movie) "title" else "name")
+            val orig = o.str(if (movie) "original_title" else "original_name")
+            val date = o.str(if (movie) "release_date" else "first_air_date")
+            val genres = ArrayList<Int>()
+            val ga = o.optJSONArray("genre_ids")
+            if (ga != null) for (i in 0 until ga.length()) genres.add(ga.optInt(i))
+            return Media(
+                id = id,
+                type = type,
+                title = title.ifBlank { orig },
+                originalTitle = orig.ifBlank { title },
+                overview = o.str("overview"),
+                posterPath = o.str("poster_path").ifBlank { null },
+                backdropPath = o.str("backdrop_path").ifBlank { null },
+                year = date.take(4),
+                rating = o.dbl("vote_average"),
+                votes = o.intOr("vote_count"),
+                genreIds = genres,
+                originalLanguage = o.str("original_language")
+            )
+        }
+
+
+        internal fun parseActors(j: JSONObject): List<Actor> {
+            val a = j.optJSONArray("results") ?: return emptyList()
+            return (0 until a.length()).mapNotNull { i ->
+                val o = a.getJSONObject(i)
+                if (o.intOr("id") <= 0 || o.optBoolean("adult") || o.str("known_for_department") != "Acting") null
+                else Actor(o.intOr("id"), o.str("name"), o.str("profile_path").ifBlank { null })
+            }.distinctBy { it.id }.take(20)
+        }
+        internal fun parseCredits(j: JSONObject): List<Media> {
+            val a = j.optJSONArray("cast") ?: return emptyList()
+            return (0 until a.length()).mapNotNull { parseMedia(a.getJSONObject(it), null) }
+                .distinctBy { it.key }.sortedByDescending { it.votes }
+        }
     }
 
     // Разобраните отговори в паметта са малко (дървета от обекти са тежки); зад тях стои дисковият кеш.
@@ -91,37 +137,6 @@ class Tmdb(private val prefs: Prefs, diskDir: File? = null) {
         null
     }
 
-    private fun parseMedia(o: JSONObject, forced: MediaType?): Media? {
-        val type = forced ?: when (o.str("media_type")) {
-            "movie" -> MediaType.MOVIE
-            "tv" -> MediaType.TV
-            else -> return null
-        }
-        val movie = type == MediaType.MOVIE
-        val id = o.intOr("id", -1)
-        if (id < 0) return null
-        val title = o.str(if (movie) "title" else "name")
-        val orig = o.str(if (movie) "original_title" else "original_name")
-        val date = o.str(if (movie) "release_date" else "first_air_date")
-        val genres = ArrayList<Int>()
-        val ga = o.optJSONArray("genre_ids")
-        if (ga != null) for (i in 0 until ga.length()) genres.add(ga.optInt(i))
-        return Media(
-            id = id,
-            type = type,
-            title = title.ifBlank { orig },
-            originalTitle = orig.ifBlank { title },
-            overview = o.str("overview"),
-            posterPath = o.str("poster_path").ifBlank { null },
-            backdropPath = o.str("backdrop_path").ifBlank { null },
-            year = date.take(4),
-            rating = o.dbl("vote_average"),
-            votes = o.intOr("vote_count"),
-            genreIds = genres,
-            originalLanguage = o.str("original_language")
-        )
-    }
-
     private fun parsePage(j: JSONObject, forced: MediaType?): Page<Media> {
         val arr = j.optJSONArray("results") ?: JSONArray()
         val list = ArrayList<Media>()
@@ -181,8 +196,20 @@ class Tmdb(private val prefs: Prefs, diskDir: File? = null) {
         return out
     }
 
-    suspend fun search(query: String, page: Int): Page<Media> =
-        parsePage(call("/search/multi", mapOf("query" to query, "page" to page.toString())), null)
+    suspend fun search(query: String, page: Int, year: Int? = null): Page<Media> = coroutineScope {
+        if (year == null && query.isNotBlank()) return@coroutineScope parsePage(call("/search/multi", mapOf("query" to query, "page" to page.toString())), null)
+        val pages = MediaType.entries.map { type -> async {
+            val params = linkedMapOf("page" to page.toString())
+            val path = if (query.isBlank()) "/discover/${type.path}" else "/search/${type.path}"
+            if (query.isNotBlank()) params["query"] = query
+            if (year != null) params[if (type == MediaType.MOVIE) "primary_release_year" else "first_air_date_year"] = year.toString()
+            parsePage(call(path, params), type)
+        } }.map { it.await() }
+        Page(pages.flatMap { it.items }.distinctBy { it.key }, page, pages.maxOf { it.totalPages })
+    }
+
+    suspend fun actors(query: String): List<Actor> = parseActors(call("/search/person", mapOf("query" to query)))
+    suspend fun actorCredits(id: Int): List<Media> = parseCredits(call("/person/$id/combined_credits"))
 
     suspend fun recommendations(type: MediaType, id: Int, page: Int): Page<Media> {
         val r = parsePage(call("/${type.path}/$id/recommendations", mapOf("page" to page.toString())), type)

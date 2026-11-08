@@ -1,6 +1,5 @@
 package app.torrtv.web
 
-import android.net.Uri
 import app.torrtv.core.Prefs
 
 /**
@@ -26,7 +25,11 @@ object WebSources {
         "https://player.videasy.ws/embed/movie/{tmdb}",
         "https://stellar.rip/en/watch/embed/movie/{tmdb}",
         "https://flix.screenscape.me/embed?tmdb={tmdb}&type=movie",
-        "https://vidy.st/movie/{tmdb}"
+        "https://vidy.st/movie/{tmdb}",
+        "https://primesrc.me/embed/movie?tmdb={tmdb}",
+        "https://autoembed.me/movie/tmdb/{tmdb}",
+        "https://player.embedheaven.st/movie/{tmdb}",
+        "https://streamdata.vaplayer.ru/api.php?tmdb={tmdb}&type=movie"
     )
 
     val defaultTv = listOf(
@@ -44,7 +47,11 @@ object WebSources {
         "https://player.videasy.ws/embed/tv/{tmdb}/{season}/{episode}",
         "https://stellar.rip/en/watch/embed/tv/{tmdb}-{season}-{episode}",
         "https://flix.screenscape.me/embed?tmdb={tmdb}&type=tv&s={season}&e={episode}",
-        "https://vidy.st/tv/{tmdb}/{season}/{episode}"
+        "https://vidy.st/tv/{tmdb}/{season}/{episode}",
+        "https://primesrc.me/embed/tv?tmdb={tmdb}&season={season}&episode={episode}",
+        "https://autoembed.me/tv/tmdb/{tmdb}-{season}-{episode}",
+        "https://player.embedheaven.st/tv/{tmdb}/{season}/{episode}",
+        "https://streamdata.vaplayer.ru/api.php?tmdb={tmdb}&type=tv&season={season}&episode={episode}"
     )
 
     /** Един ред - един шаблон; празните редове и коментарите (#) се прескачат. */
@@ -56,7 +63,8 @@ object WebSources {
         return custom.ifEmpty { if (tv) defaultTv else defaultMovie }
     }
 
-    class Source(val host: String, val url: String)
+    class Source(val host: String, val url: String, val bgAudio: Boolean = false,
+        val direct: Boolean = false, val headers: Map<String,String> = emptyMap(), val release: String = "")
 
     /** Готовите адреси; шаблон, който иска {imdb} без да го имаме, се прескача. */
     fun sources(prefs: Prefs, tv: Boolean, tmdb: Int, imdb: String?, season: Int, episode: Int): List<Source> {
@@ -67,14 +75,14 @@ object WebSources {
                 .replace("{imdb}", imdb.orEmpty())
                 .replace("{season}", season.toString())
                 .replace("{episode}", episode.toString())
-            out.add(Source(hostOf(url), url))
+            if (!WebApiClient.isApi(url)) out.add(Source(hostOf(url), url))
         }
-        return out
+        return out.distinctBy { it.url }
     }
 
     fun hostOf(url: String): String =
         try {
-            (Uri.parse(url).host ?: url).removePrefix("www.")
+            (java.net.URI(url).host ?: url).removePrefix("www.")
         } catch (_: Exception) {
             url
         }
