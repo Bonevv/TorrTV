@@ -14,6 +14,27 @@ class BgWebIndexTest {
     private fun media(year: String = "2002", type: MediaType = MediaType.MOVIE) =
         Media(557, type, "Спайдърмен", "Spider-Man", "", null, null, year, 7.0, 100, emptyList(), "en")
     private fun entry() = MovieCatalog.Entry().also { it.title="Спайдърмен";it.original="Spider-Man";it.year=2002;it.bgAudio=true }
+    @Test fun aCategoryOrAWebsiteMatchNeverCreatesAnAudioBadge()=runBlocking {
+        val html="""<a class="item-poster" href="/filmi/test.html"><img alt="Spider-Man"><span class="item-poster__year">2002</span></a>"""
+        val parsed=MovieSources.parse(MovieSources.Provider.FEN,"https://filmifen.com/filmi-bg-audio/",html).entries.single()
+        assertTrue(parsed.bgAudio) // Candidate for checking, not evidence of this film's soundtrack.
+        assertFalse(parsed.audioVerified)
+        val index=BgWebIndex(temp.root,get={html},enabled={setOf("FEN")})
+        index.refresh()
+        assertFalse(index.has(media()))
+    }
+    @Test fun legacyUnverifiedCacheCannotRestoreOldFalseFlags()=runBlocking {
+        java.io.File(temp.root,"index.json").writeText("""[{"checkedAt":${System.currentTimeMillis()},"entry":{"provider":"NINE","page":"https://filmi9.com/film/spider-man","title":"Spider-Man","year":2002,"bgAudio":true}}]""")
+        val index=BgWebIndex(temp.root,get={error("no network")},enabled={setOf("NINE")})
+        index.restore()
+        assertFalse(index.has(media()))
+    }
+    @Test fun negativeAndSubtitleLabelsDoNotVerifyBulgarianAudio() {
+        for(label in listOf("Няма БГ аудио","Без БГ аудио","БГ субтитри")){
+            val e=MovieCatalog.Entry();MovieSources.markLanguage(e,label)
+            assertFalse(label,e.audioVerified)
+        }
+    }
     @Test fun cachedVideoIsRestoredAsAPlayerInsteadOfOpeningTheMoviePage() = runBlocking {
         val body="""{"data":[{"title":"Spider-Man","slug":"spider-man","year":2002,"tmdb_id":557,"isBgAudio":true,"videoUrl":"https://cdn.example.com/master.m3u8"}]}"""
         BgWebIndex(temp.root,get={body},enabled={setOf("NINE")}).refresh()
@@ -21,9 +42,10 @@ class BgWebIndexTest {
         val sources=restored.sources(media(),null,1,1)
         assertEquals(1,sources.size)
         assertTrue(sources.single().playerOnly)
-        assertTrue(sources.single().direct)
-        assertEquals("https://cdn.example.com/master.m3u8",sources.single().url)
-        assertEquals("",sources.single().discoveryPage)
+        assertFalse(sources.single().direct)
+        assertTrue(sources.single().originalPlayer)
+        assertEquals("",sources.single().url)
+        assertEquals("https://filmi9.com/film/spider-man",sources.single().discoveryPage)
     }
     @Test fun scrollingReadsTheIndexWithoutNetworkAndWithoutScanningProviderSettingsForEveryRecord() = runBlocking {
         val data=org.json.JSONArray((1..3000).map { n -> org.json.JSONObject().put("title","Film $n").put("slug","film-$n").put("year",2002).put("isBgAudio",true) })

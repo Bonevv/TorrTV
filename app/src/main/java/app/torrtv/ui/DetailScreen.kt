@@ -438,9 +438,31 @@ private fun TorrentsPane(
 }
 
 @Composable
+private fun WebEpisodeSelectors(st:DetailState,d:Detail) {
+    var seasonsOpen by remember(st){mutableStateOf(false)}
+    var episodesOpen by remember(st){mutableStateOf(false)}
+    val seasons=(d.seasons.map{it.number}+st.webSeries.seasons).filter{it>=0}.distinct().sorted()
+    val webEpisodes=st.webSeries.episodes.filter{it.season==st.season}
+    val numbers=(st.episodes.map{it.number}+webEpisodes.map{it.number}).distinct().sorted()
+    Row(Modifier.padding(vertical=4.d),horizontalArrangement=Arrangement.spacedBy(8.d)) {
+        Chip(if(st.season==0)"Специални ▾" else "Сезон ${st.season} ▾",true,{seasonsOpen=true})
+        Chip(if(numbers.isEmpty() && (st.episodeLoading || st.webLoading))"Зареждат се епизоди…" else "Епизод ${st.episode} ▾",true,{if(numbers.isNotEmpty())episodesOpen=true})
+    }
+    if(seasonsOpen)PickDialog("Сезон",seasons.map{n->PickOption(n.toString(),if(n==0)"Специални епизоди" else "Сезон $n",
+        if(st.webSeries.episodes.any{it.season==n})"Уеб" else "")},st.season.toString(),{st.selectSeason(it.toInt());seasonsOpen=false},{seasonsOpen=false})
+    if(episodesOpen)PickDialog("Епизод",numbers.map{n->
+        val meta=st.episodes.firstOrNull{it.number==n};val available=webEpisodes.firstOrNull{it.number==n}
+        PickOption(n.toString(),"Епизод $n"+(meta?.name?.takeIf{it.isNotBlank()}?.let{" · $it"}?:""),
+            if(available?.bgAudio==true)"🇧🇬 БГ аудио · Уеб" else if(available!=null)"Уеб" else "")
+    },st.episode.toString(),{st.selectEpisode(it.toInt());episodesOpen=false},{episodesOpen=false})
+}
+
+@Composable
 private fun EpisodesPane(st: DetailState, d: Detail) {
     Column(Modifier.fillMaxSize()) {
         Spacer(Modifier.height(2.d))
+        WebEpisodeSelectors(st,d)
+        if(st.episodeLoading)Spinner(18.d)
         LazyRow(contentPadding = PaddingValues(horizontal = 6.d, vertical = 4.d), horizontalArrangement = Arrangement.spacedBy(8.d)) {
             items(d.seasons, key = { it.number }) { s ->
                 Chip(
@@ -456,10 +478,10 @@ private fun EpisodesPane(st: DetailState, d: Detail) {
         ) {
             items(st.episodes, key = { it.number }) { e ->
                 val sel = e.number == st.episode
-                Focusable({ st.selectEpisode(e.number) }, Modifier.width(190.d), RoundedCornerShape(10.d), 1.06f) { f ->
+                Focusable({ st.selectEpisode(e.number) }, Modifier.width(190.d), RoundedCornerShape(10.d), 1f, glow=false) { f ->
                     Column(Modifier.background(if (sel) C.cardHi else C.card)) {
                         Box {
-                            Img(Look.img(e.stillPath, "w300"), Modifier.fillMaxWidth().height(104.d))
+                            Img(Look.img(e.stillPath, "w300"), Modifier.fillMaxWidth().height(104.d),fade=false)
                             Box(Modifier.padding(6.d)) { Pill("Еп. ${e.number}", Color(0xCC000000), if (sel) C.accent2 else C.text) }
                             if (Library.isWatched(d.media, st.season, e.number)) {
                                 Box(Modifier.align(Alignment.TopEnd).padding(6.d)) { Pill("✓", Color(0xCC000000), C.green) }
@@ -484,14 +506,16 @@ private fun WebPane(st: DetailState, web: List<WebSources.Source>, webOn: Boolea
     val ctx = androidx.compose.ui.platform.LocalContext.current
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.padding(top = 4.d, bottom = 8.d)) {
-            PaneTitle("Уеб сайтове", if (webOn && web.isNotEmpty()) "${web.size}" else "")
+            PaneTitle("Уеб плеъри", if (webOn && web.isNotEmpty()) "${web.size}" else "")
         }
+        if(st.type==MediaType.TV)st.detail?.let{WebEpisodeSelectors(st,it)}
+        if(st.webLoading)Row(Modifier.padding(vertical=6.d),verticalAlignment=Alignment.CenterVertically){Spinner(16.d);Spacer(Modifier.width(8.d));Text2("Проверяват се плеърите за избрания епизод…",11,C.dim,FontWeight.Normal,1)}
         when {
             !webOn -> Text2("Уеб сайтовете са изключени. Включват се от Настройки → Уеб сайтове.", 13, C.dim, FontWeight.Normal, 2)
             web.isEmpty() -> Text2("Няма адреси на сайтове (или филмът още се зарежда).", 13, C.dim, FontWeight.Normal, 2)
             else -> {
                 Text2(
-                    "Гледане онлайн, без торент. Рекламите се блокират. Когато видеото тръгне, можеш да го прехвърлиш във вградения плеър (със субтитри) или да го гледаш в самата страница.",
+                    "Онлайн плеъри за избрания филм или епизод. Източниците от българските сайтове запазват оригиналния си плеър.",
                     11, C.dim, FontWeight.Normal, 3, Modifier.padding(bottom = 6.d)
                 )
                 LazyColumn(

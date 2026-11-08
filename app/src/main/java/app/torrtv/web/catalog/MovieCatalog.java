@@ -14,7 +14,8 @@ public final class MovieCatalog {
         public int episodeSchema;
         public long episodesUpdated;
         public int year;
-        public boolean bgAudio, bgSubs, detailed, series;
+        public int season=-1, seriesYear;
+        public boolean bgAudio, audioVerified, bgSubs, detailed, series;
         public long added;
         public final Set<String> genres = new LinkedHashSet<>();
         public String language() { return bgAudio ? "БГ аудио" : bgSubs ? "БГ субтитри" : "Езикът не е указан"; }
@@ -23,11 +24,14 @@ public final class MovieCatalog {
     public static final class Episode {
         public final String name,page,embed;
         public final int season,number;
+        public final Boolean bgAudio;
         Episode(String name,String page,String embed){this(name,page,embed,-1,MovieEpisodes.number(name));}
-        Episode(String name,String page,String embed,int season,int number){this.name=name;this.page=page;this.embed=embed;this.season=season;this.number=number;}
+        public Episode(String name,String page,String embed,int season,int number){this(name,page,embed,season,number,null);}
+        public Episode(String name,String page,String embed,int season,int number,Boolean bgAudio){this.name=name;this.page=page;this.embed=embed;this.season=season;this.number=number;this.bgAudio=bgAudio;}
     }
     public static final class SeasonLink {
-        public final int number;final String page;final boolean loaded;
-        SeasonLink(int number,String page,boolean loaded){this.number=number;this.page=page;this.loaded=loaded;}
+        public final int number;public final String page;public final boolean loaded;public final int year;public final Boolean bgAudio;
+        public SeasonLink(int number,String page,boolean loaded){this(number,page,loaded,0,null);}
+        public SeasonLink(int number,String page,boolean loaded,int year,Boolean bgAudio){this.number=number;this.page=page;this.loaded=loaded;this.year=year;this.bgAudio=bgAudio;}
     }
 }

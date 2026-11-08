@@ -63,6 +63,7 @@ class WebSourceActivity : AppCompatActivity() {
     private var discoveringCatalog = false
     private val failedPlayers = HashSet<String>()
     private val playerOnly get() = sources.getOrNull(idx)?.playerOnly == true
+    private val originalPlayer get() = sources.getOrNull(idx)?.originalPlayer == true
     private val playerScript by lazy { assets.open("bg-player.js").bufferedReader().use { it.readText() } }
 
     private var sources: List<WebSources.Source> = emptyList()
@@ -174,7 +175,7 @@ class WebSourceActivity : AppCompatActivity() {
         if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)) {
             androidx.webkit.WebViewCompat.addDocumentStartJavaScript(w, WebSubtitleProvider.probeScript, setOf("*"))
             androidx.webkit.WebViewCompat.addDocumentStartJavaScript(w,
-                "window.__torrtvPlayerOnly=" + playerOnly + ";" + playerScript, setOf("*"))
+                "window.__torrtvPlayerOnly=" + playerOnly + ";window.__torrtvOriginalPlayer=" + originalPlayer + ";" + playerScript, setOf("*"))
         }
         root.addView(w, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
@@ -276,7 +277,7 @@ class WebSourceActivity : AppCompatActivity() {
             val next = (1 until sources.size).map { (idx + it) % sources.size }
                 .firstOrNull { sources[it].playerOnly && sources[it].key !in failedPlayers }
             if (next == null) {
-                Toast.makeText(this, why.ifBlank { "Няма друг БГ плеър" }, Toast.LENGTH_LONG).show()
+                Toast.makeText(this, why.ifBlank { "Няма друг плеър" }, Toast.LENGTH_LONG).show()
                 if (why.isNotBlank()) finish()
                 return
             }
@@ -332,7 +333,7 @@ class WebSourceActivity : AppCompatActivity() {
         override fun onPageFinished(view: WebView, url: String?) {
             if (url == null || !url.startsWith("http")) return
             view.evaluateJavascript(WebSubtitleProvider.probeScript, null)
-            if (playerOnly) view.evaluateJavascript("window.__torrtvPlayerOnly=true;" + playerScript, null)
+            if (playerOnly) view.evaluateJavascript("window.__torrtvPlayerOnly=true;window.__torrtvOriginalPlayer="+originalPlayer+";" + playerScript, null)
             pageDone = true
             ui.removeCallbacks(loadTimeout)
             updateBar("готово · блокирани реклами: $blockedCount")
@@ -435,6 +436,7 @@ class WebSourceActivity : AppCompatActivity() {
     // ---------- Прихващане на видео поток ----------
 
     private fun maybeRecord(r: WebResourceRequest) {
+        if (originalPlayer) return
         if (handedOff) return
         val url = r.url.toString()
         val kind = mediaKind(url)
@@ -469,6 +471,7 @@ class WebSourceActivity : AppCompatActivity() {
 
     /** Страницата пусна видео: според настройката питаме, прехвърляме сами или само подсказваме. */
     private fun onCaptured() {
+        if (originalPlayer) return
         web?.evaluateJavascript("window.__torrtvScanSubs && window.__torrtvScanSubs()", null)
         if (playerOnly) {
             ui.postDelayed({ if (!handedOff && captured != null) handOff() }, 400)
@@ -522,6 +525,7 @@ class WebSourceActivity : AppCompatActivity() {
 
     /** Предава потока на вградения плеър (със субтитри и със заглавките на страницата) и затваря тази страница. */
     private fun handOff() {
+        if (originalPlayer) return
         val c = captured
         val p = pending
         if (c == null || p == null || handedOff) {
@@ -552,21 +556,22 @@ class WebSourceActivity : AppCompatActivity() {
 
     private fun showMenu() {
         val items = ArrayList<String>()
-        items.add(if (captured != null) "Пусни във вградения плеър" else "Вграден плеър (още няма намерено видео)")
-        items.add(if (playerOnly) "Следващ БГ плеър" else "Следващ сайт")
+        if (!originalPlayer) items.add(if (captured != null) "Пусни във вградения плеър" else "Вграден плеър (още няма намерено видео)")
+        items.add(if (playerOnly) "Следващ плеър" else "Следващ сайт")
         items.add("Презареди")
         sources.forEachIndexed { i, s -> items.add((if (i == idx) "●  " else "○  ") + s.host) }
         items.add("Затвори")
         AlertDialog.Builder(this)
             .setTitle(if (playerOnly) "Плеър" else "Уеб сайт")
             .setItems(items.toTypedArray()) { _, which ->
+                val offset = if (originalPlayer) 0 else 1
                 when {
-                    which == 0 -> handOff()
-                    which == 1 -> nextSource("")
-                    which == 2 -> load()
+                    !originalPlayer && which == 0 -> handOff()
+                    which == offset -> nextSource("")
+                    which == offset + 1 -> load()
                     which == items.size - 1 -> finish()
                     else -> {
-                        idx = which - 3
+                        idx = which - offset - 2
                         load()
                     }
                 }

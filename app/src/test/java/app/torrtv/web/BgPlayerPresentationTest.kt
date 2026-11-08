@@ -26,13 +26,15 @@ class BgPlayerPresentationTest {
         val bg = BgPlayerPresentation.source("filmifen.com", "https://filmifen.com/filmi/test.html", "")
         val otherBg = BgPlayerPresentation.source("filmi9.com", "https://filmi9.com/film/test", "https://player.example.com/e/abc")
         val regular = WebSources.Source("site.example.com", "https://site.example.com/movie/test")
-        assertEquals(listOf(bg, otherBg), BgPlayerPresentation.alternatives(listOf(bg, otherBg, regular), bg))
+        val subtitled = BgPlayerPresentation.source("filmifen.com", "https://filmifen.com/seriali/other.html", "",bgAudio=false)
+        assertEquals(listOf(bg, otherBg), BgPlayerPresentation.alternatives(listOf(bg, otherBg, regular,subtitled), bg))
         assertNotEquals(bg.key, otherBg.key)
     }
-    @Test fun directVideoGoesStraightToTheNativePlayer() {
+    @Test fun directMediaKeepsTheSitesOwnPlayerInsteadOfNativeHandoff() {
         val source = BgPlayerPresentation.source("filmi9.com", "https://filmi9.com/film/test", "https://cdn.example.com/master.m3u8?token=x")
-        assertTrue(source.direct)
+        assertFalse(source.direct)
+        assertTrue(source.originalPlayer)
         assertTrue(source.playerOnly)
-        assertEquals("", source.discoveryPage)
+        assertEquals("https://filmi9.com/film/test", source.discoveryPage)
     }
 }

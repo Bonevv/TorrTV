@@ -134,6 +134,9 @@ fun BrowseScreen(st: BrowseState, onOpen: (Media) -> Unit) {
             item(key = "bg") { SideTab((if (st.bgOnly) "☑ " else "☐ ") + "БГ аудио", "", st.bgOnly) { st.chooseBgOnly(!st.bgOnly) } }
             if (st.year != null || st.bgOnly) item(key = "clear") { SideTab("Изчисти филтрите", "", false) { st.clearFilters() } }
             if (st.bgOnly) item(key = "bg-status") { Text2(bgStatus.ifBlank { "Само потвърдени БГ версии" }, 10, C.dim, FontWeight.Normal, 3, Modifier.padding(horizontal = 12.d)) }
+            if(st.bgOnly && st.paged.started && !st.paged.loading && st.paged.items.isEmpty()) item(key="show-without-bg") {
+                SideTab("Покажи и без БГ аудио","",false){st.chooseBgOnly(false)}
+            }
             panelDivider("filters")
             if (st.forceAnime) {
                 item(key = "tm") { SideTab("Филми", "", st.type == MediaType.MOVIE) { st.changeType(MediaType.MOVIE) } }

@@ -84,6 +84,7 @@ public final class MovieSources {
             if(e.year==0) for(Element leaf:card.select("span,time"))if(leaf.ownText().trim().matches("(19|20)[0-9]{2}")){e.year=year(leaf.ownText());break;}
             if(e.year==0) e.year=year(card.text());
             e.title=e.title.replaceAll("\\s*\\((?:19|20)\\d{2}\\)\\s*$","").trim();
+            if(e.series)e.season=MovieEpisodes.season(e.title+" "+e.original+" "+card.text()+" "+e.page);
             if(e.original.equals(e.title) || e.original.startsWith("Гледай филми")) e.original="";
             markLanguage(e,card.text()+" "+card.select("[title]").eachAttr("title"));
             if(!card.select(".icon-subs").isEmpty()) e.bgSubs=true;
@@ -130,6 +131,7 @@ public final class MovieSources {
                 String slug=item.optString("slug");if(slug.isEmpty())continue;
                 entry.page=Provider.NINE.base+(entry.series?"/serial/":"/film/")+slug;if(!isTitle(Provider.NINE,entry.page))continue;
                 setNames(entry,item.optString("title"));entry.year=item.optInt("year");entry.poster=item.optString("movieImage");entry.bgAudio=item.optBoolean("isBgAudio");entry.tmdb=item.optString("tmdb_id","");entry.imdb=item.optString("imdb_id","");entry.description=item.optString("description");
+                entry.audioVerified=Boolean.TRUE.equals(item.opt("isBgAudio"));entry.season=MovieEpisodes.season(entry.title+" "+entry.original+" "+entry.page);
                 entry.embed=item.optString("videoUrl");
                 JSONArray players=item.optJSONArray("sources");if(entry.embed.isEmpty() && players!=null && players.optJSONObject(0)!=null)entry.embed=players.optJSONObject(0).optString("url");
                 JSONArray genres=item.optJSONArray("genres");if(genres!=null)for(int g=0;g<genres.length();g++){Object value=genres.opt(g);String name=genreName(value instanceof JSONObject?((JSONObject)value).optString("name"):String.valueOf(value));if(COMMON_GENRES.contains(name))entry.genres.add(name);}
@@ -183,6 +185,7 @@ public final class MovieSources {
         MovieCatalog.Entry e=new MovieCatalog.Entry();
         e.provider=old.provider;e.page=old.page;e.title=old.title;e.original=old.original;e.poster=old.poster;e.description=old.description;
         e.imdb=old.imdb;e.tmdb=old.tmdb;e.embed=old.embed;e.year=old.year;e.bgAudio=old.bgAudio;e.bgSubs=old.bgSubs;e.series=old.series;
+        e.audioVerified=old.audioVerified;e.season=old.season;e.seriesYear=old.seriesYear;
         e.episodes.addAll(old.episodes);e.seasons.addAll(old.seasons);e.genres.addAll(old.genres);
         Element main=doc.selectFirst("article.pmovie,article.detail-page,#mv-info"); if(main==null)main=doc.selectFirst("main"); if(main==null) main=doc.body();
         String title=text(main,".movie__bg-title");if(title.isEmpty())title=text(main,"h1,h3[itemprop=name]");
@@ -198,12 +201,20 @@ public final class MovieSources {
         markLanguage(e,text(main,".detail-meta,.pmovie__quality,.translation,.movie-language,[data-language]")
                 +" "+main.select(".genre-chip-row a[href*=/bg-audio],.mvic-info a[href*=/bgaudio],.pmovie__header-row a[href*=/filmi-bg-audio]").text());
         Element tmdb=main.selectFirst("[data-tmdb-id]"); if(tmdb!=null) e.tmdb=tmdb.attr("data-tmdb-id");
-        for(Element a:main.select("a[href*=imdb.com/title/],a[href*=themoviedb.org/movie/]")) {
+        for(Element a:main.select("a[href*=imdb.com/title/],a[href*=themoviedb.org/movie/],a[href*=themoviedb.org/tv/]")) {
             Matcher imdb=Pattern.compile("tt\\d{5,}").matcher(a.attr("href")); if(imdb.find())e.imdb=imdb.group();
-            Matcher tm=Pattern.compile("themoviedb.org/movie/(\\d+)").matcher(a.attr("href")); if(tm.find())e.tmdb=tm.group(1);
+            Matcher tm=Pattern.compile("themoviedb.org/(?:movie|tv)/(\\d+)").matcher(a.attr("href")); if(tm.find())e.tmdb=tm.group(1);
         }
         for(Element script:doc.select("script[type=application/ld+json]")) {
             try { readMovie(new JSONTokener(script.data()).nextValue(),e); } catch(Exception ignored) {}
+        }
+        for(Element script:doc.select("script")) {
+            Object own=jsonField(publicJson(script.data()),"movie");
+            if(own instanceof JSONObject){JSONObject item=(JSONObject)own;
+                if(item.has("isBgAudio")){e.bgAudio=Boolean.TRUE.equals(item.opt("isBgAudio"));e.audioVerified=e.bgAudio;}
+                if(!item.optString("tmdb_id").isEmpty())e.tmdb=item.optString("tmdb_id");
+                if(!item.optString("imdb_id").isEmpty())e.imdb=item.optString("imdb_id");
+            }
         }
         e.title=e.title.replaceAll("\\s*\\((19|20)[0-9]{2}\\)\\s*$","").trim();
         if(e.series)readEpisodes(e,doc);
@@ -221,7 +232,7 @@ public final class MovieSources {
     public static void readEpisodes(MovieCatalog.Entry e,Document doc){
         LinkedHashMap<String,MovieCatalog.Episode> found=new LinkedHashMap<>();
         LinkedHashMap<String,MovieCatalog.SeasonLink> seasons=new LinkedHashMap<>();
-        int current=MovieEpisodes.season(e.title+" "+e.original+" "+e.page);
+        int current=e.season>=0?e.season:MovieEpisodes.season(e.title+" "+e.original+" "+e.page);
         for(Element a:doc.select(".poster a[href],a.item-poster"))if(a.absUrl("href").equals(e.page)){
             int n=MovieEpisodes.season(a.text());if(n>=0)current=n;
         }
@@ -255,7 +266,8 @@ public final class MovieSources {
                 for(int i=0;i<list.length();i++){JSONObject item=list.optJSONObject(i);if(item==null)continue;
                     String slug=item.optString("slug");if(slug.isEmpty())continue;String page=Provider.valueOf(e.provider).base+"/serial/"+slug;
                     int season=item.optInt("seasonNumber",MovieEpisodes.season(item.optString("title")+" "+slug));
-                    addJsonEpisodes(item,page,season,found);seasons.put(page,new MovieCatalog.SeasonLink(season,page,item.optJSONArray("episodes")!=null));
+                    int startYear=item.optInt("year");if(season==1 && startYear>0)e.seriesYear=startYear;
+                    addJsonEpisodes(item,page,season,found);seasons.put(page,new MovieCatalog.SeasonLink(season,page,item.optJSONArray("episodes")!=null,startYear,item.has("isBgAudio")?item.optBoolean("isBgAudio"):null));
                 }
             }
         }
@@ -273,7 +285,9 @@ public final class MovieSources {
             labels.retainAll(titles);if(labels.isEmpty())continue;
             if(!seasons.containsKey(page))seasons.put(page,new MovieCatalog.SeasonLink(season,page,found.containsKey(page)));
         }
-        if(!found.isEmpty() && (current>=0 || found.values().stream().anyMatch(ep->ep.season<0)))seasons.put(e.page,new MovieCatalog.SeasonLink(current,e.page,true));
+        final int selectedSeason=current;
+        if(found.values().stream().anyMatch(ep->ep.season==selectedSeason))seasons.put(e.page,new MovieCatalog.SeasonLink(current,e.page,true));
+        e.season=current;if(current==1 && e.year>0)e.seriesYear=e.year;
         e.episodes.clear();e.episodes.addAll(found.values());e.seasons.clear();e.seasons.addAll(seasons.values());e.episodeSchema=2;e.episodesUpdated=System.currentTimeMillis();
     }
     private static int integer(String text,int fallback){try{return Integer.parseInt(text);}catch(NumberFormatException e){return fallback;}}
@@ -284,7 +298,8 @@ public final class MovieSources {
             JSONObject ep=episodes.optJSONObject(i);if(ep==null)continue;int number=ep.optInt("episodeNumber",i+1);
             String embed=ep.optString("videoUrl");JSONArray sources=ep.optJSONArray("sources");
             if(!embed.startsWith("http") && sources!=null && sources.optJSONObject(0)!=null)embed=sources.optJSONObject(0).optString("url");
-            String url=page+"#tvsites-episode="+number;found.put(url,new MovieCatalog.Episode("Епизод "+number,url,embed,ep.optInt("seasonNumber",season),number));
+            Boolean bg=ep.has("isBgAudio")?ep.optBoolean("isBgAudio"):item.has("isBgAudio")?item.optBoolean("isBgAudio"):null;
+            String url=page+"#tvsites-episode="+number;found.put(url,new MovieCatalog.Episode(ep.optString("name","Епизод "+number),url,embed,ep.optInt("seasonNumber",season),number,bg));
         }
     }
     private static Object jsonField(String data,String field){
@@ -323,7 +338,9 @@ public final class MovieSources {
     }
     public static void markLanguage(MovieCatalog.Entry e,String label) {
         String s=label.toLowerCase(Locale.ROOT);
-        e.bgAudio|=s.matches("(?s).*(бг[ \\-_]*(аудио|дублаж)|bg[ \\-_]*audio|българск[ои] (аудио|озвучаване|дублаж)|bulgarian (audio|dub)).*" );
+        boolean positive=s.matches("(?s).*(бг[ \\-_]*(аудио|дублаж)|bg[ \\-_]*audio|българск[ои] (аудио|озвучаване|дублаж)|bulgarian (audio|dub)).*");
+        boolean negative=s.matches("(?s).*(без|няма|no|not)[ :\\-]+(бг[ \\-_]*(аудио|дублаж)|bg[ \\-_]*audio|българск[ои] (аудио|озвучаване|дублаж)).*");
+        if(positive && !negative){e.bgAudio=true;e.audioVerified=true;}
         e.bgSubs|=s.matches("(?s).*(бг[ \\-_]*субтитри|български субтитри|bg[ \\-_]*subs).*" );
     }
     static int year(String text) { Matcher m=Pattern.compile("(?<!\\d)(19\\d{2}|20\\d{2})(?!\\d)").matcher(text);return m.find()?Integer.parseInt(m.group()):0; }

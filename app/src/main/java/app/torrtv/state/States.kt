@@ -498,17 +498,35 @@ class DetailState(val type: MediaType, val id: Int, private val deferTorrents: B
         private set
     private var webJob: Job? = null
     private var webApiJob: Job? = null
+    private var episodeJob: Job? = null
+    var webSeries by mutableStateOf(app.torrtv.web.WebSeriesResolver.Result())
+        private set
+    var webLoading by mutableStateOf(false)
+        private set
+    var episodeLoading by mutableStateOf(false)
+        private set
+    private fun clearWeb() {
+        webJob?.cancel();webApiJob?.cancel()
+        bgWebSources=emptyList();apiWebSources=emptyList()
+    }
     private fun loadWeb() {
-        webJob?.cancel()
-        webApiJob?.cancel()
-        bgWebSources = emptyList()
-        apiWebSources = emptyList()
+        clearWeb()
         val d = detail ?: return
         val s = season; val e = episode
         webJob = scope.launch {
-            try { if (Graph.prefs.webEnabled) bgWebSources = Graph.bgWeb.sources(d.media, d.imdbId, s, e) }
+            webLoading=true
+            try { if (Graph.prefs.webEnabled) {
+                if(type==MediaType.TV){
+                    val result=Graph.bgWeb.series(d.media,d.imdbId,s,e)
+                    if(s==season && e==episode){webSeries=result;bgWebSources=result.sources}
+                }else{
+                    val result=Graph.bgWeb.sources(d.media,d.imdbId,s,e)
+                    if(s==season && e==episode)bgWebSources=result
+                }
+            } }
             catch (ex: CancellationException) { throw ex }
             catch (_: Exception) { }
+            finally { if(s==season && e==episode)webLoading=false }
         }
         webApiJob = scope.launch {
             try {
@@ -662,22 +680,30 @@ class DetailState(val type: MediaType, val id: Int, private val deferTorrents: B
     }
 
     private suspend fun loadEpisodes() {
+        val selectedSeason=season
+        episodeLoading=true
         try {
-            episodes = Graph.tmdb.episodes(id, season)
-            if (episodes.none { it.number == episode }) episode = episodes.firstOrNull()?.number ?: 1
+            val result=Graph.tmdb.episodes(id,selectedSeason)
+            if(selectedSeason!=season)return
+            episodes=result
+            if (episodes.none { it.number == episode } && webSeries.episodes.none{it.season==season && it.number==episode}) episode = episodes.firstOrNull()?.number ?: 1
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            episodes = emptyList()
+            if(selectedSeason==season)episodes = emptyList()
         }
+        finally {if(selectedSeason==season)episodeLoading=false}
     }
 
     fun selectSeason(n: Int) {
         if (n == season) return
         season = n
         episode = 1
-        scope.launch {
+        episodeJob?.cancel();clearWeb();episodes=emptyList()
+        torrentJob?.cancel();subJob?.cancel();torrents=emptyList();subResults=emptyList()
+        episodeJob=scope.launch {
             loadEpisodes()
+            if(season!=n)return@launch
             loadTorrents()
             loadSubs()
             loadWeb()

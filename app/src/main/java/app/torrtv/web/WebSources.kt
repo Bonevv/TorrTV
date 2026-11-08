@@ -65,7 +65,7 @@ object WebSources {
 
     class Source(val host: String, val url: String, val bgAudio: Boolean = false,
         val direct: Boolean = false, val headers: Map<String,String> = emptyMap(), val release: String = "",
-        val playerOnly: Boolean = false, val discoveryPage: String = "") {
+        val playerOnly: Boolean = false, val discoveryPage: String = "", val originalPlayer: Boolean = false) {
         val key: String get() = url.ifBlank { discoveryPage }
     }
 

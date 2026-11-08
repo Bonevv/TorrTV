@@ -2,6 +2,7 @@
     if (!window.__torrtvPlayerOnly || window !== window.top || window.__torrtvPlayerProbe) return;
     window.__torrtvPlayerProbe = true;
     var sent = false, attempts = 0, episodeReady = !location.hash.match(/tvsites-episode=(\d+)/);
+    var episodeSelectionStarted = false, previousEpisodeMedia = [];
     function emit(value) { console.info('TORRTV_PLAYER:' + JSON.stringify(value)); }
     function click(node, pointer) {
         if (Date.now() - (node.__torrtvClickAt || 0) < 1500) return;
@@ -21,7 +22,14 @@
                 var e = episodes[i];
                 if (e.textContent.trim() === 'Епизод ' + wanted[1] || e.getAttribute('data-tv_link') === wanted[1]) {
                     episodeReady = e.getAttribute('aria-selected') === 'true' || e.getAttribute('data-state') === 'active' || /(?:^|\s)(?:active|is-active|bg-primary|bg-red-600)(?:\s|$)/.test(e.className);
-                    if (!episodeReady) click(e, false);
+                    if (!episodeReady) {
+                        if (!episodeSelectionStarted) {
+                            episodeSelectionStarted = true;
+                            var oldMedia = document.querySelectorAll('.movieplay iframe,#video-stage iframe,.video-responsive iframe,#player-box iframe,video');
+                            for (var old = 0; old < oldMedia.length; old++) previousEpisodeMedia.push(oldMedia[old].currentSrc || oldMedia[old].src || '');
+                        }
+                        click(e, false);
+                    }
                     break;
                 }
             }
@@ -62,6 +70,14 @@
             (document.head || document.documentElement).appendChild(style);
         }
         node.setAttribute('data-torrtv-isolated-player', '');
+        var controls = node.querySelector('.pmovie__player-controls,.zenoplay-player-strip,.episode-player-picker-wrap');
+        var controlsHeight = controls ? Math.max(controls.getBoundingClientRect().height, 40) : 0;
+        var stages = node.querySelectorAll('.video-responsive,.tabs-block__content,.video-stage,.player-frame,iframe,video');
+        for (var s = 0; s < stages.length; s++) {
+            stages[s].style.setProperty('height', 'calc(100vh - ' + controlsHeight + 'px)', 'important');
+            stages[s].style.setProperty('max-height', 'none', 'important');
+            stages[s].style.setProperty('padding-top', '0', 'important');
+        }
         return true;
     }
     function scan() {
@@ -71,11 +87,16 @@
         if (!episodeReady) return;
         var frames = document.querySelectorAll('.pmovie__player iframe,.movieplay iframe,#video-stage iframe,.video-responsive iframe,#player-box iframe,#player iframe,article iframe,.entry-content iframe');
         for (var i = 0; i < frames.length; i++) if (validFrame(frames[i])) {
-            sent = true; emit({url: frames[i].src, page: location.href}); return;
+            if (episodeSelectionStarted && previousEpisodeMedia.indexOf(frames[i].src) >= 0) continue;
+            if (window.__torrtvOriginalPlayer) {
+                var panel = frames[i].closest('.pmovie__player,.movieplay,[data-player-panel],#video-stage,.video-responsive,#player-box,#player');
+                if (isolate(panel || frames[i])) { sent = true; emit({ready: true}); return; }
+            } else { sent = true; emit({url: frames[i].src, page: location.href}); return; }
         }
         var video = document.querySelector('.jwplayer,.video-js,.plyr,video');
         var nativeVideo = video && (video.tagName === 'VIDEO' ? video : video.querySelector('video'));
         var mediaUrl = nativeVideo && (nativeVideo.currentSrc || nativeVideo.src || (nativeVideo.querySelector('source') || {}).src);
+        if (episodeSelectionStarted && previousEpisodeMedia.indexOf(mediaUrl) >= 0) return;
         if (mediaUrl && !/trailer|preroll|doubleclick|\/ads\//i.test(mediaUrl) && !nativeVideo.closest('.trailer,[data-player="trailer"]') && isolate(video)) { sent = true; emit({ready: true}); }
     }
     window.__torrtvFindPlayer = scan;

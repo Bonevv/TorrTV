@@ -12,16 +12,16 @@ object BgPlayerPresentation {
             !Regex("^/(?:embed|player|e)(?:/|\\.|$)", RegexOption.IGNORE_CASE).containsMatchIn(u.path.orEmpty())
     } catch (_: Exception) { true }
 
-    fun source(host: String, page: String, embed: String): WebSources.Source {
+    fun source(host: String, page: String, embed: String, bgAudio: Boolean = true): WebSources.Source {
         val playable = WebSubtitleProvider.publicUrl(embed) && !catalogue(embed) && !AdBlock.isBlocked(URI(embed).host)
         val direct = playable && Regex("\\.(?:m3u8|mpd|mp4)(?:[?#]|$)", RegexOption.IGNORE_CASE).containsMatchIn(embed)
-        return WebSources.Source(host, if (playable) embed else "", bgAudio = true, direct = direct,
+        return WebSources.Source(host, if (playable && !direct) embed else "", bgAudio = bgAudio, direct = false,
             headers = mapOf("Referer" to page.substringBefore('#')), playerOnly = true,
-            discoveryPage = if (playable) "" else page)
+            discoveryPage = if (playable && !direct) "" else page, originalPlayer = true)
     }
 
     fun alternatives(sources: List<WebSources.Source>, selected: WebSources.Source): List<WebSources.Source> =
-        sources.filter { !it.direct && (!selected.playerOnly || it.playerOnly) }
+        sources.filter { !it.direct && (!selected.playerOnly || it.playerOnly && (!selected.bgAudio || it.bgAudio)) }
 
     /** A minimal frame preserves the movie Referer required by some players, without any site layout. */
     fun shell(url: String): String {

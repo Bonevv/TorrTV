@@ -11,20 +11,43 @@ with sync_playwright() as playwright:
     context = browser.new_context(viewport={'width': 1280, 'height': 720})
     context.route('**/*', lambda route: route.fulfill(status=200, body='<html><body></body></html>', content_type='text/html'))
 
-    def page_for(html):
+    def page_for(html, original=False, fragment=''):
         page = context.new_page()
         events = []
         errors = []
         page.on('console', lambda message: events.append(json.loads(message.text[len('TORRTV_PLAYER:'):])) if message.text.startswith('TORRTV_PLAYER:') else None)
         page.on('pageerror', lambda error: errors.append(str(error)))
         page.set_content(html)
+        if fragment:
+            page.evaluate('(value) => { location.hash = value; }', fragment)
         page.evaluate('window.__torrtvPlayerOnly = true')
+        page.evaluate('window.__torrtvOriginalPlayer = ' + ('true' if original else 'false'))
         page.add_script_tag(content=SCRIPT)
         return page, events, errors
 
     page, events, errors = page_for('<nav>Movie catalogue</nav><article><div class="pmovie__player"><iframe src="https://player.example.com/embed/movie"></iframe></div></article>')
     page.wait_for_timeout(100)
     assert events == [{'url': 'https://player.example.com/embed/movie', 'page': 'about:blank'}], events
+    assert not errors, errors
+    page.close()
+
+    page, events, errors = page_for('''<button data-tv_link="1">Епизод 1</button><button id="ep2" data-tv_link="2" onclick="this.className='active';setTimeout(function(){document.getElementById('episode-frame').src='https://player.example.com/episode-2'},1100)">Епизод 2</button><div class="movieplay"><iframe id="episode-frame" src="https://player.example.com/episode-1"></iframe></div>''', original=True, fragment='tvsites-episode=2')
+    page.wait_for_timeout(700)
+    assert not events, events
+    page.wait_for_timeout(700)
+    assert events == [{'ready': True}], events
+    assert page.locator('#episode-frame').get_attribute('src').endswith('/episode-2')
+    assert not errors, errors
+    page.close()
+
+    page, events, errors = page_for('<nav id="catalogue">Catalogue</nav><article><div class="pmovie__player" id="original-controls"><button id="audio">БГ аудио</button><iframe id="original-frame" src="https://player.example.com/bg"></iframe></div><aside>Other films</aside></article>', original=True)
+    page.wait_for_timeout(100)
+    assert events == [{'ready': True}], events
+    assert not page.locator('#catalogue').is_visible()
+    assert not page.locator('aside').is_visible()
+    assert page.locator('#audio').is_visible()
+    assert page.locator('#original-frame').get_attribute('src') == 'https://player.example.com/bg'
+    assert page.locator('#original-controls').is_visible()
     assert not errors, errors
     page.close()
 
@@ -74,4 +97,4 @@ with sync_playwright() as playwright:
     page.close()
 
     browser.close()
-    print('7 player browser checks passed: frame extraction, trailer replacement, dynamic and delayed activation, isolated video, no catalogue fallback, minimal shell')
+    print('9 player browser checks passed, including exact episode selection and original controls without iframe reload or native handoff')

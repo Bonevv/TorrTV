@@ -6,6 +6,7 @@ import app.torrtv.data.Media
 import app.torrtv.data.MediaType
 import app.torrtv.web.catalog.MovieCatalog
 import app.torrtv.web.catalog.MovieSources
+import app.torrtv.web.catalog.MovieEpisodes
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.sync.Mutex
@@ -19,7 +20,7 @@ import java.io.File
 import java.text.Normalizer
 import java.util.Locale
 
-/** Only positive source evidence is cached. Network failure never means "no BG version". */
+/** Catalogue metadata is cached; audio badges require explicit evidence for that version. */
 class BgWebIndex(private val directory: File, private val get: suspend (String) -> String = { Http.get(it) },
     private val enabled: () -> Set<String> = { setOf("NINE", "TWO_K", "ZENO", "ALL", "FEN", "ZT", "ZIP") },
     private val allowNetwork: () -> Boolean = { true }) {
@@ -27,8 +28,10 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
     val revision = MutableStateFlow(0)
     val status = MutableStateFlow("")
     @Volatile private var records: List<Record> = emptyList()
-    private data class Lookup(val ids: Map<String, List<Record>>, val names: Map<String, List<Record>>)
-    @Volatile private var lookup = Lookup(emptyMap(), emptyMap())
+    private data class Lookup(val ids: Map<String, List<Record>>, val names: Map<String, List<Record>>, val series: Map<String,List<Record>>)
+    @Volatile private var lookup = Lookup(emptyMap(), emptyMap(), emptyMap())
+    private val seriesResolver by lazy { WebSeriesResolver(::fetch) }
+    private val indexFile get() = File(directory, "index-audio-v2.json")
     private val lock = Mutex()
     private val attempts = LinkedHashMap<String, Long>()
     private var restored = false
@@ -46,36 +49,47 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
             if (!imdb.isNullOrBlank() && e.imdb.isNotBlank() && imdb != e.imdb) return false
             if (e.tmdb.isNotBlank() && e.tmdb != "0") return e.tmdb == m.id.toString()
             if (!imdb.isNullOrBlank() && e.imdb.isNotBlank()) return imdb == e.imdb
-            if (e.year <= 0 || e.year.toString() != m.year) return false
-            val names = setOf(normalize(m.title), normalize(m.originalTitle)) - ""
-            return listOf(e.title, e.original).any { normalize(it) in names }
+            val year = if (e.series && e.seriesYear > 0) e.seriesYear else e.year
+            if (year <= 0 || year.toString() != m.year) return false
+            val key: (String)->String = if(e.series) MovieEpisodes::baseTitle else ::normalize
+            val names = setOf(key(m.title), key(m.originalTitle)) - ""
+            return listOf(e.title, e.original).any { key(it) in names }
         }
     }
     private fun replaceRecords(value: List<Record>) {
         val ids = HashMap<String, MutableList<Record>>()
         val names = HashMap<String, MutableList<Record>>()
+        val series = HashMap<String,MutableList<Record>>()
         for (r in value) {
             val e = r.entry; val type = if (e.series) "tv" else "movie"
             for (id in listOf(e.tmdb, e.imdb).filter { it.isNotBlank() && it != "0" }) ids.getOrPut("$type:$id") { ArrayList() }.add(r)
-            for (name in setOf(normalize(e.title), normalize(e.original)) - "") names.getOrPut("$type:${e.year}:$name") { ArrayList() }.add(r)
+            val labels=if(e.series)setOf(MovieEpisodes.baseTitle(e.title),MovieEpisodes.baseTitle(e.original)) else setOf(normalize(e.title),normalize(e.original))
+            val year=if(e.seriesYear>0)e.seriesYear else e.year
+            for (name in labels - "") {
+                names.getOrPut("$type:$year:$name") { ArrayList() }.add(r)
+                if(e.series)series.getOrPut(name){ArrayList()}.add(r)
+            }
         }
         records = value
-        lookup = Lookup(ids, names)
+        lookup = Lookup(ids, names, series)
     }
-    fun find(m: Media, imdb: String? = null): List<Record> {
+    fun find(m: Media, imdb: String? = null, onlyBg: Boolean = true): List<Record> {
         val snapshot = lookup; val providers = enabled(); val now = System.currentTimeMillis()
         val type = m.type.path
         val candidates = ArrayList<Record>()
         candidates.addAll(snapshot.ids["$type:${m.id}"].orEmpty())
         if (!imdb.isNullOrBlank()) candidates.addAll(snapshot.ids["$type:$imdb"].orEmpty())
-        for (name in setOf(normalize(m.title), normalize(m.originalTitle)) - "") candidates.addAll(snapshot.names["$type:${m.year}:$name"].orEmpty())
+        val labels=if(m.type==MediaType.TV)setOf(MovieEpisodes.baseTitle(m.title),MovieEpisodes.baseTitle(m.originalTitle)) else setOf(normalize(m.title),normalize(m.originalTitle))
+        for (name in labels - "") candidates.addAll(snapshot.names["$type:${m.year}:$name"].orEmpty())
         return candidates.distinctBy { it.entry.page }.filter {
-            now - it.checkedAt in 0..TTL && it.entry.provider in providers && it.entry.bgAudio && matches(m, it.entry, imdb)
+            now - it.checkedAt in 0..TTL && it.entry.provider in providers && (!onlyBg || it.entry.bgAudio && it.entry.audioVerified) && matches(m, it.entry, imdb)
         }
     }
     // Catalogue badges describe a title; sources() separately checks the selected episode.
     fun has(m: Media): Boolean = find(m).isNotEmpty()
-    fun count(): Int { val providers=enabled();val now=System.currentTimeMillis();return records.count { it.entry.provider in providers && now-it.checkedAt in 0..TTL } }
+    fun count(type:MediaType?=null): Int { val providers=enabled();val now=System.currentTimeMillis();return records.count {
+        it.entry.provider in providers && it.entry.bgAudio && it.entry.audioVerified && now-it.checkedAt in 0..TTL && (type==null || it.entry.series==(type==MediaType.TV))
+    } }
     fun settingsChanged() { revision.value++ }
 
     private fun persist() {
@@ -84,13 +98,13 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
             directory.mkdirs()
             val tmp = File(directory, "index.tmp")
             tmp.writeText(encode(records))
-            tmp.renameTo(File(directory, "index.json"))
+            tmp.renameTo(indexFile)
         } catch (_: java.io.IOException) { }
     }
     private fun restoreLocked() {
         if (restored) return
         restored = true
-        try { replaceRecords(decode(File(directory, "index.json").readText())) } catch (_: Exception) { }
+        try { replaceRecords(decode(indexFile.readText())) } catch (_: Exception) { }
         revision.value++
     }
     suspend fun restore() = withContext(Dispatchers.IO) { lock.withLock { restoreLocked() } }
@@ -125,7 +139,7 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
             }
             val now = System.currentTimeMillis()
             val merged = records.filter { now - it.checkedAt in 0..TTL }.associateBy { it.entry.page }.toMutableMap()
-            for ((_, entries) in updates) for (e in entries) { if (e.bgAudio) merged[e.page] = Record(e, now) else merged.remove(e.page) }
+            for ((_, entries) in updates) for (e in entries) { if (e.bgAudio || e.series) merged[e.page] = Record(e, now) else merged.remove(e.page) }
             replaceRecords(merged.values.sortedByDescending { it.checkedAt }.take(3000))
             if (updates.isNotEmpty()) {
                 attempts[attemptKey] = now
@@ -134,7 +148,7 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
             }
             revision.value++
             status.value = if (updates.isEmpty()) "Уеб източниците не отговориха. Наличността на БГ аудио е непроверена."
-                else "Потвърдени записи: ${count()} · отговорили източници: ${updates.size}/${providers.size}. Проверката е частична."
+                else "Потвърдени БГ ${if(type==MediaType.TV)"сериали" else if(type==MediaType.MOVIE)"филми" else "версии"}: ${count(type)} · отговорили източници: ${updates.size}/${providers.size}. Проверката е частична."
         }
     }
     private suspend fun load(p: MovieSources.Provider, q: String, type: MediaType?): List<MovieCatalog.Entry> {
@@ -154,7 +168,7 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
         if (p == MovieSources.Provider.ZENO && q.isNotBlank()) {
             for (entry in parsed.entries.filter { !it.bgAudio }.take(3)) {
                 val confirmed = withTimeoutOrNull(1500) { ZenoProvider.hasBg(entry.page, fetch(entry.page)) } == true
-                if (confirmed) entry.bgAudio = true
+                if (confirmed) { entry.bgAudio = true; entry.audioVerified = true }
             }
         }
         if (q.isBlank()) nextPages[p.name] = parsed.next.takeIf { p.owns(it) && it != url }.orEmpty()
@@ -179,7 +193,7 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
             val title = Jsoup.parse(o.optJSONObject("title")?.optString("rendered").orEmpty()).text()
             val year = Regex("\\b(?:19|20)\\d{2}\\b").find(title)?.value?.toIntOrNull() ?: 0
             MovieCatalog.Entry().also { e ->
-                e.provider = "TWO_K"; e.page = url; e.bgAudio = true; e.year = year
+                e.provider = "TWO_K"; e.page = url; e.bgAudio = true; e.audioVerified = true; e.year = year
                 val names = title.replace(Regex("\\s*\\(\\d{4}\\).*"), "").split(" / ")
                 e.original = names.first().trim(); e.title = names.last().trim()
             }
@@ -220,7 +234,7 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
                 lock.withLock {
                     val now=System.currentTimeMillis()
                     val merged=records.filter { now-it.checkedAt in 0..TTL }.associateBy { it.entry.page }.toMutableMap()
-                    for(e in entries) if(e.bgAudio) merged[e.page]=Record(e,now) else merged.remove(e.page)
+                    for(e in entries) if(e.bgAudio || e.series) merged[e.page]=Record(e,now) else merged.remove(e.page)
                     replaceRecords(merged.values.sortedByDescending { it.checkedAt }.take(3000))
                     nextPages[provider]=next
                     persist()
@@ -238,36 +252,57 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
     }
     private fun incrementPage(url:String):String = Regex("([?&]page=)(\\d+)").replace(url) { it.groupValues[1]+(it.groupValues[2].toInt()+1) }
     suspend fun sources(m: Media, imdb: String?, season: Int, episode: Int): List<WebSources.Source> = withContext(Dispatchers.IO) {
+        if(m.type==MediaType.TV)return@withContext series(m,imdb,season,episode).sources
         refresh(type = m.type)
         refresh(m.originalTitle.ifBlank { m.title })
-        find(m, imdb).mapNotNull { record ->
+        val checkedEntries=ArrayList<MovieCatalog.Entry>()
+        val sources=find(m, imdb, onlyBg=false).mapNotNull { record ->
             val e = decodeEntry(encodeEntry(record.entry))
             try {
-                if (e.series) {
-                    val detailed = MovieSources.detail(e, Jsoup.parse(fetch(e.page), e.page))
-                    val ep = detailed.episodes.firstOrNull { it.season == season && it.number == episode } ?: return@mapNotNull null
-                    // Require episode-specific language evidence.
-                    val child = MovieCatalog.Entry().also { it.provider=e.provider; it.page=ep.page; it.series=true }
-                    val checked = MovieSources.detail(child, Jsoup.parse(fetch(ep.page), ep.page))
-                    if (!checked.bgAudio) return@mapNotNull null
-                    BgPlayerPresentation.source(WebSources.hostOf(ep.page), ep.page, ep.embed.ifBlank { checked.embed })
-                } else if (e.provider == "ZENO") {
+                val checked=if(e.audioVerified)e else MovieSources.detail(e,Jsoup.parse(fetch(e.page),e.page))
+                if(!e.audioVerified)checkedEntries.add(checked)
+                if(!matches(m,checked,imdb))return@mapNotNull null
+                if(!checked.bgAudio || !checked.audioVerified)return@mapNotNull null
+                if (e.provider == "ZENO") {
                     // Only a provider explicitly returned in the BG group may be selected.
                     val embed = withTimeoutOrNull(5_000) { ZenoProvider.players(e.page, fetch(e.page)).firstOrNull() }
                         ?: return@mapNotNull null
                     BgPlayerPresentation.source(WebSources.hostOf(e.page), e.page, embed)
-                } else BgPlayerPresentation.source(WebSources.hostOf(e.page), e.page, e.embed)
+                } else BgPlayerPresentation.source(WebSources.hostOf(e.page), e.page, checked.embed)
             } catch (ex: CancellationException) { throw ex } catch (_: Exception) { null }
         }.distinctBy { it.key }
+        rememberDetails(checkedEntries)
+        sources
+    }
+    suspend fun series(m:Media,imdb:String?,season:Int,episode:Int):WebSeriesResolver.Result = withContext(Dispatchers.IO) {
+        restore()
+        refresh(m.originalTitle.ifBlank{m.title},type=MediaType.TV)
+        val providers=enabled();val now=System.currentTimeMillis();val snapshot=lookup
+        val candidates=(find(m,imdb,onlyBg=false)+listOf(m.title,m.originalTitle).flatMap{snapshot.series[MovieEpisodes.baseTitle(it)].orEmpty()})
+            .distinctBy{it.entry.page}.filter{it.entry.provider in providers && now-it.checkedAt in 0..TTL}
+            .map{it.entry}.filter{(it.tmdb.isBlank() || it.tmdb=="0" || it.tmdb==m.id.toString()) && (imdb.isNullOrBlank() || it.imdb.isBlank() || it.imdb==imdb)}
+        val result=seriesResolver.resolve(m,imdb,candidates,season,episode)
+        rememberDetails(result.entries)
+        result
+    }
+    private suspend fun rememberDetails(entries:List<MovieCatalog.Entry>) {
+        if(entries.isNotEmpty())lock.withLock {
+            val now=System.currentTimeMillis()
+            val merged=records.associateBy{it.entry.page}.toMutableMap()
+            for(e in entries)merged[e.page]=Record(e,now)
+            replaceRecords(merged.values.sortedByDescending{it.checkedAt}.take(3000));persist();revision.value++
+        }
     }
     private fun encodeEntry(e: MovieCatalog.Entry) = JSONObject().put("provider", e.provider).put("page", e.page)
         .put("title", e.title).put("original", e.original).put("year", e.year).put("tmdb", e.tmdb)
         .put("imdb", e.imdb).put("series", e.series).put("bgAudio", e.bgAudio).put("embed", e.embed)
+        .put("audioVerified",e.audioVerified).put("season",e.season).put("seriesYear",e.seriesYear)
     private fun decodeEntry(j: JSONObject) = MovieCatalog.Entry().also {
         it.provider=j.getString("provider");it.page=j.getString("page");it.title=j.getString("title")
         it.original=j.optString("original");it.year=j.optInt("year");it.tmdb=j.optString("tmdb")
         it.imdb=j.optString("imdb");it.series=j.optBoolean("series");it.bgAudio=j.optBoolean("bgAudio")
         it.embed=j.optString("embed")
+        it.audioVerified=j.optBoolean("audioVerified");it.season=j.optInt("season",-1);it.seriesYear=j.optInt("seriesYear")
     }
     private fun encode(r: List<Record>) = JSONArray(r.map { JSONObject().put("entry", encodeEntry(it.entry)).put("checkedAt", it.checkedAt) }).toString()
     private fun decode(s: String): List<Record> {
