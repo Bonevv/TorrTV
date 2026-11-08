@@ -192,21 +192,45 @@ class BrowseState(initialType: MediaType, val forceAnime: Boolean = false) {
     var sort by mutableStateOf(0) // 0 популярни, 1 най-нови, 2 най-високо оценени
     var anime by mutableStateOf(forceAnime)
     var provider by mutableStateOf<String?>(null)
+    var year by mutableStateOf<Int?>(null)
+        private set
+    var bgOnly by mutableStateOf(false)
+        private set
     var paged by mutableStateOf(make())
     val gridState = LazyGridState()
     var focusKey: String? = null
 
-    private fun make(): Paged<Media> = Paged(200, { p -> fetchPage(p) }) { it.key }
-
-    private suspend fun fetchPage(p: Int): Page<Media> {
-        val movie = type == MediaType.MOVIE
+    private fun make(): Paged<Media> {
+        val mediaType = type
+        val movie = mediaType == MediaType.MOVIE
         val pv = provider
-        // Каталозите на платформите са по-малки: с по-нисък праг на гласовете, за да не остане списъкът почти празен.
-        return when (sort) {
-            1 -> Graph.tmdb.discover(type, genre, p, if (movie) "primary_release_date.desc" else "first_air_date.desc", if (pv != null) 10 else 40, 0.0, anime, null, pv)
-            2 -> Graph.tmdb.discover(type, genre, p, "vote_average.desc", if (pv != null) 150 else if (anime) 250 else 600, 0.0, anime, null, pv)
-            else -> Graph.tmdb.discover(type, genre, p, "popularity.desc", if (pv != null) 20 else 60, 0.0, anime, null, pv)
-        }
+        val selectedGenre = genre; val selectedAnime = anime; val selectedYear = year; val onlyBg = bgOnly
+        val order = sort
+        return Paged(200, { requested ->
+            if (onlyBg) Graph.bgWeb.refresh(type = mediaType)
+            var page = requested
+            var total = requested
+            val found = ArrayList<Media>()
+            var rounds = 0
+            do {
+                // Explicit filters must not silently discard matching titles with few votes.
+                val sortBy = when (order) { 1 -> if (movie) "primary_release_date.desc" else "first_air_date.desc"; 2 -> "vote_average.desc"; else -> "popularity.desc" }
+                val votes = if (selectedYear != null || onlyBg) 0 else when (order) { 1 -> if (pv != null) 10 else 40; 2 -> if (pv != null) 150 else if (selectedAnime) 250 else 600; else -> if (pv != null) 20 else 60 }
+                val result = Graph.tmdb.discover(mediaType, selectedGenre, page, sortBy, votes, 0.0, selectedAnime, null, pv, selectedYear)
+                total = result.totalPages
+                found.addAll(if (onlyBg) result.items.filter { Graph.bgWeb.has(it) } else result.items)
+                if (!onlyBg || found.size >= 20 || page >= total || ++rounds >= 4) break
+                page++
+            } while (true)
+            Page(found.distinctBy { it.key }, page, total)
+        }) { it.key }
+    }
+
+    fun chooseYear(value: Int?) { year = value; paged = make() }
+    fun chooseBgOnly(value: Boolean) { bgOnly = value; paged = make() }
+    fun clearFilters() {
+        year = null; bgOnly = false
+        paged = make()
     }
 
     fun pickProvider(id: String?) {
@@ -751,7 +775,7 @@ class DetailState(val type: MediaType, val id: Int, private val deferTorrents: B
     fun webSources(): List<app.torrtv.web.WebSources.Source> {
         val d = detail ?: return emptyList()
         if (!Graph.prefs.webEnabled) return emptyList()
-        return (bgWebSources + apiWebSources + app.torrtv.web.WebSources.sources(Graph.prefs, type == MediaType.TV, id, d.imdbId, season, episode)).distinctBy { it.url }
+        return (bgWebSources + apiWebSources + app.torrtv.web.WebSources.sources(Graph.prefs, type == MediaType.TV, id, d.imdbId, season, episode)).distinctBy { it.key }
     }
 
     private fun buildReq(

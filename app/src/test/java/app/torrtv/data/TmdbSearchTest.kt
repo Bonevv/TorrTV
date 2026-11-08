@@ -3,6 +3,11 @@ import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 class TmdbSearchTest {
+    @Test fun browseAndSearchUseTheCorrectYearFieldForEachMediaType() {
+        assertEquals(mapOf("primary_release_year" to "2002"), Tmdb.yearParams(MediaType.MOVIE, 2002))
+        assertEquals(mapOf("first_air_date_year" to "2020"), Tmdb.yearParams(MediaType.TV, 2020))
+        assertTrue(Tmdb.yearParams(MediaType.TV, null).isEmpty())
+    }
     @Test fun peopleSearchKeepsActorsButRejectsCrewAdultAndDuplicateRows() {
         val j=JSONObject("""{"results":[{"id":31,"name":"Tom Hanks","known_for_department":"Acting","profile_path":"/tom.jpg"},{"id":31,"name":"Tom Hanks","known_for_department":"Acting"},{"id":32,"name":"Director","known_for_department":"Directing"},{"id":33,"name":"Adult","known_for_department":"Acting","adult":true}]}""")
         val actors=Tmdb.parseActors(j)

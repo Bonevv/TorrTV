@@ -130,6 +130,8 @@ public final class MovieSources {
                 String slug=item.optString("slug");if(slug.isEmpty())continue;
                 entry.page=Provider.NINE.base+(entry.series?"/serial/":"/film/")+slug;if(!isTitle(Provider.NINE,entry.page))continue;
                 setNames(entry,item.optString("title"));entry.year=item.optInt("year");entry.poster=item.optString("movieImage");entry.bgAudio=item.optBoolean("isBgAudio");entry.tmdb=item.optString("tmdb_id","");entry.imdb=item.optString("imdb_id","");entry.description=item.optString("description");
+                entry.embed=item.optString("videoUrl");
+                JSONArray players=item.optJSONArray("sources");if(entry.embed.isEmpty() && players!=null && players.optJSONObject(0)!=null)entry.embed=players.optJSONObject(0).optString("url");
                 JSONArray genres=item.optJSONArray("genres");if(genres!=null)for(int g=0;g<genres.length();g++){Object value=genres.opt(g);String name=genreName(value instanceof JSONObject?((JSONObject)value).optString("name"):String.valueOf(value));if(COMMON_GENRES.contains(name))entry.genres.add(name);}
                 if(!entry.title.isEmpty())page.entries.add(entry);
             }

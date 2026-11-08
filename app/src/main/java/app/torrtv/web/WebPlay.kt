@@ -20,8 +20,8 @@ object WebPlay {
             app.torrtv.state.Graph.stream.playWeb(selected.url, selected.headers, request, selected.host)
             return
         }
-        val pages = sources.filter { !it.direct }
-        pending = Pending(pages, pages.indexOfFirst { it.url == selected.url }.coerceAtLeast(0), req)
+        val pages = BgPlayerPresentation.alternatives(sources, selected)
+        pending = Pending(pages, pages.indexOfFirst { it.key == selected.key }.coerceAtLeast(0), req)
         AppLog.d("web", "отварям уеб източник: ${sources[start.coerceIn(0, sources.size - 1)].host} (${sources.size} общо)")
         ctx.startActivity(Intent(ctx, WebSourceActivity::class.java))
     }

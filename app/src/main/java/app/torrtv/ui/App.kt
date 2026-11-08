@@ -50,7 +50,8 @@ fun App() {
     var boxAsk by remember { mutableStateOf(app.torrtv.data.Remote.enabled && !Graph.prefs.boxChecked) }
 
     LaunchedEffect(Unit) { home.checkUpdate() }
-    LaunchedEffect(streaming) { if (!streaming && Graph.prefs.webEnabled) { Graph.bgWeb.refresh(); Graph.bgWeb.sweep() } }
+    // Browsing never launches a full site crawl. Restore the small metadata cache only.
+    LaunchedEffect(Unit) { Graph.bgWeb.restore() }
     // Първото пускане в новия месец: тиха проверка за нови настройки (само ако приложението е свързано с профил).
     LaunchedEffect(Unit) { Graph.sync.monthlyCheck() }
 

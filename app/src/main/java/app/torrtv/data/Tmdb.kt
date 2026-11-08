@@ -25,6 +25,8 @@ class Tmdb(private val prefs: Prefs, diskDir: File? = null) {
         /** size: w185, w342, w500, w780, w1280, original */
         fun img(path: String?, size: String): String? =
             if (path.isNullOrBlank()) null else "$IMG/$size$path"
+        internal fun yearParams(type: MediaType, year: Int?): Map<String, String> =
+            if (year == null) emptyMap() else mapOf((if (type == MediaType.MOVIE) "primary_release_year" else "first_air_date_year") to year.toString())
         internal fun parseMedia(o: JSONObject, forced: MediaType?): Media? {
             if (o.optBoolean("adult")) return null
             val type = forced ?: when (o.str("media_type")) {
@@ -163,12 +165,14 @@ class Tmdb(private val prefs: Prefs, diskDir: File? = null) {
         minRating: Double,
         anime: Boolean = false,
         withoutGenre: Int? = null,
-        provider: String? = null
+        provider: String? = null,
+        year: Int? = null
     ): Page<Media> {
         val p = LinkedHashMap<String, String>()
         p["page"] = page.toString()
         p["sort_by"] = sort
         p["vote_count.gte"] = minVotes.toString()
+        p.putAll(yearParams(type, year))
         if (minRating > 0) p["vote_average.gte"] = minRating.toString()
         // Аниме = анимация (жанр 16) на японски език - същото правило като при определяне на аниме в детайлите.
         // Запетаята в with_genres означава "и двата жанра".
@@ -202,7 +206,7 @@ class Tmdb(private val prefs: Prefs, diskDir: File? = null) {
             val params = linkedMapOf("page" to page.toString())
             val path = if (query.isBlank()) "/discover/${type.path}" else "/search/${type.path}"
             if (query.isNotBlank()) params["query"] = query
-            if (year != null) params[if (type == MediaType.MOVIE) "primary_release_year" else "first_air_date_year"] = year.toString()
+            params.putAll(yearParams(type, year))
             parsePage(call(path, params), type)
         } }.map { it.await() }
         Page(pages.flatMap { it.items }.distinctBy { it.key }, page, pages.maxOf { it.totalPages })

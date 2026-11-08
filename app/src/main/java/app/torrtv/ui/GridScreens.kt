@@ -121,10 +121,20 @@ fun PosterGrid(
 @Composable
 fun BrowseScreen(st: BrowseState, onOpen: (Media) -> Unit) {
     LaunchedEffect(Unit) { if (!st.forceAnime) PlatformCatalog.ensure() }
+    var yearOpen by remember { mutableStateOf(false) }
+    val bgStatus by Graph.bgWeb.status.collectAsState()
+    if (yearOpen) PickDialog("Година на издаване", listOf(PickOption("all", "Всички години")) +
+        (java.util.Calendar.getInstance().get(java.util.Calendar.YEAR) + 1 downTo 1900).map { PickOption(it.toString(), it.toString()) },
+        st.year?.toString() ?: "all", { st.chooseYear(it.toIntOrNull()); yearOpen = false }, { yearOpen = false })
     val sorts = listOf("Популярни", "Най-нови", "Най-високо оценени")
     // Пролуката е малка, защото мрежата има свой отстъп (12): блясъкът на фокусирания плакат не се отрязва.
     Row(Modifier.fillMaxSize().padding(start = 36.d, end = 36.d, bottom = 14.d), horizontalArrangement = Arrangement.spacedBy(6.d)) {
         SidePanel {
+            item(key = "year") { SideTab("Година ▾", st.year?.toString() ?: "Всички", st.year != null) { yearOpen = true } }
+            item(key = "bg") { SideTab((if (st.bgOnly) "☑ " else "☐ ") + "БГ аудио", "", st.bgOnly) { st.chooseBgOnly(!st.bgOnly) } }
+            if (st.year != null || st.bgOnly) item(key = "clear") { SideTab("Изчисти филтрите", "", false) { st.clearFilters() } }
+            if (st.bgOnly) item(key = "bg-status") { Text2(bgStatus.ifBlank { "Само потвърдени БГ версии" }, 10, C.dim, FontWeight.Normal, 3, Modifier.padding(horizontal = 12.d)) }
+            panelDivider("filters")
             if (st.forceAnime) {
                 item(key = "tm") { SideTab("Филми", "", st.type == MediaType.MOVIE) { st.changeType(MediaType.MOVIE) } }
                 item(key = "ts") { SideTab("Сериали", "", st.type == MediaType.TV) { st.changeType(MediaType.TV) } }

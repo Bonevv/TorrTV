@@ -14,6 +14,38 @@ class BgWebIndexTest {
     private fun media(year: String = "2002", type: MediaType = MediaType.MOVIE) =
         Media(557, type, "Спайдърмен", "Spider-Man", "", null, null, year, 7.0, 100, emptyList(), "en")
     private fun entry() = MovieCatalog.Entry().also { it.title="Спайдърмен";it.original="Spider-Man";it.year=2002;it.bgAudio=true }
+    @Test fun cachedVideoIsRestoredAsAPlayerInsteadOfOpeningTheMoviePage() = runBlocking {
+        val body="""{"data":[{"title":"Spider-Man","slug":"spider-man","year":2002,"tmdb_id":557,"isBgAudio":true,"videoUrl":"https://cdn.example.com/master.m3u8"}]}"""
+        BgWebIndex(temp.root,get={body},enabled={setOf("NINE")}).refresh()
+        val restored=BgWebIndex(temp.root,get={throw java.io.IOException("offline")},enabled={setOf("NINE")})
+        val sources=restored.sources(media(),null,1,1)
+        assertEquals(1,sources.size)
+        assertTrue(sources.single().playerOnly)
+        assertTrue(sources.single().direct)
+        assertEquals("https://cdn.example.com/master.m3u8",sources.single().url)
+        assertEquals("",sources.single().discoveryPage)
+    }
+    @Test fun scrollingReadsTheIndexWithoutNetworkAndWithoutScanningProviderSettingsForEveryRecord() = runBlocking {
+        val data=org.json.JSONArray((1..3000).map { n -> org.json.JSONObject().put("title","Film $n").put("slug","film-$n").put("year",2002).put("isBgAudio",true) })
+        var providerReads=0;var requests=0
+        val index=BgWebIndex(temp.root,get={requests++;org.json.JSONObject().put("data",data).toString()},enabled={providerReads++;setOf("NINE")})
+        index.refresh()
+        providerReads=0
+        repeat(50) { assertFalse(index.has(media())) }
+        assertEquals(50,providerReads)
+        assertEquals(1,requests)
+        val restored=BgWebIndex(temp.root,get={error("cache restore must not use the network")},enabled={setOf("NINE")})
+        restored.restore()
+        assertEquals(3000,restored.count())
+    }
+    @Test fun seriesFilteringRequestsTheSeriesCatalogue() = runBlocking {
+        val urls=ArrayList<String>()
+        val index=BgWebIndex(temp.root,get={urls.add(it);"""{"data":[{"title":"Spider-Man","slug":"spider-man","year":2002,"isBgAudio":true,"type":"series","videoUrl":"https://player.example.com/embed/series"}]}"""},enabled={setOf("NINE")})
+        index.refresh(type=MediaType.TV)
+        assertTrue(urls.single().contains("type=series"))
+        assertTrue(index.has(media(type=MediaType.TV)))
+        assertFalse(index.has(media()))
+    }
     @Test fun matchingDoesNotConfuseRemakesOrSeries() {
         assertTrue(BgWebIndex.matches(media(), entry()))
         assertFalse(BgWebIndex.matches(media("2012"), entry()))

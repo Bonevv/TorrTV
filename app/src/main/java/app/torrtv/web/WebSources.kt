@@ -64,7 +64,10 @@ object WebSources {
     }
 
     class Source(val host: String, val url: String, val bgAudio: Boolean = false,
-        val direct: Boolean = false, val headers: Map<String,String> = emptyMap(), val release: String = "")
+        val direct: Boolean = false, val headers: Map<String,String> = emptyMap(), val release: String = "",
+        val playerOnly: Boolean = false, val discoveryPage: String = "") {
+        val key: String get() = url.ifBlank { discoveryPage }
+    }
 
     /** Готовите адреси; шаблон, който иска {imdb} без да го имаме, се прескача. */
     fun sources(prefs: Prefs, tv: Boolean, tmdb: Int, imdb: String?, season: Int, episode: Int): List<Source> {

@@ -58,6 +58,12 @@ class WebSourceActivity : AppCompatActivity() {
     private lateinit var cursor: CursorView
     private lateinit var bar: TextView
     private lateinit var banner: TextView
+    private lateinit var playerLoading: TextView
+    private var playerReady = false
+    private var discoveringCatalog = false
+    private val failedPlayers = HashSet<String>()
+    private val playerOnly get() = sources.getOrNull(idx)?.playerOnly == true
+    private val playerScript by lazy { assets.open("bg-player.js").bufferedReader().use { it.readText() } }
 
     private var sources: List<WebSources.Source> = emptyList()
     private var idx = 0
@@ -93,6 +99,9 @@ class WebSourceActivity : AppCompatActivity() {
         }
     }
     private val hideCursor = Runnable { cursor.visibility = View.GONE }
+    private val playerTimeout = Runnable {
+        if (playerOnly && !playerReady) nextSource("Не е намерен работещ плеър")
+    }
     private val tickCountdown = object : Runnable {
         override fun run() {
             if (countdown <= 0) return
@@ -164,6 +173,8 @@ class WebSourceActivity : AppCompatActivity() {
         w.webChromeClient = chrome
         if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)) {
             androidx.webkit.WebViewCompat.addDocumentStartJavaScript(w, WebSubtitleProvider.probeScript, setOf("*"))
+            androidx.webkit.WebViewCompat.addDocumentStartJavaScript(w,
+                "window.__torrtvPlayerOnly=" + playerOnly + ";" + playerScript, setOf("*"))
         }
         root.addView(w, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
@@ -190,6 +201,13 @@ class WebSourceActivity : AppCompatActivity() {
         root.addView(banner, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
             setMargins(0, 0, 0, px(48))
         })
+        // Opaque from the first frame: catalogue discovery must never flash on screen.
+        playerLoading = TextView(this).apply {
+            setBackgroundColor(Color.BLACK); setTextColor(Color.WHITE); textSize = 18f
+            gravity = Gravity.CENTER; text = "Зареждане на плеъра…"
+            visibility = View.GONE
+        }
+        root.addView(playerLoading, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
         root.post {
             cx = root.width / 2f
@@ -212,7 +230,7 @@ class WebSourceActivity : AppCompatActivity() {
         })
 
         load()
-        showBanner("Стрелките движат курсора, OK е клик. Задръж OK за меню (друг сайт, вграден плеър). Назад затваря.", 7000)
+        if (!playerOnly) showBanner("Стрелките движат курсора, OK е клик. Задръж OK за меню (друг сайт, вграден плеър). Назад затваря.", 7000)
     }
 
     // ---------- Зареждане и смяна на сайт ----------
@@ -220,6 +238,12 @@ class WebSourceActivity : AppCompatActivity() {
     private fun load() {
         val w = web ?: return
         val src = sources[idx]
+        playerReady = false
+        discoveringCatalog = src.discoveryPage.isNotBlank()
+        w.settings.loadsImagesAutomatically = !discoveringCatalog
+        w.settings.blockNetworkImage = discoveringCatalog
+        playerLoading.visibility = if (playerOnly) View.VISIBLE else View.GONE
+        bar.visibility = if (playerOnly) View.GONE else View.VISIBLE
         pageDone = false
         captured = null
         siteSubtitles.clear()
@@ -229,13 +253,37 @@ class WebSourceActivity : AppCompatActivity() {
         cancelCountdown()
         ui.removeCallbacks(mp4Wait)
         ui.removeCallbacks(loadTimeout)
+        ui.removeCallbacks(playerTimeout)
         ui.postDelayed(loadTimeout, 25_000)
+        if (playerOnly) ui.postDelayed(playerTimeout, 25_000)
         updateBar("зарежда…")
         AppLog.d("web", "зареждам ${src.host} (${idx + 1}/${sources.size})")
-        w.loadUrl(src.url)
+        if (playerOnly && !discoveringCatalog) loadPlayerFrame(src.url, src.headers["Referer"] ?: src.url)
+        else w.loadUrl(src.discoveryPage.ifBlank { src.url }, src.headers)
+    }
+
+    private fun loadPlayerFrame(url: String, referer: String) {
+        if (!WebSubtitleProvider.publicUrl(url) || BgPlayerPresentation.catalogue(url) || AdBlock.isBlocked(Uri.parse(url).host)) return
+        discoveringCatalog = false
+        web?.settings?.loadsImagesAutomatically = true
+        web?.settings?.blockNetworkImage = false
+        web?.loadDataWithBaseURL(referer.substringBefore('#'), BgPlayerPresentation.shell(url), "text/html", "utf-8", null)
     }
 
     private fun nextSource(why: String) {
+        if (playerOnly) {
+            if (why.isNotBlank()) failedPlayers.add(sources[idx].key)
+            val next = (1 until sources.size).map { (idx + it) % sources.size }
+                .firstOrNull { sources[it].playerOnly && sources[it].key !in failedPlayers }
+            if (next == null) {
+                Toast.makeText(this, why.ifBlank { "Няма друг БГ плеър" }, Toast.LENGTH_LONG).show()
+                if (why.isNotBlank()) finish()
+                return
+            }
+            idx = next
+            load()
+            return
+        }
         if (sources.size < 2) {
             if (why.isNotBlank()) Toast.makeText(this, "Няма друг сайт. $why", Toast.LENGTH_LONG).show()
             return
@@ -253,7 +301,7 @@ class WebSourceActivity : AppCompatActivity() {
 
     /** Грешките от предишен сайт, които идват със закъснение, не бива да прескачат следващия. */
     private fun isCurrent(r: WebResourceRequest): Boolean =
-        AdBlock.baseOf(r.url.host) == AdBlock.baseOf(Uri.parse(sources[idx].url).host)
+        AdBlock.baseOf(r.url.host) == AdBlock.baseOf(Uri.parse(sources[idx].key).host)
 
     private val client = object : WebViewClient() {
         override fun shouldInterceptRequest(view: WebView, r: WebResourceRequest): WebResourceResponse? {
@@ -267,6 +315,7 @@ class WebSourceActivity : AppCompatActivity() {
         }
 
         override fun shouldOverrideUrlLoading(view: WebView, r: WebResourceRequest): Boolean {
+            if (playerOnly && BgPlayerPresentation.catalogue(r.url.toString())) return true
             if (!r.isForMainFrame) return false
             val host = r.url.host ?: return true
             val base = AdBlock.baseOf(host)
@@ -283,6 +332,7 @@ class WebSourceActivity : AppCompatActivity() {
         override fun onPageFinished(view: WebView, url: String?) {
             if (url == null || !url.startsWith("http")) return
             view.evaluateJavascript(WebSubtitleProvider.probeScript, null)
+            if (playerOnly) view.evaluateJavascript("window.__torrtvPlayerOnly=true;" + playerScript, null)
             pageDone = true
             ui.removeCallbacks(loadTimeout)
             updateBar("готово · блокирани реклами: $blockedCount")
@@ -313,6 +363,19 @@ class WebSourceActivity : AppCompatActivity() {
     private val chrome = object : WebChromeClient() {
         override fun onConsoleMessage(message: android.webkit.ConsoleMessage): Boolean {
             val text = message.message()
+            if (playerOnly && text.startsWith("TORRTV_PLAYER:")) {
+                try {
+                    val data = org.json.JSONObject(text.removePrefix("TORRTV_PLAYER:"))
+                    if (data.optBoolean("ready")) {
+                        playerReady = true
+                        playerLoading.visibility = View.GONE
+                        ui.removeCallbacks(playerTimeout)
+                    } else if (discoveringCatalog && data.has("url")) {
+                        loadPlayerFrame(data.getString("url"), data.optString("page", sources[idx].discoveryPage))
+                    }
+                } catch (_: Exception) { }
+                return true
+            }
             if (text.startsWith("TORRTV_SUB:")) {
                 WebSubtitleProvider.caption(text.removePrefix("TORRTV_SUB:"))?.let {
                     if (siteSubtitles.size < 16) siteSubtitles[it.uid] = it
@@ -407,6 +470,10 @@ class WebSourceActivity : AppCompatActivity() {
     /** Страницата пусна видео: според настройката питаме, прехвърляме сами или само подсказваме. */
     private fun onCaptured() {
         web?.evaluateJavascript("window.__torrtvScanSubs && window.__torrtvScanSubs()", null)
+        if (playerOnly) {
+            ui.postDelayed({ if (!handedOff && captured != null) handOff() }, 400)
+            return
+        }
         when (Graph.prefs.webHandoff) {
             1 -> startCountdown()
             2 -> if (!hinted) {
@@ -486,12 +553,12 @@ class WebSourceActivity : AppCompatActivity() {
     private fun showMenu() {
         val items = ArrayList<String>()
         items.add(if (captured != null) "Пусни във вградения плеър" else "Вграден плеър (още няма намерено видео)")
-        items.add("Следващ сайт")
+        items.add(if (playerOnly) "Следващ БГ плеър" else "Следващ сайт")
         items.add("Презареди")
         sources.forEachIndexed { i, s -> items.add((if (i == idx) "●  " else "○  ") + s.host) }
         items.add("Затвори")
         AlertDialog.Builder(this)
-            .setTitle("Уеб сайт")
+            .setTitle(if (playerOnly) "Плеър" else "Уеб сайт")
             .setItems(items.toTypedArray()) { _, which ->
                 when {
                     which == 0 -> handOff()

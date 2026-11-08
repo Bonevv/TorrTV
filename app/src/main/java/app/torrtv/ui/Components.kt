@@ -66,6 +66,7 @@ fun Focusable(
     ring: Boolean = true,
     onFocus: () -> Unit = {},
     focusRequester: FocusRequester? = null,
+    glow: Boolean = true,
     content: @Composable BoxScope.(Boolean) -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -75,7 +76,7 @@ fun Focusable(
     val base = if (focusRequester != null) modifier.focusRequester(focusRequester) else modifier
     val ringMod = if (focused && ring) Modifier.border(if (lite) 3.d else 2.d, C.ring, shape) else Modifier
     // Мека златиста светлина около избрания плакат (не в лек режим - там е излишна тежест).
-    val glow = if (focused && ring && !lite) Modifier.shadow(18.d, shape, clip = false, ambientColor = C.accent, spotColor = C.accent) else Modifier
+    val glowMod = if (focused && ring && !lite && glow) Modifier.shadow(18.d, shape, clip = false, ambientColor = C.accent, spotColor = C.accent) else Modifier
     Box(
         base
             .zIndex(if (focused) 2f else 0f)
@@ -87,7 +88,7 @@ fun Focusable(
                 focused = it.isFocused
                 if (it.isFocused) onFocus()
             }
-            .then(glow)
+            .then(glowMod)
             .clip(shape)
             .then(ringMod)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
@@ -183,15 +184,15 @@ fun Spinner(size: Dp = 26.d) {
  * плакат от 200 пиксела не държи в паметта картинка от 342 (а над размера на файла никога не се уголемява).
  */
 @Composable
-fun Img(url: String?, modifier: Modifier, scale: ContentScale = ContentScale.Crop) {
+fun Img(url: String?, modifier: Modifier, scale: ContentScale = ContentScale.Crop, fade: Boolean = true) {
     Box(modifier.background(C.card)) {
         if (url != null) {
             val ctx = LocalContext.current
             val lite = Look.lite
-            val req = remember(url, lite) {
+            val req = remember(url, lite, fade) {
                 // В лек режим: без плавно появяване.
                 ImageRequest.Builder(ctx).data(url).allowRgb565(true)
-                    .crossfade(if (lite) 0 else 220).build()
+                    .crossfade(if (lite || !fade) 0 else 220).build()
             }
             AsyncImage(model = req, contentDescription = null, contentScale = scale, modifier = Modifier.fillMaxSize())
         }
@@ -220,13 +221,11 @@ fun Poster(
     onFocus: () -> Unit = {},
     focusRequester: FocusRequester? = null
 ) {
-    val bgRevision by Graph.bgWeb.revision.collectAsState()
-    val bgAudio = remember(media, bgRevision) { Graph.bgWeb.has(media) }
     Focusable(
-        onClick, modifier.width(width).height(width * 1.5f), RoundedCornerShape(12.d), 1.09f,
-        onFocus = onFocus, focusRequester = focusRequester
+        onClick, modifier.width(width).height(width * 1.5f), RoundedCornerShape(12.d), 1f,
+        onFocus = onFocus, focusRequester = focusRequester, glow = false
     ) { f ->
-        Img(Look.img(media.posterPath, "w342"), Modifier.fillMaxSize())
+        Img(Look.img(media.posterPath, "w342"), Modifier.fillMaxSize(), fade = false)
         if (!f) Box(Modifier.fillMaxSize().border(1.d, C.line, RoundedCornerShape(12.d)))
         RatingBadge(media.rating, Modifier.align(Alignment.TopEnd).padding(5.d))
         if (media.type == MediaType.TV) {
@@ -248,10 +247,15 @@ fun Poster(
                 if (media.year.isNotBlank()) Text(media.year, color = C.dim, fontSize = 10.t)
             }
         }
-        if (bgAudio) Box(Modifier.align(Alignment.BottomStart).padding(start = 5.d, bottom = if (f) 76.d else 5.d)) {
-            Pill("🇧🇬 БГ аудио · Уеб", Color(0xEE133723), C.green)
-        }
+        BgAudioBadge(media, Modifier.align(Alignment.BottomStart).padding(start = 5.d, bottom = if (f) 76.d else 5.d))
     }
+}
+
+@Composable
+private fun BgAudioBadge(media: Media, modifier: Modifier) {
+    val revision by Graph.bgWeb.revision.collectAsState()
+    val available = remember(media.key, media.title, media.originalTitle, media.year, revision) { Graph.bgWeb.has(media) }
+    if (available) Box(modifier) { Pill("🇧🇬 БГ аудио · Уеб", Color(0xEE133723), C.green) }
 }
 
 fun genreLine(m: Media, max: Int = 3): String =
