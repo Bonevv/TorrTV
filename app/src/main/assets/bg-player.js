@@ -28,7 +28,12 @@
             if (!episodeReady) return;
         }
         var tab = document.querySelector('.tab-btn[data-player]:not([data-player="trailer"]):not([data-player="help"]),.tabs-block__select [data-link],.player-picker-menu [data-player],button[data-server],.server-btn');
-        if (tab && !document.querySelector('.movieplay iframe,#video-stage iframe,.video-responsive iframe,#player-box iframe,video')) {
+        var existing = document.querySelectorAll('.movieplay iframe,#video-stage iframe,.video-responsive iframe,#player-box iframe');
+        var activePlayer = false;
+        for (var f = 0; f < existing.length; f++) if (validFrame(existing[f])) activePlayer = true;
+        var activeVideo = document.querySelector('video');
+        if (activeVideo && (activeVideo.currentSrc || activeVideo.src) && !/trailer|preroll/i.test(activeVideo.currentSrc || activeVideo.src)) activePlayer = true;
+        if (tab && !activePlayer) {
             click(tab, true);
         }
         var play = document.querySelector('.container_play .play,.icon_play');

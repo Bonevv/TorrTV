@@ -28,6 +28,12 @@ with sync_playwright() as playwright:
     assert not errors, errors
     page.close()
 
+    page, events, errors = page_for('''<button class="tab-btn" data-player="trailer">Trailer</button><button class="tab-btn" data-player="voe" onclick="document.getElementById('video-stage').innerHTML='<iframe src=https://voe.sx/e/full-movie></iframe>'">BG movie</button><div id="video-stage"><iframe src="https://www.youtube.com/embed/example-trailer"></iframe></div>''')
+    page.wait_for_timeout(100)
+    assert events and events[0]['url'] == 'https://voe.sx/e/full-movie', events
+    assert not errors, errors
+    page.close()
+
     page, events, errors = page_for('<button class="tab-btn" data-player="voe" id="delayed">BG player</button><div id="video-stage"></div>')
     page.evaluate("setTimeout(function(){document.getElementById('delayed').onclick=function(){document.getElementById('video-stage').innerHTML='<iframe src=https://voe.sx/e/delayed></iframe>'}},100)")
     page.wait_for_timeout(1800)
@@ -68,4 +74,4 @@ with sync_playwright() as playwright:
     page.close()
 
     browser.close()
-    print('6 player browser checks passed: frame extraction, dynamic and delayed activation, isolated video, no catalogue fallback, minimal shell')
+    print('7 player browser checks passed: frame extraction, trailer replacement, dynamic and delayed activation, isolated video, no catalogue fallback, minimal shell')
