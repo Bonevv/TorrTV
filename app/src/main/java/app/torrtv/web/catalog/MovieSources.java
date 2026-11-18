@@ -189,6 +189,7 @@ public final class MovieSources {
         e.provider=old.provider;e.page=old.page;e.title=old.title;e.original=old.original;e.poster=old.poster;e.description=old.description;
         e.imdb=old.imdb;e.tmdb=old.tmdb;e.embed=old.embed;e.year=old.year;e.bgAudio=old.bgAudio;e.bgSubs=old.bgSubs;e.series=old.series;
         e.audioVerified=old.audioVerified;e.bgCatalog=old.bgCatalog;e.audioRejected=old.audioRejected;e.season=old.season;e.seriesYear=old.seriesYear;
+        e.bgEpisodeSeason=old.bgEpisodeSeason;e.bgEpisodeNumber=old.bgEpisodeNumber;
         e.episodes.addAll(old.episodes);e.seasons.addAll(old.seasons);e.genres.addAll(old.genres);
         Element main=doc.selectFirst("article.pmovie,article.detail-page,#mv-info"); if(main==null)main=doc.selectFirst("main"); if(main==null) main=doc.body();
         String title=text(main,".movie__bg-title");if(title.isEmpty())title=text(main,"h1,h3[itemprop=name]");
@@ -203,6 +204,14 @@ public final class MovieSources {
         // Never read navigation labels or schema inLanguage as evidence of a dubbed soundtrack.
         markLanguage(e,text(main,".detail-meta,.pmovie__quality,.translation,.movie-language,[data-language]")
                 +" "+main.select(".genre-chip-row a[href*=/bg-audio],.mvic-info a[href*=/bgaudio],.pmovie__header-row a[href*=/filmi-bg-audio]").text());
+        // A category attached to this record is evidence even when its listing page has not been crawled.
+        if(!e.audioRejected)try{
+            Provider provider=Provider.valueOf(e.provider);
+            for(Element a:main.select(".genre-chip-row a,.pmovie__header-row a,.mvic-info a,.mvici-left .entAllCats,[itemprop=genre]")){
+                if(a.closest("nav,aside,footer,.sidebar,.related,.related-movies,.recommendations,[role=navigation]")!=null)continue;
+                if(inBgCategory(provider,a.absUrl("href"))){e.bgCatalog=true;e.bgAudio=true;e.audioVerified=true;break;}
+            }
+        }catch(IllegalArgumentException ignored){}
         Element tmdb=main.selectFirst("[data-tmdb-id]"); if(tmdb!=null) e.tmdb=tmdb.attr("data-tmdb-id");
         for(Element a:main.select("a[href*=imdb.com/title/],a[href*=themoviedb.org/movie/],a[href*=themoviedb.org/tv/]")) {
             Matcher imdb=Pattern.compile("tt\\d{5,}").matcher(a.attr("href")); if(imdb.find())e.imdb=imdb.group();
@@ -213,8 +222,11 @@ public final class MovieSources {
         }
         for(Element script:doc.select("script")) {
             Object own=jsonField(publicJson(script.data()),"movie");
-            if(own instanceof JSONObject){JSONObject item=(JSONObject)own;
-                if(item.has("isBgAudio")){e.bgAudio=Boolean.TRUE.equals(item.opt("isBgAudio"));e.audioVerified=e.bgAudio;e.audioRejected=Boolean.FALSE.equals(item.opt("isBgAudio"));}
+            if(own instanceof JSONObject && sameRecord((JSONObject)own,e)){JSONObject item=(JSONObject)own;
+                if(item.has("isBgAudio")){
+                    e.bgAudio=Boolean.TRUE.equals(item.opt("isBgAudio"));e.audioVerified=e.bgAudio;e.audioRejected=Boolean.FALSE.equals(item.opt("isBgAudio"));
+                    if(e.bgAudio)e.bgCatalog=true;
+                }
                 if(!item.optString("tmdb_id").isEmpty())e.tmdb=item.optString("tmdb_id");
                 if(!item.optString("imdb_id").isEmpty())e.imdb=item.optString("imdb_id");
             }
@@ -230,7 +242,16 @@ public final class MovieSources {
         if(e.embed.isEmpty() && e.provider.equals("ZT")){
             Element frame=doc.selectFirst(".movieplay iframe[src]");if(frame!=null && frame.absUrl("src").startsWith("http"))e.embed=frame.absUrl("src");
         }
-        cleanIds(e);e.detailed=true; return e;
+        cleanIds(e);e.detailed=true;e.detailSchema=2; return e;
+    }
+    private static boolean sameRecord(JSONObject item,MovieCatalog.Entry e){
+        String slug=item.optString("slug");
+        int season=MovieEpisodes.season(item.optString("title")+" "+slug);
+        if(e.series && e.season>=0 && season>=0 && e.season!=season)return false;
+        if(!slug.isEmpty())try{return new URI(e.page).getPath().replaceAll("/+$","").endsWith("/"+slug);}catch(Exception ex){return false;}
+        MovieCatalog.Entry names=new MovieCatalog.Entry();setNames(names,item.optString("title"));
+        Set<String> labels=new HashSet<>(Arrays.asList(MovieEpisodes.baseTitle(e.title),MovieEpisodes.baseTitle(e.original)));labels.remove("");
+        return labels.contains(MovieEpisodes.baseTitle(names.title)) || labels.contains(MovieEpisodes.baseTitle(names.original));
     }
     public static void cleanIds(MovieCatalog.Entry e) {
         if(!e.tmdb.matches("[1-9][0-9]*"))e.tmdb="";
@@ -267,7 +288,8 @@ public final class MovieSources {
                 }catch(JSONException ignored){}
             }
             Object own=jsonField(data,"movie");
-            if(own instanceof JSONObject){JSONObject item=(JSONObject)own;if(!item.optString("title").isEmpty())setNames(e,item.optString("title"));addJsonEpisodes(item,e.page,current,found);}
+            if(own instanceof JSONObject && !sameRecord((JSONObject)own,e))continue;
+            if(own instanceof JSONObject && sameRecord((JSONObject)own,e)){JSONObject item=(JSONObject)own;if(!item.optString("title").isEmpty())setNames(e,item.optString("title"));addJsonEpisodes(item,e.page,current,found);}
             else {Object episodes=jsonField(data,"episodes");if(episodes instanceof JSONArray){try{addJsonEpisodes(new JSONObject().put("episodes",episodes),e.page,current,found);}catch(JSONException ignored){}}}
             Object related=jsonField(data,"seasons");if(related instanceof JSONArray){JSONArray list=(JSONArray)related;
                 for(int i=0;i<list.length();i++){JSONObject item=list.optJSONObject(i);if(item==null)continue;
@@ -320,10 +342,15 @@ public final class MovieSources {
         if(value instanceof JSONArray) { JSONArray arr=(JSONArray)value;for(int i=0;i<arr.length();i++)readMovie(arr.opt(i),e); }
         if(!(value instanceof JSONObject))return;
         JSONObject obj=(JSONObject)value;
-        if("Movie".equals(obj.optString("@type"))) {
+        if("Movie".equals(obj.optString("@type")) || "TVSeries".equals(obj.optString("@type"))) {
             setNames(e,obj.optString("name",e.title)); e.description=obj.optString("description",e.description);
             e.year=obj.optInt("copyrightYear",e.year);
             if(e.year==0)e.year=year(obj.optString("dateCreated"));
+            if(e.year==0)e.year=year(obj.optString("datePublished"));
+            if("TVSeries".equals(obj.optString("@type"))){
+                int first=year(obj.optString("startDate"));if(first>0)e.seriesYear=first;
+            }
+            if(e.poster.isEmpty() && obj.opt("image") instanceof String)e.poster=obj.optString("image");
             Object genre=obj.opt("genre"); if(genre instanceof JSONArray)for(int i=0;i<((JSONArray)genre).length();i++)e.genres.add(genreName(((JSONArray)genre).optString(i)));
             else if(genre instanceof String)e.genres.add(genreName((String)genre));
             Matcher imdb=Pattern.compile("tt\\d{5,}").matcher(obj.optString("sameAs"));if(imdb.find())e.imdb=imdb.group();

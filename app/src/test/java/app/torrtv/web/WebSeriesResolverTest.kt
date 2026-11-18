@@ -104,20 +104,20 @@ class WebSeriesResolverTest {
         val result=WebSeriesResolver({html}).resolve(media,null,listOf(e),1,1)
         assertFalse(result.sources.single().bgAudio)
     }
-    @Test fun aGenericSeriesPageCannotGiveItsEpisodesAudioBadges()=runBlocking {
+    @Test fun theExactOwnJsonRecordCanVerifyItsEpisodesAudio()=runBlocking {
         val e=entry(season=1).also{it.bgCatalog=false}
         val html="""<script>{"movie":{"title":"Example Season 1","isBgAudio":true,"episodes":[{"episodeNumber":1,"isBgAudio":true,"videoUrl":"https://player.example.com/en"}]}}</script>"""
         val result=WebSeriesResolver({html}).resolve(media,null,listOf(e),1,1)
-        assertFalse(result.sources.single().bgAudio)
-        assertFalse(result.episodes.single().bgAudio)
+        assertTrue(result.sources.single().bgAudio)
+        assertTrue(result.episodes.single().bgAudio)
     }
-    @Test fun aLinkedSeasonOutsideTheAudioCategoryCannotInheritItsBadge()=runBlocking {
+    @Test fun aLinkedSeasonWithItsOwnExplicitAudioMetadataCanVerifyItsBadge()=runBlocking {
         val resolver=WebSeriesResolver({url->if(url.endsWith("season-1"))
             """<script>{"movie":{"title":"Example Season 1","isBgAudio":true,"episodes":[{"episodeNumber":1,"videoUrl":"https://player.example.com/s1e1"}]}}</script>"""
             else """<script>{"movie":{"title":"Example Season 2","isBgAudio":true},"seasons":[{"title":"Example Season 1","slug":"example-season-1","year":2020,"isBgAudio":true}]}</script>"""
         })
         val result=resolver.resolve(media,null,listOf(entry()),1,1)
-        assertFalse(result.sources.single().bgAudio)
+        assertTrue(result.sources.single().bgAudio)
     }
     @Test fun allSixSourceSeriesFormatsRemainAvailable() {
         for(p in MovieSources.Provider.values()){

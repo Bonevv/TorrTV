@@ -81,7 +81,7 @@ fun App() {
     fun open(m: Media, deferTorrents: Boolean = false) {
         stack.lastOrNull()?.pauseBackground()
         if (stack.size >= 8) stack.removeAt(0).cancel()
-        stack.add(DetailState(m.type, m.id, deferTorrents))
+        stack.add(DetailState(m.type, m.id, deferTorrents,sourceMedia=m.takeIf{it.web!=null}))
     }
 
     fun pop() {

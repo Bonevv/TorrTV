@@ -93,7 +93,9 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
     LaunchedEffect(st, d != null) { if (d != null && !(tab==TAB_REC && st.recommendationFocusKey!=null)) playFocus.tryRequest() }
     // При „Продължи“ търсенето на торенти е отложено: пуска се, щом диалогът за пускане не е отворен.
     LaunchedEffect(d != null, sheetOpen,st.episodeLoading) { if (d != null && !sheetOpen) st.ensureTorrents() }
-    LaunchedEffect(st,tab,st.season,st.episode,st.episodeLoading){if(tab==TAB_WEB && !st.episodeLoading)st.ensureWeb()}
+    LaunchedEffect(st,tab,st.season,st.episode,st.episodeLoading){
+        if(!st.episodeLoading){if(tab==TAB_WEB)st.ensureWeb() else if(tab==TAB_TOR)st.ensureTorrents(explicit=true)}
+    }
 
     Box(Modifier.fillMaxSize()) {
         // фон
@@ -182,7 +184,7 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
                     add(Triple(TAB_TOR, "Торенти", if (st.torrents.isNotEmpty()) "${st.torrents.size}" else if (st.searching) "…" else "0"))
                     add(Triple(TAB_WEB, "Уеб сайтове", if (webOn && web.isNotEmpty()) "${web.size}" else ""))
                     add(Triple(TAB_ABOUT, "Описание", ""))
-                    add(Triple(TAB_REC, "Подобни", ""))
+                    if(!st.sourceOnly)add(Triple(TAB_REC, "Подобни", ""))
                 }
                 val failedSubs = st.subStatus.entries.filter { it.value.startsWith("✗") }.map { it.key }.sorted()
                 SidePanel {
@@ -269,7 +271,7 @@ private fun DetailHeader(
                 val meta = listOf(
                     d.media.year,
                     if (d.runtime > 0) "${d.runtime} мин" else "",
-                    if (isTv) (if (d.seasons.size == 1) "1 сезон" else "${d.seasons.size} сезона") else "",
+                    if (isTv && d.seasons.isNotEmpty()) (if (d.seasons.size == 1) "1 сезон" else "${d.seasons.size} сезона") else "",
                     if (isTv) d.status else ""
                 ).filter { it.isNotBlank() }
                 if (meta.isNotEmpty()) Text2(meta.joinToString("  ·  "), 13, C.dim, FontWeight.Medium, 1)
@@ -320,7 +322,7 @@ private fun DetailHeader(
             }
             // Един ред под бутоните: кой епизод е избран и кой торент ще се пусне.
             val few = pr == null && best != null && best.seeders in 0..4
-            val epTag = if (isTv) "Сезон ${st.season} · Епизод ${st.episode}" else ""
+            val epTag = if (isTv && st.season>=0 && st.episode>0) "Сезон ${st.season} · Епизод ${st.episode}" else ""
             val hint = when {
                 few -> "Най-добрият торент има само ${best!!.seeders} ${if (best.seeders == 1) "сийдър" else "сийдъра"} и може да буферира. Пробвай друг от списъка или „Уеб сайтове“."
                 pr == null && best != null -> listOf(
@@ -454,9 +456,13 @@ private fun WebEpisodeSelectors(st:DetailState,d:Detail) {
     val seasons=(d.seasons.map{it.number}+st.webSeries.seasons).filter{it>=0}.distinct().sorted()
     val webEpisodes=st.webSeries.episodes.filter{it.season==st.season}
     val numbers=(st.episodes.map{it.number}+webEpisodes.map{it.number}).distinct().sorted()
+    if(seasons.isEmpty() && !st.episodeLoading && !st.webLoading){
+        Text2("Сезоните и епизодите се избират от плеъра на сайта.",13,C.dim,FontWeight.Normal,2)
+        return
+    }
     Row(Modifier.padding(vertical=4.d),horizontalArrangement=Arrangement.spacedBy(8.d)) {
-        Chip(if(st.season==0)"Специални ▾" else "Сезон ${st.season} ▾",true,{seasonsOpen=true})
-        Chip(if(numbers.isEmpty() && (st.episodeLoading || st.webLoading))"Зареждат се епизоди…" else "Епизод ${st.episode} ▾",true,{if(numbers.isNotEmpty())episodesOpen=true})
+        if(seasons.isNotEmpty())Chip(if(st.season==0)"Специални ▾" else "Сезон ${st.season} ▾",true,{seasonsOpen=true})
+        Chip(if(numbers.isEmpty() && (st.episodeLoading || st.webLoading))"Зареждат се епизоди…" else if(numbers.isEmpty())"Избор в плеъра" else "Епизод ${st.episode} ▾",true,{if(numbers.isNotEmpty())episodesOpen=true})
     }
     if(seasonsOpen)PickDialog("Сезон",seasons.map{n->PickOption(n.toString(),if(n==0)"Специални епизоди" else "Сезон $n",
         if(st.webSeries.episodes.any{it.season==n})"Уеб" else "")},st.season.toString(),{st.selectSeason(it.toInt());seasonsOpen=false},{seasonsOpen=false})

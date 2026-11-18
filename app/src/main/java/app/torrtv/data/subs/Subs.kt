@@ -30,7 +30,11 @@ data class SubtitleQuery(
     val episode: Int?,
     val langs: List<String>
 ) {
-    val cacheKey: String get() = "${type.path}|$tmdbId|$season|$episode|${langs.joinToString(",")}"
+    val cacheKey: String get() {
+        val identity=if(tmdbId>0)tmdbId.toString() else imdbId?.takeIf{it.matches(Regex("tt[0-9]+"))}
+            ?: "title:${title.trim().lowercase(Locale.ROOT)}|$year"
+        return "${type.path}|$identity|$season|$episode|${langs.joinToString(",")}"
+    }
 }
 
 data class SubtitleResult(

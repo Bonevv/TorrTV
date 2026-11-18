@@ -15,6 +15,7 @@ public final class MovieCatalog {
         public long episodesUpdated;
         public int year;
         public int season=-1, seriesYear;
+        public int detailSchema, bgEpisodeSeason=-1, bgEpisodeNumber;
         public boolean bgAudio, audioVerified, bgCatalog, audioRejected, bgSubs, detailed, series;
         public long added;
         public final Set<String> genres = new LinkedHashSet<>();

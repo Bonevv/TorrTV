@@ -225,11 +225,16 @@ object Library {
         put("votes", m.votes)
         put("genres", JSONArray(m.genreIds))
         put("lang", m.originalLanguage)
+        m.web?.let{put("web_provider",it.provider);put("web_page",it.page)}
     }
 
     internal fun mediaFrom(o: JSONObject): Media? {
         val id = o.optInt("id", 0)
         if (id == 0) return null
+        val web=o.optString("web_provider").takeIf{it.isNotBlank()}?.let{provider->
+            o.optString("web_page").takeIf{app.torrtv.web.WebCatalogueMedia.allowed(provider,it)}?.let{app.torrtv.data.WebRef(provider,it)}
+        }
+        if(id<0 && web==null)return null
         val g = o.optJSONArray("genres")
         return Media(
             id = id,
@@ -243,7 +248,8 @@ object Library {
             rating = o.optDouble("rating", 0.0),
             votes = o.optInt("votes", 0),
             genreIds = List(g?.length() ?: 0) { g!!.optInt(it) },
-            originalLanguage = o.optString("lang")
+            originalLanguage = o.optString("lang"),
+            web=web
         )
     }
 

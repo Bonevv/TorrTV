@@ -505,8 +505,9 @@ class DiceState {
  * [deferTorrents] - отворено е от „Продължи гледане“: торентът вече е известен, затова търсенето в сайтовете се
  * отлага, докато не потрябва ([ensureTorrents]). Така продължаването не пуска излишно 5-8 заявки.
  */
-class DetailState(val type: MediaType, val id: Int, private val deferTorrents: Boolean = false) {
-    var selectedPane by mutableStateOf(if(type==MediaType.TV)"eps" else "tor")
+class DetailState(val type: MediaType, val id: Int, private val deferTorrents: Boolean = false, private val sourceMedia:Media?=null) {
+    val sourceOnly:Boolean get()=sourceMedia?.web!=null
+    var selectedPane by mutableStateOf(if(sourceOnly)"web" else if(type==MediaType.TV)"eps" else "tor")
     val recommendationListState=LazyListState()
     var recommendationFocusKey:String?=null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -554,7 +555,7 @@ class DetailState(val type: MediaType, val id: Int, private val deferTorrents: B
         val d = detail ?: return
         val s = season; val e = episode
         val ticket=webGeneration
-        webRequested=true;siteWebLoading=true;apiWebLoading=true
+        webRequested=true;siteWebLoading=true;apiWebLoading=!sourceOnly
         webJob = scope.launch {
             try { if (Graph.prefs.webEnabled) {
                 if(type==MediaType.TV){
@@ -571,6 +572,7 @@ class DetailState(val type: MediaType, val id: Int, private val deferTorrents: B
             catch (ex: Exception) {if(ticket==webGeneration)webError=app.torrtv.core.UiFailure.message(ex)}
             finally { if(ticket==webGeneration)siteWebLoading=false }
         }
+        if(sourceOnly)return
         webApiJob = scope.launch {
             try {
                 val urls = app.torrtv.web.WebSources.templates(Graph.prefs, type == MediaType.TV)
@@ -602,7 +604,7 @@ class DetailState(val type: MediaType, val id: Int, private val deferTorrents: B
     val subStatus = mutableStateMapOf<String, String>()
     private val subUpdates = LinkedHashMap<String, List<SubtitleResult>>()
 
-    val recs = Paged<Media>(100, { p -> Graph.tmdb.recommendations(type, id, p) }) { it.key }
+    val recs = Paged<Media>(100, { p -> if(sourceOnly)Page(emptyList(),p,p) else Graph.tmdb.recommendations(type, id, p) }) { it.key }
 
     fun cancel() {
         scope.cancel()
@@ -613,10 +615,14 @@ class DetailState(val type: MediaType, val id: Int, private val deferTorrents: B
         error=null
         detailJob=scope.launch {
             try {
-                val d = Graph.tmdb.detail(type, id)
+                val d = if(sourceOnly){
+                    val m=sourceMedia!!
+                    app.torrtv.web.WebCatalogueMedia.detail(m,Graph.bgWeb.sourceEntry(m))
+                }else Graph.tmdb.detail(type, id)
                 detail = d
                 if (type == MediaType.TV) {
-                    season = d.seasons.firstOrNull()?.number ?: 1
+                    season = d.seasons.firstOrNull()?.number ?: if(sourceOnly)-1 else 1
+                    if(sourceOnly)episode=0
                     // Ако вече е гледан - отваря се точно на епизода, който се продължава.
                     Library.progressOf(d.media.key)?.let { pr ->
                         if (pr.season > 0 && d.seasons.any { it.number == pr.season }) {
@@ -626,12 +632,10 @@ class DetailState(val type: MediaType, val id: Int, private val deferTorrents: B
                     }
                     episodeJob=scope.launch{
                         loadEpisodes()
-                        if(!deferTorrents)loadTorrents()
-                        loadSubs()
+                        if(!sourceOnly){if(!deferTorrents)loadTorrents();loadSubs()}
                     }
                 }else{
-                    if (!deferTorrents) loadTorrents()
-                    loadSubs()
+                    if(!sourceOnly){if (!deferTorrents) loadTorrents();loadSubs()}
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -651,8 +655,8 @@ class DetailState(val type: MediaType, val id: Int, private val deferTorrents: B
             altTitles = alt,
             year = m.year,
             imdbId = d.imdbId,
-            season = if (type == MediaType.TV) season else null,
-            episode = if (type == MediaType.TV) episode else null,
+            season = if (type == MediaType.TV && season>=0) season else null,
+            episode = if (type == MediaType.TV && episode>0) episode else null,
             anime = d.isAnime
         )
     }
@@ -668,9 +672,9 @@ class DetailState(val type: MediaType, val id: Int, private val deferTorrents: B
             altTitles = listOf(m.originalTitle, m.title).filter { it.isNotBlank() }.distinct(),
             year = m.year,
             imdbId = d.imdbId,
-            tmdbId = id,
-            season = if (type == MediaType.TV) season else null,
-            episode = if (type == MediaType.TV) episode else null,
+            tmdbId = id.takeIf{it>0}?:0,
+            season = if (type == MediaType.TV && season>=0) season else null,
+            episode = if (type == MediaType.TV && episode>0) episode else null,
             langs = langs
         )
     }
@@ -678,8 +682,8 @@ class DetailState(val type: MediaType, val id: Int, private val deferTorrents: B
     private var torrentsRequested = false
 
     /** Пуска търсенето на торенти, ако още не е пускано (при „Продължи“ то се отлага). */
-    fun ensureTorrents() {
-        if (!torrentsRequested && detail != null && !episodeLoading) loadTorrents()
+    fun ensureTorrents(explicit:Boolean=false) {
+        if ((!sourceOnly || explicit) && !torrentsRequested && detail != null && !episodeLoading) loadTorrents()
     }
 
     fun loadTorrents() {
@@ -743,10 +747,14 @@ class DetailState(val type: MediaType, val id: Int, private val deferTorrents: B
         episodeLoading=true
         episodeError=null
         try {
-            val result=Graph.tmdb.episodes(id,selectedSeason)
+            val site=if(sourceOnly)detail?.let{Graph.bgWeb.series(it.media,it.imdbId,selectedSeason,0)} else null
+            val actualSeason=if(sourceOnly && selectedSeason<0)site?.seasons?.firstOrNull()?:selectedSeason else selectedSeason
+            val result=if(sourceOnly)app.torrtv.web.WebCatalogueMedia.episodes(site?:app.torrtv.web.WebSeriesResolver.Result(),actualSeason)
+                else Graph.tmdb.episodes(id,selectedSeason)
             if(ticket!=episodeGeneration || selectedSeason!=season)return
+            if(site!=null){webSeries=site;season=actualSeason}
             episodes=result
-            if (episode==selectedEpisode && episodes.none { it.number == episode } && webSeries.episodes.none{it.season==season && it.number==episode}) episode = episodes.firstOrNull()?.number ?: 1
+            if (episode==selectedEpisode && episodes.none { it.number == episode } && webSeries.episodes.none{it.season==season && it.number==episode}) episode = episodes.firstOrNull()?.number ?: if(sourceOnly)0 else 1
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -758,6 +766,7 @@ class DetailState(val type: MediaType, val id: Int, private val deferTorrents: B
     fun selectSeason(n: Int) {
         if (n == season) return
         val hadWeb=webRequested
+        if(sourceOnly)torrentsRequested=false
         stableWeb.clear()
         season = n
         episode = 1
@@ -766,8 +775,7 @@ class DetailState(val type: MediaType, val id: Int, private val deferTorrents: B
         episodeJob=scope.launch {
             loadEpisodes()
             if(season!=n)return@launch
-            loadTorrents()
-            loadSubs()
+            if(!sourceOnly){loadTorrents();loadSubs()}
             if(hadWeb)ensureWeb()
         }
     }
@@ -775,16 +783,16 @@ class DetailState(val type: MediaType, val id: Int, private val deferTorrents: B
     fun selectEpisode(n: Int) {
         if (n == episode) return
         val hadWeb=webRequested
+        if(sourceOnly)torrentsRequested=false
         stableWeb.clear()
         episode = n
         clearWeb()
-        loadTorrents()
-        loadSubs()
+        if(!sourceOnly){loadTorrents();loadSubs()}
         if(hadWeb)ensureWeb()
     }
 
-    fun retryEpisodes(){episodeJob?.cancel();episodeJob=scope.launch{loadEpisodes();loadTorrents();loadSubs()}}
-    fun refreshSources(){loadTorrents();loadSubs();if(webRequested)ensureWeb(force=true)}
+    fun retryEpisodes(){episodeJob?.cancel();episodeJob=scope.launch{loadEpisodes();if(!sourceOnly){loadTorrents();loadSubs()};if(webRequested)ensureWeb(force=true)}}
+    fun refreshSources(){if(!sourceOnly){loadTorrents();loadSubs()};if(webRequested || sourceOnly)ensureWeb(force=true)}
 
     /** Keep collected results, but stop discovery once another title or a player takes over. */
     fun pauseBackground(){
@@ -897,6 +905,7 @@ class DetailState(val type: MediaType, val id: Int, private val deferTorrents: B
     fun webSources(): List<app.torrtv.web.WebSources.Source> {
         val d = detail ?: return emptyList()
         if (!Graph.prefs.webEnabled) return emptyList()
+        if(sourceOnly)return stableWeb.update(bgWebSources)
         return stableWeb.update((bgWebSources + apiWebSources + app.torrtv.web.WebSources.sources(Graph.prefs, type == MediaType.TV, id, d.imdbId, season, episode)).distinctBy { it.key })
     }
 
@@ -906,7 +915,7 @@ class DetailState(val type: MediaType, val id: Int, private val deferTorrents: B
     ): StreamController.Req {
         val d = detail
         val title = d?.media?.title ?: ""
-        val epName = if (type == MediaType.TV) {
+        val epName = if (type == MediaType.TV && season>=0 && episode>0) {
             NextEpisode.label(season, episode, episodes.firstOrNull { it.number == episode }?.name.orEmpty())
         } else ""
         val runtimeMin = if (type == MediaType.TV) {
@@ -916,8 +925,8 @@ class DetailState(val type: MediaType, val id: Int, private val deferTorrents: B
             magnet = magnet,
             title = title,
             subtitle = epName,
-            season = if (type == MediaType.TV) season else null,
-            episode = if (type == MediaType.TV) episode else null,
+            season = if (type == MediaType.TV && season>=0) season else null,
+            episode = if (type == MediaType.TV && episode>0) episode else null,
             subs = subs,
             subQuery = subQuery(),
             player = player,

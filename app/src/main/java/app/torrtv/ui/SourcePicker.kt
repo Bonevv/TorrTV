@@ -54,10 +54,10 @@ fun SourcePicker(
     val web = remember(st.detail, st.season, st.episode, st.bgWebSources, st.apiWebSources) { st.webSources() }
     val webOn = Graph.prefs.webEnabled
     // По подразбиране са торентите; уеб сайтовете се избират със стрелките наляво/надясно.
-    var tab by remember { mutableStateOf(0) }
+    var tab by remember { mutableStateOf(if(st.sourceOnly)1 else 0) }
     var bgOnly by remember { mutableStateOf(st.detail?.media?.let{Graph.bgWeb.has(it)}==true) }
     val capacity=remember(st,st.season,st.episode,st.episodes){st.playbackCapacity()}
-    LaunchedEffect(st,tab,st.season,st.episode,st.episodeLoading){if(tab==1 && !st.episodeLoading)st.ensureWeb()}
+    LaunchedEffect(st,tab,st.season,st.episode,st.episodeLoading){if(!st.episodeLoading){if(tab==1)st.ensureWeb() else st.ensureTorrents(explicit=true)}}
     val tabFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) {
         st.ensureTorrents() // при „Продължи“ търсенето е отложено до тук
@@ -152,7 +152,7 @@ fun SourceStatusDialog(st:DetailState,onDismiss:()->Unit) {
             .border(1.d,C.line,RoundedCornerShape(18.d)).padding(20.d)){
             Text2("Състояние на източниците",20,C.text,FontWeight.Bold,1)
             Text2(st.detail?.media?.title.orEmpty(),13,C.accent2,FontWeight.Medium,2)
-            if(st.type==app.torrtv.data.MediaType.TV)Text2("Сезон ${st.season} · Епизод ${st.episode}",12,C.dim,FontWeight.Medium,1)
+            if(st.type==app.torrtv.data.MediaType.TV && st.season>=0 && st.episode>0)Text2("Сезон ${st.season} · Епизод ${st.episode}",12,C.dim,FontWeight.Medium,1)
             Spacer(Modifier.height(10.d))
             LazyColumn(Modifier.heightIn(max=240.d),verticalArrangement=Arrangement.spacedBy(8.d)){
                 if(rows.isEmpty())item{Text2(if(st.searching || st.subSearching)"Проверяват се източниците…" else "Още няма резултати от проверка.",13,C.dim,FontWeight.Normal,2)}

@@ -3,6 +3,7 @@ package app.torrtv.data
 enum class MediaType(val path: String) { MOVIE("movie"), TV("tv") }
 
 data class Actor(val id: Int, val name: String, val photo: String?)
+data class WebRef(val provider:String,val page:String)
 
 data class Media(
     val id: Int,
@@ -18,9 +19,10 @@ data class Media(
     val genreIds: List<Int>,
     val originalLanguage: String,
     val popularity:Double = 0.0,
-    val releaseDate:String = ""
+    val releaseDate:String = "",
+    val web:WebRef? = null
 ) {
-    val key: String get() = "${type.path}-$id"
+    val key: String get() = web?.let{"web:${it.provider}:${it.page}"}?:"${type.path}-$id"
 }
 
 data class Genre(val id: Int, val name: String)

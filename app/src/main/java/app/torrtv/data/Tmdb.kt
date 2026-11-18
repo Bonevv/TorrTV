@@ -27,7 +27,7 @@ class Tmdb(private val prefs: Prefs, diskDir: File? = null) {
 
         /** size: w185, w342, w500, w780, w1280, original */
         fun img(path: String?, size: String): String? =
-            if (path.isNullOrBlank()) null else "$IMG/$size$path"
+            if (path.isNullOrBlank()) null else if(path.startsWith("https://") || path.startsWith("http://"))path else "$IMG/$size$path"
         internal fun yearParams(type: MediaType, year: Int?): Map<String, String> =
             if (year == null) emptyMap() else mapOf((if (type == MediaType.MOVIE) "primary_release_year" else "first_air_date_year") to year.toString())
         internal fun parseMedia(o: JSONObject, forced: MediaType?): Media? {

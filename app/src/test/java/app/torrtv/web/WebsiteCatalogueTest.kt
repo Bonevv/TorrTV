@@ -49,10 +49,10 @@ class WebsiteCatalogueTest {
         for(p in MovieSources.Provider.values().filter{it.hasBgCategory() && it!=MovieSources.Provider.NINE}){
             val file=when(p.name){"ALL"->"all";"ZENO"->"zeno";"ZT"->"zt";else->"fen"}
             val html=javaClass.getResourceAsStream("/web-catalog/$file-series.html")!!.bufferedReader().use{it.readText()}
-            val requests=ArrayList<String>()
+            val requests=java.util.Collections.synchronizedList(ArrayList<String>())
             val index=BgWebIndex(temp.newFolder(),get={requests.add(it);html},enabled={setOf(p.name)})
             index.refresh(type=MediaType.TV)
-            assertEquals(p.name,listOf(p.start("",MovieCatalog.BG_AUDIO)),requests)
+            assertEquals(p.name,setOf(p.start("",MovieCatalog.BG_AUDIO),p.seriesStart()),requests.toSet())
             val entries=index.audioEntries(MediaType.TV)
             assertFalse(p.name,entries.isEmpty())
             assertTrue(entries.all{it.series && MovieSources.hasBgAudio(it)})
@@ -80,7 +80,7 @@ class WebsiteCatalogueTest {
         assertTrue(index.audioEntries().isEmpty())
     }
     @Test fun ordinaryAndAudioPaginationHaveIndependentCursors()=runBlocking {
-        val requests=ArrayList<String>()
+        val requests=java.util.Collections.synchronizedList(ArrayList<String>())
         val index=BgWebIndex(temp.root,get={u->requests.add(u);val page=if(u.contains("page=2"))2 else 1
             """{"data":[{"title":"Movie $page","slug":"movie-$page","year":2002,"isBgAudio":true}]}"""
         },enabled={setOf("NINE")})
@@ -93,7 +93,7 @@ class WebsiteCatalogueTest {
     }
     @Test fun allZenoMoviesRemainAvailableWithoutAnAudioBadge()=runBlocking {
         val html=javaClass.getResourceAsStream("/web-catalog/zeno-list.html")!!.bufferedReader().use{it.readText()}
-        val requests=ArrayList<String>()
+        val requests=java.util.Collections.synchronizedList(ArrayList<String>())
         val index=BgWebIndex(temp.root,get={requests.add(it);html},enabled={setOf("ZENO","FEN")})
         index.refresh(type=MediaType.MOVIE,audioOnly=false,source="ZENO")
         assertEquals(listOf("https://zenoplay.to/movies/"),requests)

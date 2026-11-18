@@ -231,6 +231,8 @@ fun Poster(
         onFocus = onFocus, focusRequester = focusRequester, glow = false
     ) { f ->
         Img(Look.img(media.posterPath, "w342"), Modifier.fillMaxSize(), fade = false)
+        if(media.posterPath==null)Text2(media.title,14,C.text,FontWeight.Bold,4,Modifier.align(Alignment.Center).padding(10.d))
+        if(media.web!=null)Box(Modifier.align(Alignment.TopEnd).padding(5.d)){Pill("УЕБ",C.cardHi,C.accent2)}
         if (!f) Box(Modifier.fillMaxSize().border(1.d, C.line, RoundedCornerShape(12.d)))
         RatingBadge(media.rating, Modifier.align(Alignment.TopEnd).padding(5.d))
         val progress=Library.progressOf(media.key)?.takeUnless{it.nextUp}
