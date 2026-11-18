@@ -88,7 +88,8 @@ class StreamController(
         val subsTotal: Int = 0,
         val req: Req? = null,
         /** Не е празно, когато потокът идва от уеб сайт (а не от торент). */
-        val webHost: String = ""
+        val webHost: String = "",
+        val targetLabel:String=""
     )
 
     /** headers - за поток от уеб страница: Referer, Origin, бисквитки и т.н., с които трябва да се тегли. */
@@ -203,6 +204,7 @@ class StreamController(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var job: Job? = null
+    private var failedNext:NextEp?=null
     private val nextPreparation = StreamPreparation(scope)
     private var pick: CompletableDeferred<Int>? = null
     private var subsJob: Deferred<List<SubtitleStore.Local>>? = null
@@ -248,9 +250,21 @@ class StreamController(
     fun playNext(): Boolean {
         val cur = ui.req ?: return false
         val n = cur.next ?: return false
+        return prepareNext(cur,n)
+    }
+
+    fun retry(){
+        val current=ui.req?:return
+        val next=failedNext
+        if(next!=null)prepareNext(current,next) else start(current.copy(resumeMs=resumeFrom))
+    }
+
+    private fun prepareNext(cur:Req,n:NextEp):Boolean {
         if (switching) return true
         switching = true
-        ui = Ui(stage = Stage.CONNECTING, message = "Търсене на торент за ${n.label}…", req = cur)
+        failedNext=n
+        startedAt=android.os.SystemClock.elapsedRealtime()
+        ui = Ui(stage = Stage.CONNECTING, message = "Търсене на торент за ${n.label}…", req = cur,targetLabel=n.label)
         nextPreparation.start(
             prepare = { n.prepare() },
             ready = { r ->
@@ -315,6 +329,7 @@ class StreamController(
         while (true) {
             val lv = client.live
             if (lv != null) {
+                req.torrent?.let{Graph.transferRates.observe(it.hash,lv.stats.speed,demanding=!lv.preloaded)}
                 ui = ui.copy(peers = lv.stats.peers, seeds = lv.stats.seeds, speed = lv.stats.speed, bufferPct = lv.preloadPct)
                 if (lv.preloaded) break
             }
@@ -447,6 +462,7 @@ class StreamController(
         AppLog.d("stream", "затваряне")
         nextPreparation.cancel()
         switching = false
+        failedNext=null
         job?.cancel()
         job = null
         pick?.cancel()

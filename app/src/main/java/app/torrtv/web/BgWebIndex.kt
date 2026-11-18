@@ -320,10 +320,10 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
     }
     suspend fun saveAudioCards(entries:List<MovieCatalog.Entry>)=withContext(Dispatchers.IO){rememberDetails(entries)}
     private fun incrementPage(url:String):String = Regex("([?&]page=)(\\d+)").replace(url) { it.groupValues[1]+(it.groupValues[2].toInt()+1) }
-    suspend fun sources(m: Media, imdb: String?, season: Int, episode: Int): List<WebSources.Source> = withContext(Dispatchers.IO) {
-        if(m.type==MediaType.TV)return@withContext series(m,imdb,season,episode).sources
-        refresh(type = m.type)
-        refresh(m.originalTitle.ifBlank { m.title },type=m.type,audioOnly=false)
+    suspend fun sources(m: Media, imdb: String?, season: Int, episode: Int,force:Boolean=false): List<WebSources.Source> = withContext(Dispatchers.IO) {
+        if(m.type==MediaType.TV)return@withContext series(m,imdb,season,episode,force).sources
+        refresh(type = m.type,force=force)
+        refresh(m.originalTitle.ifBlank { m.title },type=m.type,audioOnly=false,force=force)
         val checkedEntries=ArrayList<MovieCatalog.Entry>()
         val sources=find(m, imdb, onlyBg=false).mapNotNull { record ->
             val e = decodeEntry(encodeEntry(record.entry))
@@ -343,10 +343,11 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
         rememberDetails(checkedEntries)
         sources
     }
-    suspend fun series(m:Media,imdb:String?,season:Int,episode:Int):WebSeriesResolver.Result = withContext(Dispatchers.IO) {
+    suspend fun series(m:Media,imdb:String?,season:Int,episode:Int,force:Boolean=false):WebSeriesResolver.Result = withContext(Dispatchers.IO) {
         restore()
-        refresh(type=MediaType.TV)
-        refresh(m.originalTitle.ifBlank{m.title},type=MediaType.TV,audioOnly=false)
+        if(force)seriesResolver.invalidate()
+        refresh(type=MediaType.TV,force=force)
+        refresh(m.originalTitle.ifBlank{m.title},type=MediaType.TV,audioOnly=false,force=force)
         val providers=enabled();val now=System.currentTimeMillis();val snapshot=lookup
         val candidates=(find(m,imdb,onlyBg=false)+listOf(m.title,m.originalTitle).flatMap{snapshot.series[MovieEpisodes.baseTitle(it)].orEmpty()})
             .distinctBy{it.entry.page}.filter{it.entry.provider in providers && now-it.checkedAt in 0..TTL}

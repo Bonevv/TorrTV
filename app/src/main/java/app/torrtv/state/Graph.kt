@@ -2,6 +2,7 @@ package app.torrtv.state
 
 import android.app.Application
 import app.torrtv.core.Prefs
+import app.torrtv.core.TransferRates
 import app.torrtv.data.MediaType
 import app.torrtv.data.Remote
 import app.torrtv.data.Tmdb
@@ -25,6 +26,7 @@ object Graph {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     val prefs by lazy { Prefs(app) }
+    val transferRates=TransferRates()
     val tmdb by lazy { Tmdb(prefs, java.io.File(app.cacheDir, "tmdb")) }
     val torrents by lazy { TorrentAggregator(prefs) }
     val subs by lazy { SubtitleAggregator(prefs) }

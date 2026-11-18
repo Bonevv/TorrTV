@@ -45,6 +45,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import app.torrtv.data.Genres
 import app.torrtv.data.Media
 import app.torrtv.data.MediaType
@@ -62,11 +65,11 @@ fun Focusable(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     shape: Shape = RoundedCornerShape(12.d),
-    scale: Float = 1.06f,
+    scale: Float = 1.025f,
     ring: Boolean = true,
     onFocus: () -> Unit = {},
     focusRequester: FocusRequester? = null,
-    glow: Boolean = true,
+    glow: Boolean = false,
     content: @Composable BoxScope.(Boolean) -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -91,7 +94,7 @@ fun Focusable(
             .then(glowMod)
             .clip(shape)
             .then(ringMod)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
     ) { content(focused) }
 }
 
@@ -117,7 +120,7 @@ fun Chip(
     focusRequester: FocusRequester? = null,
     compact: Boolean = false
 ) {
-    Focusable(onClick, modifier, RoundedCornerShape(50), 1.08f, ring = false, onFocus = onFocus, focusRequester = focusRequester) { f ->
+    Focusable(onClick, modifier, RoundedCornerShape(50), 1.025f, ring = false, onFocus = onFocus, focusRequester = focusRequester) { f ->
         Box(
             Modifier
                 .background(
@@ -149,7 +152,7 @@ fun PrimaryButton(
     focusRequester: FocusRequester? = null,
     big: Boolean = false
 ) {
-    Focusable(onClick, modifier, RoundedCornerShape(50), 1.07f, ring = false, onFocus = onFocus, focusRequester = focusRequester) { f ->
+    Focusable(onClick, modifier, RoundedCornerShape(50), 1.025f, ring = false, onFocus = onFocus, focusRequester = focusRequester) { f ->
         Box(
             Modifier
                 .background(if (f) C.white else if (primary) C.grad else C.flat)
@@ -222,12 +225,18 @@ fun Poster(
     focusRequester: FocusRequester? = null
 ) {
     Focusable(
-        onClick, modifier.width(width).height(width * 1.5f), RoundedCornerShape(12.d), 1f,
+        onClick, modifier.width(width).height(width * 1.5f).semantics(mergeDescendants=true){
+            contentDescription=listOf(media.title,media.year).filter{it.isNotBlank()}.joinToString(" · ")
+        }, RoundedCornerShape(12.d), 1f,
         onFocus = onFocus, focusRequester = focusRequester, glow = false
     ) { f ->
         Img(Look.img(media.posterPath, "w342"), Modifier.fillMaxSize(), fade = false)
         if (!f) Box(Modifier.fillMaxSize().border(1.d, C.line, RoundedCornerShape(12.d)))
         RatingBadge(media.rating, Modifier.align(Alignment.TopEnd).padding(5.d))
+        val progress=Library.progressOf(media.key)?.takeUnless{it.nextUp}
+        if(progress!=null)Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(3.d).background(C.bg2)){
+            Box(Modifier.fillMaxWidth(progress.fraction).height(3.d).background(C.accent))
+        }
         if (media.type == MediaType.TV) {
             Box(Modifier.align(Alignment.TopStart).padding(5.d)) { Pill("СЕРИАЛ", Color(0xCC000000), C.accent2) }
         } else if (Library.watched.containsKey(media.key)) {

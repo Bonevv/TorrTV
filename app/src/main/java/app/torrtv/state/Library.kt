@@ -56,7 +56,7 @@ object Library {
     /** Изгледаните филми и епизоди (ключ -> кога). Виж [WatchedLog]. */
     val watched = mutableStateMapOf<String, Long>()
 
-    private const val MAX_PROGRESS = 5
+    private const val MAX_PROGRESS = 20
     private const val MAX_FAV = 300
 
     private fun sp() = Graph.app.getSharedPreferences("library", Context.MODE_PRIVATE)

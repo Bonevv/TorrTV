@@ -31,14 +31,14 @@ object NextEpisode {
      * Така епизодите са с еднакъв вид и звук и не се сменят субтитрите. Във вградения плеър се избягват
      * DTS/TrueHD, освен ако предишният епизод е бил такъв (значи звукът е вървял).
      */
-    fun choose(prev: TorrentResult?, list: List<TorrentResult>, builtinPlayer: Boolean = false): TorrentResult? {
+    fun choose(prev: TorrentResult?, list: List<TorrentResult>, builtinPlayer: Boolean = false,rank:((TorrentResult,Boolean)->Int)?=null): TorrentResult? {
         // seeders < 0 значи „не се знае“ (някои addon-и не го дават)
         val ok = list.filter { (it.seeders >= 2 || it.seeders < 0) && !it.isCam }
         if (ok.isEmpty()) return null
         val prevGroups = prev?.let { Release.parse(it.title).groups }.orEmpty()
         val avoidHard = builtinPlayer && (prev == null || !TorrentAggregator.hardAudio(prev))
         return ok.maxByOrNull { r ->
-            var s = TorrentAggregator.score(r, avoidHard)
+            var s = rank?.invoke(r,avoidHard)?:TorrentAggregator.score(r, avoidHard)
             if (prev != null) {
                 if (r.hash == prev.hash) s += 60
                 if (r.quality == prev.quality) s += 35

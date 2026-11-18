@@ -19,6 +19,7 @@ class WebSeriesResolver(private val get: suspend (String)->String,
     private data class Cached(val entry:MovieCatalog.Entry,val at:Long)
     private val cache=ConcurrentHashMap<String,Cached>()
     private val gate=Semaphore(2)
+    fun invalidate()=cache.clear()
 
     private suspend fun detail(e:MovieCatalog.Entry):MovieCatalog.Entry {
         cache[e.page]?.takeIf{System.currentTimeMillis()-it.at in 0..30*60_000L}?.let{hit->

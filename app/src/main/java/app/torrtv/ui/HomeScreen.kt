@@ -139,14 +139,14 @@ fun HomeScreen(home: HomeState, onOpen: (Media) -> Unit, onResume: (app.torrtv.s
         HeroBanner(shown, kicker, isPick, Modifier.height(215.d))
         LazyColumn(Modifier.fillMaxWidth().weight(1f), state = home.listState) {
             if (app.torrtv.state.Library.progress.isNotEmpty()) {
-                item(key = "continue") { ContinueRow(onResume, { home.heroTarget = it }) }
+                item(key = "continue") { ContinueRow(onResume, { home.heroTarget = it },home.continueListState,{home.focusKey},{home.focusKey=it}) }
             }
             items(home.picks, key = { "pick-" + it.type.path }) { row ->
                 PicksRow(home, row, onOpen)
             }
             if (app.torrtv.state.Library.favorites.isNotEmpty()) {
                 item(key = "favs") {
-                    MediaRow("Любими", app.torrtv.state.Library.favorites.take(20), onOpen, { home.heroTarget = it })
+                    MediaRow("Любими", app.torrtv.state.Library.favorites.take(20), onOpen, { home.heroTarget = it },home.favoriteListState,{home.focusKey},{home.focusKey=it})
                 }
             }
             items(home.rows, key = { it.id }) { row ->
@@ -165,9 +165,9 @@ private fun HomeRow(home: HomeState, row: HomeState.Row, onOpen: (Media) -> Unit
         if (data.items.isEmpty() && !data.loading && data.error == null) data.loadNext()
         snapshotFlow {
             val li = row.listState.layoutInfo
-            (li.visibleItemsInfo.lastOrNull()?.index ?: 0) to li.totalItemsCount
+            minOf(li.visibleItemsInfo.lastOrNull()?.index ?: -1,data.items.size-1) to data.items.size
         }.collect { (last, total) ->
-            if (total > 0 && last >= total - 6) data.loadNext()
+            if (total > 0 && last >= total - 4 && data.error==null) data.loadNext()
         }
     }
     LaunchedEffect(data.items.size) {
@@ -191,7 +191,7 @@ private fun HomeRow(home: HomeState, row: HomeState.Row, onOpen: (Media) -> Unit
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 36.d, vertical = 8.d),
                 horizontalArrangement = Arrangement.spacedBy(12.d)
             ) {
-                items(data.items, key = { it.key }) { m ->
+                items(data.items, key = { it.key },contentType={"poster"}) { m ->
                     val fr = remember { FocusRequester() }
                     val fk = "${row.id}|${m.key}"
                     if (home.focusKey == fk) {
@@ -210,7 +210,12 @@ private fun HomeRow(home: HomeState, row: HomeState.Row, onOpen: (Media) -> Unit
                         focusRequester = fr
                     )
                 }
-                if (data.loading) item { Box(Modifier.width(60.d).height(168.d), contentAlignment = Alignment.Center) { Spinner(22.d) } }
+                if (data.loading) item(key="loading") { Box(Modifier.width(60.d).height(168.d), contentAlignment = Alignment.Center) { Spinner(22.d) } }
+                if(data.error!=null)item(key="retry"){
+                    Box(Modifier.width(150.d).height(168.d),contentAlignment=Alignment.Center){
+                        PrimaryButton("Опитай пак",{scope.launch{data.retry()}},primary=false)
+                    }
+                }
             }
         }
     }

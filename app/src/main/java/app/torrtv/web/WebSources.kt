@@ -67,6 +67,10 @@ object WebSources {
         val direct: Boolean = false, val headers: Map<String,String> = emptyMap(), val release: String = "",
         val playerOnly: Boolean = false, val discoveryPage: String = "", val originalPlayer: Boolean = false) {
         val key: String get() = url.ifBlank { discoveryPage }
+        val summary:String get()=listOf(
+            if(bgAudio)"БГ аудио" else "Аудио: непотвърдено",
+            if(originalPlayer)"Плеър на сайта" else if(direct)"Директно видео" else "Уеб плеър"
+        ).joinToString(" · ")
     }
 
     /** Готовите адреси; шаблон, който иска {imdb} без да го имаме, се прескача. */

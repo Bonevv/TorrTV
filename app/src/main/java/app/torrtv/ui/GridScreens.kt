@@ -75,23 +75,28 @@ fun PosterGrid(
 ) {
     val scope = rememberCoroutineScope()
     LaunchedEffect(paged) {
-        if (!paged.started) paged.loadNext()
+        if (!paged.started) {
+            gridState.scrollToItem(0)
+            setFocusKey(null)
+            paged.loadNext()
+        }
         snapshotFlow {
             val li = gridState.layoutInfo
             minOf(li.visibleItemsInfo.lastOrNull()?.index ?: -1,paged.items.size-1) to paged.items.size
-        }.collect { (last, total) -> if (total > 0 && last >= total - 12) paged.loadNext() }
+        }.collect { (last, total) -> if (total > 0 && last >= total - 8 && paged.error==null) paged.loadNext() }
     }
     BoxWithConstraints(modifier.fillMaxSize()) {
         val (cols, w) = gridGeometry(maxWidth.value, sidePad.value, 12.d.value, minW.value)
         val pw = w.dp
         LazyVerticalGrid(
+            modifier=Modifier.stayInContent(),
             columns = GridCells.Fixed(cols),
             state = gridState,
             contentPadding = PaddingValues(start = sidePad, end = sidePad, top = topPad, bottom = 40.d),
             horizontalArrangement = Arrangement.spacedBy(12.d),
             verticalArrangement = Arrangement.spacedBy(14.d)
         ) {
-            items(paged.items, key = { it.key }) { m ->
+            items(paged.items, key = { it.key },contentType={"poster"}) { m ->
                 val fr = remember { FocusRequester() }
                 if (getFocusKey() == m.key) {
                     LaunchedEffect(Unit) {
@@ -101,15 +106,15 @@ fun PosterGrid(
                 }
                 Poster(m, pw, { setFocusKey(m.key); onOpen(m) }, focusRequester = fr)
             }
-            if (paged.loading) item(span = { GridItemSpan(maxLineSpan) }) {
+            if (paged.loading && paged.items.isEmpty()) item(key="initial-loading",span = { GridItemSpan(maxLineSpan) }) {
                 Box(Modifier.fillMaxWidth().height(50.d), contentAlignment = Alignment.Center) { Spinner() }
             }
-            if (paged.error != null) item(span = { GridItemSpan(maxLineSpan) }) {
+            if (paged.error != null) item(key="load-error",span = { GridItemSpan(maxLineSpan) }) {
                 ErrorLine(paged.error ?: "", { scope.launch { paged.retry() } })
             }
-            if(!paged.loading && !paged.exhausted && paged.error==null && paged.items.isNotEmpty()) item(span={GridItemSpan(maxLineSpan)}){
+            if(!paged.exhausted && paged.error==null && paged.items.isNotEmpty()) item(key="load-more",span={GridItemSpan(maxLineSpan)}){
                 Box(Modifier.fillMaxWidth().padding(vertical=8.d),contentAlignment=Alignment.Center){
-                    PrimaryButton("Зареди още",{scope.launch{paged.loadNext()}})
+                    PrimaryButton(if(paged.loading)"Зареждане…" else "Зареди още",{if(!paged.loading)scope.launch{paged.loadNext()}})
                 }
             }
         }

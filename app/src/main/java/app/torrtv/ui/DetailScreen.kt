@@ -47,6 +47,7 @@ import app.torrtv.data.Media
 import app.torrtv.data.MediaType
 import app.torrtv.data.torrents.TorrentAggregator
 import app.torrtv.data.torrents.TorrentResult
+import app.torrtv.data.torrents.PlaybackAdvisor
 import app.torrtv.state.DetailState
 import app.torrtv.state.Graph
 import app.torrtv.state.Library
@@ -82,14 +83,17 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
     var site by remember(st) { mutableStateOf("all") }
     var pickSite by remember(st) { mutableStateOf(false) }
     var pickQuality by remember(st) { mutableStateOf(false) }
-    var tab by remember(st) { mutableStateOf(if (st.type == MediaType.TV) TAB_EPS else TAB_TOR) }
+    val tab=st.selectedPane
+    var pickSource by remember(st){mutableStateOf(false)}
+    var showStatus by remember(st){mutableStateOf(false)}
     val ctx = androidx.compose.ui.platform.LocalContext.current
 
     LaunchedEffect(st) { if (st.detail == null) st.start() }
     // Фокусът отива на „Гледай“ - при отваряне и когато се върнем на тази страница от друго заглавие.
-    LaunchedEffect(st, d != null) { if (d != null) playFocus.tryRequest() }
+    LaunchedEffect(st, d != null) { if (d != null && !(tab==TAB_REC && st.recommendationFocusKey!=null)) playFocus.tryRequest() }
     // При „Продължи“ търсенето на торенти е отложено: пуска се, щом диалогът за пускане не е отворен.
-    LaunchedEffect(d != null, sheetOpen) { if (d != null && !sheetOpen) st.ensureTorrents() }
+    LaunchedEffect(d != null, sheetOpen,st.episodeLoading) { if (d != null && !sheetOpen) st.ensureTorrents() }
+    LaunchedEffect(st,tab,st.season,st.episode,st.episodeLoading){if(tab==TAB_WEB && !st.episodeLoading)st.ensureWeb()}
 
     Box(Modifier.fillMaxSize()) {
         // фон
@@ -137,20 +141,20 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
         val diskMBps = Graph.prefs.diskMBps.toDouble()
         val isTv = d.media.type == MediaType.TV
         val runtimeMin = if (isTv) st.episodes.firstOrNull { it.number == st.episode }?.runtime?.takeIf { it > 0 } ?: d.runtime else d.runtime
+        val capacity=PlaybackAdvisor.Capacity(runtimeMin,freeBytes,netMbps,diskMBps,builtinPlayer)
         val rowFit: (TorrentResult) -> Pair<StreamFit.Level, StreamFit.Level> = { t ->
-            if (t.pack) StreamFit.Level.NONE to StreamFit.Level.NONE
-            else StreamFit.storage(t.size, freeBytes) to StreamFit.smooth(t.size, runtimeMin, netMbps, diskMBps, t.seeders)
+            PlaybackAdvisor.assess(t,capacity,Graph.transferRates.mbps(t.hash)).let{it.storage to it.smooth}
         }
-        val best = st.torrents.filter { !it.isCam }.let { l ->
-            l.filter { rowFit(it).first != StreamFit.Level.BAD }.ifEmpty { l }
-        }.maxByOrNull {
-            TorrentAggregator.score(it, builtinPlayer) -
-                if (rowFit(it).second == StreamFit.Level.BAD) TorrentAggregator.SLOW_PENALTY else 0
-        } ?: st.torrents.firstOrNull()
+        val best = PlaybackAdvisor.choose(st.torrents,capacity){Graph.transferRates.mbps(it)}
         // Започнато ли е вече? За сериал - само ако е избран същият епизод.
         val pr = Library.progressOf(d.media.key)?.takeIf {
             !it.nextUp && (d.media.type == MediaType.MOVIE || (it.season == st.season && it.episode == st.episode))
         }
+        if(pickSource)SourcePicker(st,null,
+            onTorrent={onPlay(it,0L)},
+            onWeb={i->app.torrtv.web.WebPlay.open(ctx,st.webSources(),i,st.webRequest())},
+            onDismiss={pickSource=false})
+        if(showStatus)SourceStatusDialog(st){showStatus=false}
 
         if (pickSite) PickDialog(
             "Сайт",
@@ -165,7 +169,7 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
 
         Column(Modifier.fillMaxSize()) {
             // Горната част е извън всеки списък: нищо не я плъзга, затова заглавието винаги се вижда.
-            DetailHeader(st, d, best, pr, playFocus, onPlay) { tab = TAB_WEB }
+            DetailHeader(st, d, best, pr, playFocus, onPlay,{pickSource=true},{showStatus=true}) { st.selectedPane = TAB_WEB }
             Box(Modifier.padding(horizontal = 36.d).fillMaxWidth().height(1.d).background(C.line))
 
             Row(
@@ -182,7 +186,7 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
                 }
                 val failedSubs = st.subStatus.entries.filter { it.value.startsWith("✗") }.map { it.key }.sorted()
                 SidePanel {
-                    items(tabs, key = { it.first }) { (id, label, count) -> SideTab(label, count, tab == id) { tab = id } }
+                    items(tabs, key = { it.first }) { (id, label, count) -> SideTab(label, count, tab == id) { st.selectedPane = id } }
                     if (tab == TAB_TOR && (qOptions.size > 1 || siteList.size > 1)) {
                         panelDivider("fdiv")
                         if (qOptions.size > 1) item(key = "fq") {
@@ -246,7 +250,7 @@ fun DetailScreen(st: DetailState, onOpen: (Media) -> Unit, onPlay: (TorrentResul
 @Composable
 private fun DetailHeader(
     st: DetailState, d: Detail, best: TorrentResult?, pr: Library.Progress?, playFocus: FocusRequester,
-    onPlay: (TorrentResult, Long) -> Unit, onNoTorrents: () -> Unit
+    onPlay: (TorrentResult, Long) -> Unit,onPick:()->Unit,onStatus:()->Unit, onNoTorrents: () -> Unit
 ) {
     val isTv = d.media.type == MediaType.TV
     Row(
@@ -271,9 +275,7 @@ private fun DetailHeader(
                 if (meta.isNotEmpty()) Text2(meta.joinToString("  ·  "), 13, C.dim, FontWeight.Medium, 1)
                 if (d.genres.isNotEmpty()) Text2(d.genres.take(4).joinToString(" · ") { it.name }, 12, C.accent2, FontWeight.Medium, 1, Modifier.weight(1f))
             }
-            if (st.bgWebSources.any { it.bgAudio }) Text2("🇧🇬 Има БГ аудио версия във уеб", 13, C.green, FontWeight.Bold, 1)
-            Spacer(Modifier.height(6.d))
-            Text2(d.media.overview.ifBlank { "Няма описание." }, 13, Color(0xFFD5DAE6), FontWeight.Normal, 2)
+            if (Graph.prefs.webEnabled && st.bgWebSources.any { it.bgAudio }) Text2("🇧🇬 Има БГ аудио версия във уеб", 13, C.green, FontWeight.Bold, 1)
             Spacer(Modifier.height(10.d))
             Row(horizontalArrangement = Arrangement.spacedBy(10.d), verticalAlignment = Alignment.CenterVertically) {
                 if (pr != null) {
@@ -283,16 +285,23 @@ private fun DetailHeader(
                     when {
                         best != null && pr != null -> "От началото"
                         best != null -> "▶  Гледай"
+                        st.episodeLoading -> "Зареждане…"
                         st.searching -> "Търсене…"
-                        else -> "Няма торенти - гледай от сайт"
+                        st.torrents.isNotEmpty()->"Избери версия"
+                        else -> "Уеб плеъри"
                     },
                     {
                         if (best != null) onPlay(best, 0L)
-                        else if (!st.searching) onNoTorrents() // няма торенти: показват се уеб сайтовете
+                        else if(st.searching || st.torrents.isNotEmpty())onPick()
+                        else if(!st.episodeLoading)onNoTorrents()
                     },
                     primary = pr == null,
                     focusRequester = if (pr == null) playFocus else null
                 )
+                PrimaryButton("Избери източник",onPick,primary=false)
+            }
+            Spacer(Modifier.height(6.d))
+            Row(horizontalArrangement=Arrangement.spacedBy(8.d),verticalAlignment=Alignment.CenterVertically){
                 val fav = Library.isFavorite(d.media.key)
                 Chip(if (fav) "♥ В любими" else "♡ Любими", fav, { Library.toggleFavorite(d.media) }, compact = true)
                 val seen = Library.isWatched(d.media, if (isTv) st.season else null, if (isTv) st.episode else null)
@@ -306,7 +315,8 @@ private fun DetailHeader(
                     { Library.setWatched(d.media, if (isTv) st.season else null, if (isTv) st.episode else null, !seen) },
                     compact = true
                 )
-                Chip("↻ Търси пак", false, { st.loadTorrents(); st.loadSubs() }, compact = true)
+                Chip("↻ Обнови", false, { st.refreshSources() }, compact = true)
+                Chip("Състояние",false,onStatus,compact=true)
             }
             // Един ред под бутоните: кой епизод е избран и кой торент ще се пусне.
             val few = pr == null && best != null && best.seeders in 0..4
@@ -472,6 +482,12 @@ private fun EpisodesPane(st: DetailState, d: Detail) {
             }
         }
         Spacer(Modifier.height(8.d))
+        if(st.episodeLoading)Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.d)){
+            Spinner(16.d);Text2("Зареждат се епизодите…",12,C.dim,FontWeight.Medium,1)
+        }
+        if(st.episodeError!=null)ErrorLine(st.episodeError.orEmpty(),{st.retryEpisodes()})
+        if(!st.episodeLoading && st.episodeError==null && st.episodes.isEmpty())
+            Text2("Няма данни за епизодите на този сезон. Провери и „Уеб сайтове“.",12,C.dim,FontWeight.Medium,3)
         LazyRow(
             contentPadding = PaddingValues(horizontal = 6.d, vertical = 8.d),
             horizontalArrangement = Arrangement.spacedBy(12.d)
@@ -504,18 +520,26 @@ private fun EpisodesPane(st: DetailState, d: Detail) {
 @Composable
 private fun WebPane(st: DetailState, web: List<WebSources.Source>, webOn: Boolean) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
+    var bgOnly by remember(st){mutableStateOf(st.detail?.media?.let{Graph.bgWeb.has(it)}==true)}
+    val shown=web.filter{!bgOnly || it.bgAudio}
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.padding(top = 4.d, bottom = 8.d)) {
             PaneTitle("Уеб плеъри", if (webOn && web.isNotEmpty()) "${web.size}" else "")
         }
         if(st.type==MediaType.TV)st.detail?.let{WebEpisodeSelectors(st,it)}
-        if(st.webLoading)Row(Modifier.padding(vertical=6.d),verticalAlignment=Alignment.CenterVertically){Spinner(16.d);Spacer(Modifier.width(8.d));Text2("Проверяват се плеърите за избрания епизод…",11,C.dim,FontWeight.Normal,1)}
+        if(webOn)Row(horizontalArrangement=Arrangement.spacedBy(8.d),verticalAlignment=Alignment.CenterVertically){
+            Chip("Всички",!bgOnly,{bgOnly=false},compact=true)
+            Chip("🇧🇬 БГ аудио (${web.count{it.bgAudio}})",bgOnly,{bgOnly=true},compact=true)
+            Chip("Обнови",false,{st.ensureWeb(force=true)},compact=true)
+        }
+        if(st.webLoading)Row(Modifier.padding(vertical=6.d),verticalAlignment=Alignment.CenterVertically){Spinner(16.d);Spacer(Modifier.width(8.d));Text2("Проверяват се версиите за избраното заглавие…",11,C.dim,FontWeight.Normal,1)}
+        if(st.webError!=null)Text2(st.webError.orEmpty(),11,C.amber,FontWeight.Medium,3,Modifier.padding(vertical=4.d))
         when {
             !webOn -> Text2("Уеб сайтовете са изключени. Включват се от Настройки → Уеб сайтове.", 13, C.dim, FontWeight.Normal, 2)
-            web.isEmpty() -> Text2("Няма адреси на сайтове (или филмът още се зарежда).", 13, C.dim, FontWeight.Normal, 2)
+            shown.isEmpty() -> Text2(if(st.webLoading)"Версиите още се проверяват…" else if(bgOnly)"Няма потвърдена БГ версия за избрания филм или епизод. Можеш да покажеш всички плеъри." else "Няма намерени уеб версии. Опитай „Обнови“.", 13, C.dim, FontWeight.Normal, 3)
             else -> {
                 Text2(
-                    "Онлайн плеъри за избрания филм или епизод. Източниците от българските сайтове запазват оригиналния си плеър.",
+                    "Плеъри за избрания филм или епизод. Наличността и възпроизвеждането се проверяват при пускане. Българските сайтове запазват оригиналния си плеър.",
                     11, C.dim, FontWeight.Normal, 3, Modifier.padding(bottom = 6.d)
                 )
                 LazyColumn(
@@ -523,12 +547,12 @@ private fun WebPane(st: DetailState, web: List<WebSources.Source>, webOn: Boolea
                     contentPadding = PaddingValues(horizontal = 6.d, vertical = 4.d),
                     verticalArrangement = Arrangement.spacedBy(6.d)
                 ) {
-                    itemsIndexed(web, key = { i, s -> "w$i" + s.host }) { i, s ->
+                    itemsIndexed(shown, key = { _, s -> s.key }) { _, s ->
                         PickRow(
                             left = if (s.bgAudio) "🇧🇬" else "WEB", title = s.host,
-                            sub = if (s.bgAudio) "Потвърдена БГ аудио версия" else if (i == 0) "основен" else "резервен " + i,
+                            sub = s.summary,
                             right = "▶", rightColor = C.accent
-                        ) { app.torrtv.web.WebPlay.open(ctx, web, i, st.webRequest()) }
+                        ) { app.torrtv.web.WebPlay.open(ctx, web, web.indexOfFirst{it.key==s.key}, st.webRequest()) }
                     }
                 }
             }
@@ -566,13 +590,13 @@ private fun AboutPane(d: Detail) {
 private fun RecsPane(st: DetailState, onOpen: (Media) -> Unit) {
     val recs = st.recs
     val scope = rememberCoroutineScope()
-    val rowState = remember(st) { LazyListState() }
+    val rowState = st.recommendationListState
     LaunchedEffect(st) { if (!recs.started) recs.loadNext() }
     LaunchedEffect(st) {
         snapshotFlow {
             val li = rowState.layoutInfo
-            (li.visibleItemsInfo.lastOrNull()?.index ?: 0) to li.totalItemsCount
-        }.collect { (last, total) -> if (recs.started && last >= total - 5) recs.loadNext() }
+            minOf(li.visibleItemsInfo.lastOrNull()?.index ?: -1,recs.items.size-1) to recs.items.size
+        }.collect { (last, total) -> if (total>0 && recs.error==null && last >= total - 4) recs.loadNext() }
     }
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.padding(top = 4.d, bottom = 4.d)) { PaneTitle("Подобни заглавия") }
@@ -593,7 +617,11 @@ private fun RecsPane(st: DetailState, onOpen: (Media) -> Unit) {
                     contentPadding = PaddingValues(horizontal = 6.d, vertical = 12.d),
                     horizontalArrangement = Arrangement.spacedBy(12.d)
                 ) {
-                    items(recs.items, key = { it.key }) { m -> Poster(m, pw, { onOpen(m) }) }
+                    items(recs.items, key = { it.key },contentType={"poster"}) { m ->
+                        val fr=remember{FocusRequester()}
+                        if(st.recommendationFocusKey==m.key)LaunchedEffect(Unit){fr.tryRequest();st.recommendationFocusKey=null}
+                        Poster(m,pw,{st.recommendationFocusKey=m.key;onOpen(m)},focusRequester=fr)
+                    }
                     if (recs.loading) item { Box(Modifier.width(60.d).height(pw * 1.5f), contentAlignment = Alignment.Center) { Spinner(22.d) } }
                 }
             }
@@ -608,10 +636,10 @@ fun TorrentRow(
     // Една от четирите колони вдясно: най-важното за това дали ще тръгне гладко.
     val status: Triple<String, Color, Color>? = when {
         storage == StreamFit.Level.BAD -> Triple("няма място", Color(0x33FF5C6C), C.red)
-        smooth == StreamFit.Level.BAD -> Triple("ще буферира", Color(0x33FF5C6C), C.red)
+        smooth == StreamFit.Level.BAD -> Triple("риск от буфериране", Color(0x33FF5C6C), C.red)
         storage == StreamFit.Level.EDGE -> Triple("малко място", Color(0x33FFB020), C.amber)
         smooth == StreamFit.Level.EDGE -> Triple("на ръба", Color(0x33FFB020), C.amber)
-        smooth == StreamFit.Level.GOOD -> Triple("гладко", Color(0x333DDC84), C.green)
+        smooth == StreamFit.Level.GOOD -> Triple("има запас", Color(0x333DDC84), C.green)
         else -> null
     }
     // Звукът, който вграденият плеър не пуска, и записът от камера се виждат първи; обикновените белези са текст.

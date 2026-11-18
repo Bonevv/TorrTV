@@ -534,8 +534,9 @@ private fun SettingsPane(section: String, modifier: Modifier) {
                     }
                     // Размерите на кеша се обновяват на ~4.5 с; derivedStateOf не позволява целият екран да се прерисува на всеки тик.
                     val sizeTick by remember { androidx.compose.runtime.derivedStateOf { tick / 3 } }
-                    val sizes by produceState<CacheManager.Sizes?>(null, cacheTick, sizeTick) {
-                        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { CacheManager.sizes(ctx) }
+                    var sizes by remember{mutableStateOf<CacheManager.Sizes?>(null)}
+                    LaunchedEffect(cacheTick,sizeTick) {
+                        sizes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { CacheManager.sizes(ctx) }
                     }
                     Text2(
                         "Заета памет: ${mem.totalMb} MB   (интерфейс ${mem.pssMb} MB" +

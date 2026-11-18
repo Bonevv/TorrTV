@@ -41,17 +41,20 @@ fun PrepareScreen(st: app.torrtv.state.DetailState? = null) {
     val focus = remember { FocusRequester() }
     LaunchedEffect(ui.stage) { focus.tryRequest() }
 
-    val live by produceState<EngineStats?>(null, ui.stage) {
+    var live by remember{mutableStateOf<EngineStats?>(null)}
+    LaunchedEffect(ui.stage) {
+        live=null
         while (ui.stage == Stage.READY || ui.stage == Stage.BUFFERING) {
-            value = sc.stats()
+            live = sc.stats()
             delay(1000)
         }
     }
 
     // Колко време върви подготовката (за да познаем торент без сийдъри / твърде бавно теглене).
-    val secs by produceState(0, ui.stage) {
-        while (true) {
-            value = ((android.os.SystemClock.elapsedRealtime() - sc.startedAt) / 1000).toInt()
+    var secs by remember{mutableStateOf(0)}
+    LaunchedEffect(ui.stage,sc.startedAt) {
+        while (ui.stage in listOf(Stage.CONNECTING,Stage.METADATA,Stage.BUFFERING)) {
+            secs = ((android.os.SystemClock.elapsedRealtime() - sc.startedAt) / 1000).toInt()
             delay(1000)
         }
     }
@@ -66,7 +69,8 @@ fun PrepareScreen(st: app.torrtv.state.DetailState? = null) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text2(req?.title ?: "", 26, C.text, FontWeight.ExtraBold, 2)
-            if (!req?.subtitle.isNullOrBlank()) Text2(req?.subtitle ?: "", 14, C.accent2, FontWeight.Medium, 1)
+            val subtitle=ui.targetLabel.ifBlank{req?.subtitle.orEmpty()}
+            if (subtitle.isNotBlank()) Text2(subtitle, 14, C.accent2, FontWeight.Medium, 1)
             Spacer(Modifier.height(22.d))
 
             when (ui.stage) {
@@ -90,10 +94,11 @@ fun PrepareScreen(st: app.torrtv.state.DetailState? = null) {
                     PrimaryButton("Отказ", { sc.close() }, primary = false, focusRequester = focus)
                 }
                 Stage.ERROR -> {
-                    Text2(ui.error ?: "Нещо се обърка.", 14, C.red, FontWeight.Medium, 5)
+                    Text2(app.torrtv.core.UiFailure.message(ui.error.orEmpty()), 14, C.red, FontWeight.Medium, 5)
                     Spacer(Modifier.height(16.d))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.d)) {
-                        PrimaryButton("Опитай пак", { req?.let { sc.start(it) } }, focusRequester = focus)
+                        PrimaryButton("Опитай пак", { sc.retry() }, focusRequester = focus)
+                        if(st!=null)PrimaryButton("Избери източник",{pickOpen=true},primary=false)
                         PrimaryButton("Назад", { sc.close() }, primary = false)
                     }
                 }
@@ -156,7 +161,7 @@ fun PrepareScreen(st: app.torrtv.state.DetailState? = null) {
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.d)
                         ) {
-                            Text2("Този торент има малко сийдъри. Гледай от:", 13, C.amber, FontWeight.Bold, 2, Modifier.weight(1f))
+                            Text2("Този източник още не успява да напълни буфера. Можеш да избереш друг:", 13, C.amber, FontWeight.Bold, 2, Modifier.weight(1f))
                             PrimaryButton("Откъде?", { pickOpen = true }, focusRequester = focus)
                         }
                     }
@@ -167,8 +172,12 @@ fun PrepareScreen(st: app.torrtv.state.DetailState? = null) {
         }
         if (pickOpen && st != null && req != null) {
             SourcePicker(
-                st, req.torrent?.hash,
-                onTorrent = { nt -> sc.start(st.playRequest(nt, req.subs, req.player, 0L)) },
+                st, req.torrent?.hash?.takeIf{ui.targetLabel.isBlank()},
+                onTorrent = { nt ->
+                    val nextEpisode=ui.targetLabel.isNotBlank()
+                    val subs=if(nextEpisode){if(Graph.prefs.subAuto)st.rankedSubs(nt).take(1) else emptyList()}else req.subs
+                    sc.start(st.playRequest(nt,subs,req.player,if(nextEpisode)0L else sc.resumeFrom))
+                },
                 onWeb = { i -> sc.close(); app.torrtv.web.WebPlay.open(ctx, st.webSources(), i, st.webRequest()) },
                 onDismiss = { pickOpen = false }
             )

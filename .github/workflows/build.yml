@@ -56,6 +56,27 @@ jobs:
       - name: Преименуване
         run: cp app/build/outputs/apk/release/app-release.apk TorrTV.apk
 
+      - name: Резултати от тестовете
+        if: always()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          totals = dict(tests=0, failures=0, errors=0, skipped=0)
+          for report in Path('app/build/test-results').rglob('TEST-*.xml'):
+              suite = ET.parse(report).getroot()
+              for key in totals:
+                  totals[key] += int(suite.get(key, 0))
+              for case in suite.findall('testcase'):
+                  failure = case.find('failure')
+                  if failure is None:
+                      continue
+                  message = f"{case.get('classname')}.{case.get('name')}: {failure.get('message', 'failed')}"[:2500]
+                  message = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+                  print(f'::error::{message}')
+          print(f"::notice::Android tests: {totals['tests']}, failures: {totals['failures']}, errors: {totals['errors']}, skipped: {totals['skipped']}")
+          PY
+
       - name: Публикуване на издание
         uses: softprops/action-gh-release@v2
         with:

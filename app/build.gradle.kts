@@ -16,6 +16,10 @@ android {
         abortOnError = false
         checkReleaseBuilds = false
     }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+        unitTests.all { it.maxHeapSize = "2g" }
+    }
 
     defaultConfig {
         applicationId = "app.torrtv"
@@ -81,6 +85,13 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     testImplementation("org.json:json:20240303")
+    // Focus/key tests use Robolectric's legacy renderer; no native graphics distribution is needed.
+    testImplementation("org.robolectric:robolectric:4.14.1") {
+        exclude(group = "org.robolectric", module = "nativeruntime-dist-compat")
+    }
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
     implementation("androidx.webkit:webkit:1.12.1")
     implementation(platform("androidx.compose:compose-bom:2024.10.01"))
     implementation("androidx.compose.ui:ui")

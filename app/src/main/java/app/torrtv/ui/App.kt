@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -37,7 +38,7 @@ fun App() {
     // Лекият режим се чете веднъж при старт (преди първия кадър): избраното от потребителя или, по подразбиране, според устройството.
     val ctx = androidx.compose.ui.platform.LocalContext.current
     remember { Look.lite = Graph.prefs.liteOn(app.torrtv.core.Device.isWeak(ctx)); 0 }
-    var tab by remember { mutableStateOf(0) }
+    var tab by rememberSaveable { mutableStateOf(0) }
     val stack = remember { mutableStateListOf<DetailState>() }
     var sheet by remember { mutableStateOf<Sheet?>(null) }
     // "Продължи гледане" от началото: отваря заглавието и пуска диалога, щом данните са заредени.
@@ -78,6 +79,7 @@ fun App() {
     }
 
     fun open(m: Media, deferTorrents: Boolean = false) {
+        stack.lastOrNull()?.pauseBackground()
         if (stack.size >= 8) stack.removeAt(0).cancel()
         stack.add(DetailState(m.type, m.id, deferTorrents))
     }

@@ -1015,9 +1015,17 @@ class PlayerActivity : AppCompatActivity() {
             return
         }
         var t = "Пиъри ${s.peers} · сийдъри ${s.seeds} · ↓ ${formatSpeed(s.speed)}"
+        val req=Graph.stream.ui.req
+        if(buffering)req?.torrent?.let{torrent->
+            Graph.transferRates.observe(torrent.hash,s.speed)
+            if(!torrent.pack){
+                val need=app.torrtv.core.StreamFit.bitrateMbps(torrent.size,req.runtimeMin)
+                if(need>0)t+=" · нужно средно ~${formatSpeed((need*1_000_000/8).toLong())}"
+            }
+        }
         // Дълго буфериране при малко сийдъри: подсказка какво да се направи.
         if (buffering && now - bufferingSince > 10_000 && (s.seeds < 3 || s.speed < 150_000)) {
-            t += "\nТози торент има малко сийдъри. Натисни Назад и избери друг торент или сайт."
+            t += "\nТекущото теглене не осигурява достатъчно буфер. Натисни Назад и избери друг източник или по-малка версия."
         }
         if (endsLine.isNotEmpty()) t += "\n$endsLine"
         stats.text = t
