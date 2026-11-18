@@ -21,7 +21,12 @@ class WebSeriesResolver(private val get: suspend (String)->String,
     private val gate=Semaphore(2)
 
     private suspend fun detail(e:MovieCatalog.Entry):MovieCatalog.Entry {
-        cache[e.page]?.takeIf{System.currentTimeMillis()-it.at in 0..30*60_000L}?.let{return it.entry}
+        cache[e.page]?.takeIf{System.currentTimeMillis()-it.at in 0..30*60_000L}?.let{hit->
+            return copy(hit.entry).also{cached->
+                cached.bgCatalog=e.bgCatalog
+                if(e.bgCatalog && !cached.audioRejected){cached.bgAudio=e.bgAudio;cached.audioVerified=e.audioVerified}
+            }
+        }
         return gate.withPermit {
             val parsed=withTimeout(8_000){MovieSources.detail(e,Jsoup.parse(get(e.page.substringBefore('#')),e.page))}
             if(cache.size>=48)cache.entries.minByOrNull{it.value.at}?.let{cache.remove(it.key)}
@@ -31,6 +36,8 @@ class WebSeriesResolver(private val get: suspend (String)->String,
     }
 
     suspend fun resolve(m:Media,imdb:String?,entries:List<MovieCatalog.Entry>,season:Int,episode:Int):Result = coroutineScope {
+        val known=entries.associateBy{it.page}
+        fun seasonEntry(e:MovieCatalog.Entry,link:MovieCatalog.SeasonLink)=known[link.page]?.let{copy(it)}?:linked(e,link)
         val selected=entries.distinctBy{it.page}.groupBy{it.provider}.values.map{group->group.maxBy{e->
             (if(BgWebIndex.matches(m,e,imdb))100 else 0)+(if(e.season==season)300 else if(e.season<0)10 else if(e.season==1)5 else 0)
         }}.take(7)
@@ -42,13 +49,13 @@ class WebSeriesResolver(private val get: suspend (String)->String,
                     // Establish the identity from its own first-season link before joining it.
                     val first=e.seasons.firstOrNull{it.number==1 && !it.loaded}
                     if(first!=null && e.season!=1) {
-                        val anchor=detail(linked(e,first))
+                        val anchor=detail(seasonEntry(e,first))
                         if(BgWebIndex.matches(m,anchor,imdb))e=copy(e).also{it.seriesYear=m.year.toIntOrNull()?:0}
                     }
                 }
                 if(!BgWebIndex.matches(m,e,imdb))return@async null
                 val link=e.seasons.firstOrNull{it.number==season && !it.loaded}
-                val extra=link?.let{detail(linked(e,it))}
+                val extra=link?.let{detail(seasonEntry(e,it))}
                 Pair(e,extra)
             }catch(ex:CancellationException){if(ex is TimeoutCancellationException)null else throw ex}
             catch(_:Exception){null}
@@ -63,7 +70,7 @@ class WebSeriesResolver(private val get: suspend (String)->String,
             // Language belongs to this season/episode; another season cannot confer its badge.
             var bg=audio(e,ep)
             try {
-                val embed=if(e.provider=="ZENO" && (bg || e.bgAudio && e.audioVerified))gate.withPermit{withTimeout(8_000){
+                val embed=if(e.provider=="ZENO" && MovieSources.hasBgAudio(e))gate.withPermit{withTimeout(8_000){
                     bgPlayers(ep.page,get(ep.page.substringBefore('#'))).firstOrNull()
                 }}?.also{bg=true} ?: ep.embed.also{bg=false} else ep.embed
                 BgPlayerPresentation.source(WebSources.hostOf(ep.page),ep.page,embed,bg)
@@ -73,6 +80,7 @@ class WebSeriesResolver(private val get: suspend (String)->String,
     }
 
     private fun audio(e:MovieCatalog.Entry,ep:MovieCatalog.Episode):Boolean {
+        if(!MovieSources.hasBgAudio(e))return false
         ep.bgAudio?.let{return it}
         if(!e.bgAudio || !e.audioVerified || e.season<0 || e.season!=ep.season)return false
         val current=MovieEpisodes.number(e.page)
@@ -82,7 +90,7 @@ class WebSeriesResolver(private val get: suspend (String)->String,
     private fun copy(e:MovieCatalog.Entry)=MovieCatalog.Entry().also{
         it.provider=e.provider;it.page=e.page;it.title=e.title;it.original=e.original;it.year=e.year
         it.tmdb=e.tmdb;it.imdb=e.imdb;it.series=true;it.season=e.season;it.seriesYear=e.seriesYear
-        it.bgAudio=e.bgAudio;it.audioVerified=e.audioVerified;it.embed=e.embed
+        it.bgAudio=e.bgAudio;it.audioVerified=e.audioVerified;it.bgCatalog=e.bgCatalog;it.audioRejected=e.audioRejected;it.embed=e.embed
         it.episodes.addAll(e.episodes);it.seasons.addAll(e.seasons)
     }
     private fun linked(e:MovieCatalog.Entry,link:MovieCatalog.SeasonLink)=MovieCatalog.Entry().also{

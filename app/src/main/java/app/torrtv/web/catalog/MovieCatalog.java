@@ -15,7 +15,7 @@ public final class MovieCatalog {
         public long episodesUpdated;
         public int year;
         public int season=-1, seriesYear;
-        public boolean bgAudio, audioVerified, bgSubs, detailed, series;
+        public boolean bgAudio, audioVerified, bgCatalog, audioRejected, bgSubs, detailed, series;
         public long added;
         public final Set<String> genres = new LinkedHashSet<>();
         public String language() { return bgAudio ? "БГ аудио" : bgSubs ? "БГ субтитри" : "Езикът не е указан"; }

@@ -16,6 +16,7 @@ class BgAudioPager(
     private val resolve:suspend(MovieCatalog.Entry)->Media?,
     private val accept:(Media)->Boolean = {true},
     private val onChecked:suspend(List<MovieCatalog.Entry>)->Unit = {},
+    private val order:Comparator<Media>? = null,
     private val batchSize:Int=12
 ) {
     private var initialized=false
@@ -39,15 +40,19 @@ class BgAudioPager(
             }
         }}.awaitAll()}
         var failed=0
+        val additions=ArrayList<Media>()
         for((e,m,error) in results){
             if(error!=null){
                 failed++;failures[e.page]=(failures[e.page]?:0)+1
                 if(failures.getValue(e.page)>=2)checked.add(e.page)
             }else{
                 checked.add(e.page)
-                if(m!=null && accept(m))resolved[m.key]=m
+                if(m!=null && accept(m) && m.key !in resolved)additions.add(m)
             }
         }
+        // Sort only this batch. Already displayed cards never move when another page arrives.
+        val next=additions.distinctBy{it.key}.let{items->order?.let{items.sortedWith(it)}?:items}
+        for(m in next)resolved[m.key]=m
         for((e,_,error) in results)if(error==null)pendingSave[e.page]=e
         if(pendingSave.isNotEmpty()){onChecked(pendingSave.values.toList());pendingSave.clear()}
         if(failed>0 && results.all{it.third!=null} && resolved.isEmpty())throw java.io.IOException("Заглавията не можаха да се свържат с каталога. Опитай отново.")
@@ -58,6 +63,8 @@ class BgAudioPager(
     private fun copy(e:MovieCatalog.Entry)=MovieCatalog.Entry().also{
         it.provider=e.provider;it.page=e.page;it.title=e.title;it.original=e.original;it.year=e.year
         it.tmdb=e.tmdb;it.imdb=e.imdb;it.series=e.series;it.season=e.season;it.seriesYear=e.seriesYear
-        it.bgAudio=e.bgAudio;it.audioVerified=e.audioVerified;it.embed=e.embed;it.genres.addAll(e.genres)
+        it.bgAudio=e.bgAudio;it.audioVerified=e.audioVerified;it.bgCatalog=e.bgCatalog;it.audioRejected=e.audioRejected
+        it.embed=e.embed;it.genres.addAll(e.genres)
+        it.detailed=e.detailed
     }
 }

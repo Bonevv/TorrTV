@@ -14,14 +14,15 @@ class BgWebIndexTest {
     private fun media(year: String = "2002", type: MediaType = MediaType.MOVIE) =
         Media(557, type, "Спайдърмен", "Spider-Man", "", null, null, year, 7.0, 100, emptyList(), "en")
     private fun entry() = MovieCatalog.Entry().also { it.title="Спайдърмен";it.original="Spider-Man";it.year=2002;it.bgAudio=true }
-    @Test fun aCategoryOrAWebsiteMatchNeverCreatesAnAudioBadge()=runBlocking {
+    @Test fun membershipOfTheSitesAudioCategoryCreatesABadgeWithoutGuessingFromPageText()=runBlocking {
         val html="""<a class="item-poster" href="/filmi/test.html"><img alt="Spider-Man"><span class="item-poster__year">2002</span></a>"""
         val parsed=MovieSources.parse(MovieSources.Provider.FEN,"https://filmifen.com/filmi-bg-audio/",html).entries.single()
-        assertTrue(parsed.bgAudio) // Candidate for checking, not evidence of this film's soundtrack.
-        assertFalse(parsed.audioVerified)
+        assertTrue(parsed.bgAudio)
+        assertTrue(parsed.bgCatalog)
+        assertTrue(parsed.audioVerified)
         val index=BgWebIndex(temp.root,get={html},enabled={setOf("FEN")})
         index.refresh()
-        assertFalse(index.has(media()))
+        assertTrue(index.has(media()))
     }
     @Test fun legacyUnverifiedCacheCannotRestoreOldFalseFlags()=runBlocking {
         java.io.File(temp.root,"index.json").writeText("""[{"checkedAt":${System.currentTimeMillis()},"entry":{"provider":"NINE","page":"https://filmi9.com/film/spider-man","title":"Spider-Man","year":2002,"bgAudio":true}}]""")

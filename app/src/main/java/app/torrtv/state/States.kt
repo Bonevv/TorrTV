@@ -46,7 +46,6 @@ class Paged<T>(
     private val keyOf: (T) -> Any
 ) {
     val items = mutableStateListOf<T>()
-    var order:Comparator<T>? = null
 
     var loading by mutableStateOf(false)
         private set
@@ -69,7 +68,6 @@ class Paged<T>(
             val p = fetch(page + 1)
             page = p.page
             for (x in p.items) if (seen.add(keyOf(x))) items.add(x)
-            order?.let{cmp->val sorted=items.sortedWith(cmp);if(sorted!=items.toList()){items.clear();items.addAll(sorted)}}
             if (p.page >= p.totalPages || items.size >= maxItems) exhausted = true
         } catch (e: CancellationException) {
             // Екранът е излязъл по средата на зареждането. Ако още няма нищо, следващото показване да почне отначало,
@@ -208,6 +206,8 @@ class BrowseState(initialType: MediaType, val forceAnime: Boolean = false) {
         val pv = provider
         val selectedGenre = genre; val selectedAnime = anime; val selectedYear = year; val onlyBg = bgOnly
         val order = sort
+        if(pv?.startsWith("web:")==true)return bgCatalogue(mediaType,selectedGenre,selectedYear,selectedAnime,null,order,
+            audioOnly=onlyBg,source=pv.substringAfter(':').takeUnless{it=="*"})
         if(onlyBg)return bgCatalogue(mediaType,selectedGenre,selectedYear,selectedAnime,pv,order)
         return Paged(200, { requested ->
             if (onlyBg) Graph.bgWeb.refresh(type = mediaType)
@@ -230,7 +230,11 @@ class BrowseState(initialType: MediaType, val forceAnime: Boolean = false) {
     }
 
     fun chooseYear(value: Int?) { year = value; paged = make() }
-    fun chooseBgOnly(value: Boolean) { bgOnly = value; paged = make() }
+    fun chooseBgOnly(value: Boolean) {
+        bgOnly = value
+        if(value && provider=="web:ZIP")provider="web:*"
+        paged = make()
+    }
     fun clearFilters() {
         year = null; bgOnly = false
         paged = make()

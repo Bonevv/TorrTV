@@ -127,6 +127,13 @@ fun PosterGrid(
 fun BrowseScreen(st: BrowseState, onOpen: (Media) -> Unit) {
     LaunchedEffect(Unit) { if (!st.forceAnime) PlatformCatalog.ensure() }
     var yearOpen by remember { mutableStateOf(false) }
+    var siteOpen by remember { mutableStateOf(false) }
+    val sites=listOf(PickOption("web:*","Всички уеб сайтове"),PickOption("web:NINE","Filmi9"),
+        PickOption("web:TWO_K","Filmi2K"),PickOption("web:ZENO","ZenoPlay"),PickOption("web:ALL","Всички филми"),
+        PickOption("web:FEN","FilmiFen"),PickOption("web:ZT","FilmiZT"),PickOption("web:ZIP","FilmiZip"))
+        .filter{(!st.bgOnly || it.key!="web:ZIP") && (st.type!=MediaType.TV || it.key!="web:TWO_K")}
+    val webCatalogue=st.provider?.startsWith("web:")==true
+    if(siteOpen)PickDialog("Уеб сайтове",sites,st.provider?:"web:*",{st.pickProvider(it);siteOpen=false},{siteOpen=false})
     val bgStatus by Graph.bgWeb.status.collectAsState()
     if (yearOpen) PickDialog("Година на издаване", listOf(PickOption("all", "Всички години")) +
         (java.util.Calendar.getInstance().get(java.util.Calendar.YEAR) + 1 downTo 1900).map { PickOption(it.toString(), it.toString()) },
@@ -139,6 +146,7 @@ fun BrowseScreen(st: BrowseState, onOpen: (Media) -> Unit) {
             item(key = "bg") { SideTab((if (st.bgOnly) "☑ " else "☐ ") + "БГ аудио", "", st.bgOnly) { st.chooseBgOnly(!st.bgOnly) } }
             if (st.year != null || st.bgOnly) item(key = "clear") { SideTab("Изчисти филтрите", "", false) { st.clearFilters() } }
             if (st.bgOnly) item(key = "bg-status") { Text2(bgStatus.ifBlank { "Само потвърдени БГ версии" }, 10, C.dim, FontWeight.Normal, 3, Modifier.padding(horizontal = 12.d)) }
+            if(webCatalogue && !st.bgOnly)item(key="web-status"){Text2(bgStatus.ifBlank{"Заглавия от избрания уеб каталог"},10,C.dim,FontWeight.Normal,3,Modifier.padding(horizontal=12.d))}
             if(st.bgOnly && st.paged.started && !st.paged.loading && st.paged.items.isEmpty()) item(key="show-without-bg") {
                 SideTab("Покажи и без БГ аудио","",false){st.chooseBgOnly(false)}
             }
@@ -152,8 +160,9 @@ fun BrowseScreen(st: BrowseState, onOpen: (Media) -> Unit) {
             if (!st.forceAnime) {
                 panelDivider("pdiv")
                 item(key = "pall") { SideTab("Всички платформи", "", st.provider == null) { st.pickProvider(null) } }
+                item(key="web-sites"){SideTab("Уеб сайтове ▾",sites.firstOrNull{it.key==st.provider}?.label?:"Избери сайт",webCatalogue){siteOpen=true}}
                 items(PlatformCatalog.list, key = { "p" + it.id }) { pl -> SideTab(pl.name, "", st.provider == pl.id) { st.pickProvider(pl.id) } }
-                if (st.provider != null) item(key = "jw") { Text2("Данни: JustWatch", 10, C.dim, FontWeight.Normal, 1, Modifier.padding(start = 14.d, top = 2.d)) }
+                if (st.provider != null && !webCatalogue) item(key = "jw") { Text2("Данни: JustWatch", 10, C.dim, FontWeight.Normal, 1, Modifier.padding(start = 14.d, top = 2.d)) }
             }
             panelDivider("gdiv")
             item(key = "all") { SideTab("Всички жанрове", "", st.genre == null) { st.apply(null, st.sort) } }

@@ -20,7 +20,7 @@ import java.io.File
 import java.text.Normalizer
 import java.util.Locale
 
-/** Catalogue metadata is cached; audio badges require explicit evidence for that version. */
+/** Catalogue metadata is cached; BG badges require membership of the site's BG audio catalogue. */
 class BgWebIndex(private val directory: File, private val get: suspend (String) -> String = { Http.get(it) },
     private val enabled: () -> Set<String> = { setOf("NINE", "TWO_K", "ZENO", "ALL", "FEN", "ZT", "ZIP") },
     private val allowNetwork: () -> Boolean = { true }) {
@@ -31,7 +31,7 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
     private data class Lookup(val ids: Map<String, List<Record>>, val names: Map<String, List<Record>>, val series: Map<String,List<Record>>)
     @Volatile private var lookup = Lookup(emptyMap(), emptyMap(), emptyMap())
     private val seriesResolver by lazy { WebSeriesResolver(::fetch) }
-    private val indexFile get() = File(directory, "index-audio-v2.json")
+    private val indexFile get() = File(directory, "index-categories-v3.json")
     private val lock = Mutex()
     private val attempts = LinkedHashMap<String, Long>()
     private var restored = false
@@ -39,14 +39,16 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
     private val pageEntries = java.util.concurrent.ConcurrentHashMap<String,MutableSet<String>>()
     private val pageCounts = java.util.concurrent.ConcurrentHashMap<String,Int>()
     private val advanceLock=Mutex()
-    @Volatile private var activeCatalogue=Pair("",null as MediaType?)
-    private fun catalogueKey(q:String,type:MediaType?)="${type?.path?:"all"}|${q.trim().take(120)}"
-    private fun cursors(q:String,type:MediaType?)=nextPages.getOrPut(catalogueKey(q,type)){java.util.concurrent.ConcurrentHashMap()}
-    private fun historyKey(q:String,type:MediaType?,route:String)=catalogueKey(q,type)+"|"+route
-    private fun firstPage(q:String,type:MediaType?,route:String,entries:List<MovieCatalog.Entry>,next:String) {
-        val key=historyKey(q,type,route)
+    private var twoKAudioTag:Int?=null
+    private data class Catalogue(val query:String="",val type:MediaType?=null,val audioOnly:Boolean=true)
+    @Volatile private var activeCatalogue=Catalogue()
+    private fun catalogueKey(q:String,type:MediaType?,audioOnly:Boolean)="${type?.path?:"all"}|$audioOnly|${q.trim().take(120)}"
+    private fun cursors(q:String,type:MediaType?,audioOnly:Boolean)=nextPages.getOrPut(catalogueKey(q,type,audioOnly)){java.util.concurrent.ConcurrentHashMap()}
+    private fun historyKey(q:String,type:MediaType?,route:String,audioOnly:Boolean)=catalogueKey(q,type,audioOnly)+"|"+route
+    private fun firstPage(q:String,type:MediaType?,route:String,entries:List<MovieCatalog.Entry>,next:String,audioOnly:Boolean) {
+        val key=historyKey(q,type,route,audioOnly)
         pageEntries[key]=java.util.concurrent.ConcurrentHashMap.newKeySet<String>().also{set->set.addAll(entries.map{it.page})}
-        pageCounts[key]=1;cursors(q,type)[route]=next
+        pageCounts[key]=1;cursors(q,type,audioOnly)[route]=next
     }
     private suspend fun fetch(url: String): String {
         if (!allowNetwork()) throw CancellationException("Каталозите са спрени по време на гледане")
@@ -96,13 +98,13 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
         val labels=if(m.type==MediaType.TV)setOf(MovieEpisodes.baseTitle(m.title),MovieEpisodes.baseTitle(m.originalTitle)) else setOf(movieName(m.title),movieName(m.originalTitle))
         for (name in labels - "") candidates.addAll(snapshot.names["$type:${m.year}:$name"].orEmpty())
         return candidates.distinctBy { it.entry.page }.filter {
-            now - it.checkedAt in 0..TTL && it.entry.provider in providers && (!onlyBg || it.entry.bgAudio && it.entry.audioVerified) && matches(m, it.entry, imdb)
+            now - it.checkedAt in 0..TTL && it.entry.provider in providers && (!onlyBg || MovieSources.hasBgAudio(it.entry)) && matches(m, it.entry, imdb)
         }
     }
     // Catalogue badges describe a title; sources() separately checks the selected episode.
     fun has(m: Media): Boolean = find(m).isNotEmpty()
-    fun count(type:MediaType?=null): Int { val providers=enabled();val now=System.currentTimeMillis();return records.count {
-        it.entry.provider in providers && it.entry.bgAudio && it.entry.audioVerified && now-it.checkedAt in 0..TTL && (type==null || it.entry.series==(type==MediaType.TV))
+    fun count(type:MediaType?=null,audioOnly:Boolean=true): Int { val providers=enabled();val now=System.currentTimeMillis();return records.count {
+        it.entry.provider in providers && (!audioOnly || MovieSources.hasBgAudio(it.entry)) && now-it.checkedAt in 0..TTL && (type==null || it.entry.series==(type==MediaType.TV))
     } }
     fun settingsChanged() { revision.value++ }
 
@@ -123,30 +125,30 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
     }
     suspend fun restore() = withContext(Dispatchers.IO) { lock.withLock { restoreLocked() } }
 
-    suspend fun refresh(query: String = "", force: Boolean = false, type: MediaType? = null) = withContext(Dispatchers.IO) {
+    suspend fun refresh(query: String = "", force: Boolean = false, type: MediaType? = null,audioOnly:Boolean=true,source:String?=null) = withContext(Dispatchers.IO) {
         lock.withLock {
             restoreLocked()
             if (!allowNetwork()) return@withLock
-            val providers = enabled()
+            val providers = enabled().filter{source==null || it==source}.toSet()
             val q = query.trim().take(120)
-            activeCatalogue=Pair(q,type)
-            val attemptKey = q + ":" + (type?.path ?: "all") + providers.sorted().joinToString(",")
+            activeCatalogue=Catalogue(q,type,audioOnly)
+            val attemptKey = catalogueKey(q,type,audioOnly)+providers.sorted().joinToString(",")
             if (providers.isEmpty()) { status.value = "БГ уеб източниците са изключени от настройките на профила."; revision.value++; return@withLock }
             if (!force && System.currentTimeMillis() - (attempts[attemptKey] ?: 0L) < 30 * 60_000L) return@withLock
-            status.value = "Проверяват се БГ уеб източниците…"
+            status.value = if(audioOnly)"Проверяват се БГ аудио категориите…" else "Проверяват се уеб каталозите…"
             val gate = Semaphore(3)
             val updates = coroutineScope {
                 (MovieSources.Provider.values().filter { it.name in providers }.map { p -> async {
                     gate.withPermit {
                         if (!allowNetwork()) return@withPermit null
-                        try { withTimeout(9_000) { Pair(p.name, load(p, q, type)) } }
+                        try { withTimeout(9_000) { Pair(p.name, load(p, q, type,audioOnly)) } }
                         catch (e: CancellationException) { if (e !is TimeoutCancellationException) throw e else null }
                         catch (_: Exception) { null }
                     }
                 } } + async {
                     gate.withPermit {
                         if (!allowNetwork()) return@withPermit null
-                        try { withTimeout(9_000) { if ("TWO_K" in providers) Pair("TWO_K", loadTwoK(q,type)) else null } }
+                        try { withTimeout(9_000) { if ("TWO_K" in providers) Pair("TWO_K", loadTwoK(q,type,audioOnly)) else null } }
                         catch (e: CancellationException) { if (e !is TimeoutCancellationException) throw e else null }
                         catch (_: Exception) { null }
                     }
@@ -154,7 +156,7 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
             }
             val now = System.currentTimeMillis()
             val merged = records.filter { now - it.checkedAt in 0..TTL }.associateBy { it.entry.page }.toMutableMap()
-            for ((_, entries) in updates) for (e in entries) { if (e.bgAudio || e.series) merged[e.page] = Record(e, now) else merged.remove(e.page) }
+            for ((_, entries) in updates) for (e in entries) putEntry(merged,e,now)
             replaceRecords(merged.values.sortedByDescending { it.checkedAt }.take(3000))
             if (updates.isNotEmpty()) {
                 attempts[attemptKey] = now
@@ -163,37 +165,25 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
             }
             revision.value++
             status.value = if (updates.isEmpty()) "Уеб източниците не отговориха. Наличността на БГ аудио е непроверена."
-                else "Потвърдени БГ ${if(type==MediaType.TV)"сериали" else if(type==MediaType.MOVIE)"филми" else "версии"}: ${count(type)} · отговорили източници: ${updates.size}/${providers.size}. Проверката е частична."
+                else "${if(audioOnly)"БГ аудио" else "Уеб"} ${if(type==MediaType.TV)"сериали" else if(type==MediaType.MOVIE)"филми" else "версии"}: ${count(type,audioOnly)} · отговорили източници: ${updates.size}/${providers.size}. Проверката е частична."
         }
     }
-    private suspend fun load(p: MovieSources.Provider, q: String, type: MediaType?): List<MovieCatalog.Entry> {
+    private suspend fun load(p: MovieSources.Provider, q: String, type: MediaType?,audioOnly:Boolean): List<MovieCatalog.Entry> {
         if (p == MovieSources.Provider.NINE) {
-            val url = if (q.isBlank()) "https://cdn.filmi9.com/movies/?type=${if (type == MediaType.TV) "series" else "movie"}&isBgAudio=true&page=1&limit=30"
+            val url = if (q.isBlank()) "https://cdn.filmi9.com/movies/?type=${if (type == MediaType.TV) "series" else "movie"}${if(audioOnly)"&isBgAudio=true" else ""}&page=1&limit=30"
                 else "https://cdn.filmi9.com/movies/search/?term=${enc(q)}&page=1&limit=30"
             val parsed = parseNine(url,fetch(url))
             // Servers may cap a requested 30 records at 10. Probe until empty/repeated instead.
-            firstPage(q,type,p.name,parsed.entries,parsed.next)
+            firstPage(q,type,p.name,parsed.entries,parsed.next,audioOnly)
             return parsed.entries.toList()
         }
-        val url = if (q.isBlank() && type == MediaType.TV) p.seriesStart() else p.start(q, MovieCatalog.BG_AUDIO)
+        // No generic listings, search snippets or player groups can establish category membership.
+        if(audioOnly && !p.hasBgCategory())return emptyList()
+        val url = if(audioOnly)p.start("",MovieCatalog.BG_AUDIO)
+            else if(q.isBlank() && type==MediaType.TV)p.seriesStart() else p.start(q,MovieCatalog.ALL)
         val parsed = MovieSources.parse(p, url, fetch(url))
-        if (p == MovieSources.Provider.ZENO && q.isNotBlank()) {
-            for (entry in parsed.entries.filter { !it.bgAudio }.take(3)) {
-                val confirmed = withTimeoutOrNull(1500) { ZenoProvider.hasBg(entry.page, fetch(entry.page)) } == true
-                if (confirmed) { entry.bgAudio = true; entry.audioVerified = true }
-            }
-        }
-        firstPage(q,type,p.name,parsed.entries,parsed.next.takeIf{p.owns(it)&&it!=url}.orEmpty())
-        val entries=parsed.entries.toMutableList()
-        if(q.isBlank() && type==MediaType.TV && p.start("",MovieCatalog.BG_AUDIO)!=url){
-            try { withTimeoutOrNull(3_000){
-                val bgUrl=p.start("",MovieCatalog.BG_AUDIO)
-                val bg=MovieSources.parse(p,bgUrl,fetch(bgUrl))
-                firstPage(q,type,p.name+"@bg",bg.entries,bg.next.takeIf{p.owns(it)&&it!=bgUrl}.orEmpty())
-                entries.addAll(bg.entries)
-            }}catch(ex:CancellationException){throw ex}catch(_:Exception){}
-        }
-        return entries.distinctBy{it.page}
+        firstPage(q,type,p.name,parsed.entries,parsed.next.takeIf{p.owns(it)&&it!=url && (!audioOnly || MovieSources.inBgCategory(p,it))}.orEmpty(),audioOnly)
+        return parsed.entries.toList()
     }
     private fun parseNine(url:String,body:String):MovieSources.Page {
         val j=JSONObject(body)
@@ -210,47 +200,49 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
             if(parsed.entries.isNotEmpty() || declared==true || total>page)incrementPage(url) else ""
         return parsed
     }
-    private suspend fun loadTwoK(q: String,type:MediaType?): List<MovieCatalog.Entry> {
+    private suspend fun loadTwoK(q: String,type:MediaType?,audioOnly:Boolean): List<MovieCatalog.Entry> {
+        if(type==MediaType.TV)return emptyList() // This adapter has no verified series/episode format.
         val base = "https://www.filmi2k.com"
         val tags = JSONArray(fetch("$base/wp-json/wp/v2/tags?slug=filmi-bg-audio&per_page=1"))
-        if (tags.length() == 0) return emptyList()
-        val tag = tags.getJSONObject(0).getInt("id")
-        val url="$base/wp-json/wp/v2/posts?tags=$tag&per_page=30&page=1"+if(q.isBlank())"" else "&search=${enc(q)}"
+        val tag = tags.optJSONObject(0)?.optInt("id")?.takeIf{it>0}
+        twoKAudioTag=tag
+        if(audioOnly && tag==null)return emptyList()
+        val url="$base/wp-json/wp/v2/posts?per_page=30&page=1"+(if(audioOnly)"&tags=$tag" else "")+(if(q.isBlank())"" else "&search=${enc(q)}")
         val posts = JSONArray(fetch(url))
         val entries=parseTwoK(posts,tag)
-        firstPage(q,type,"TWO_K",entries,if(posts.length()>0)incrementPage(url) else "")
+        firstPage(q,type,"TWO_K",entries,if(posts.length()>0)incrementPage(url) else "",audioOnly)
         return entries
     }
-    private fun parseTwoK(posts: JSONArray, tag: Int): List<MovieCatalog.Entry> {
+    private fun parseTwoK(posts: JSONArray, tag: Int?): List<MovieCatalog.Entry> {
         return (0 until posts.length()).mapNotNull { i ->
             val o = posts.getJSONObject(i)
-            val ts = o.optJSONArray("tags") ?: return@mapNotNull null
-            if ((0 until ts.length()).none { ts.optInt(it) == tag }) return@mapNotNull null
+            val ts = o.optJSONArray("tags") ?: JSONArray()
+            val bg=tag!=null && (0 until ts.length()).any { ts.optInt(it) == tag }
             val url = o.optString("link")
             if (java.net.URI(url).host !in setOf("www.filmi2k.com", "filmi2k.com")) return@mapNotNull null
             val title = Jsoup.parse(o.optJSONObject("title")?.optString("rendered").orEmpty()).text()
+            if(MovieEpisodes.season(title+" "+url)>=0 || Regex("/(seriali|series|serial)/").containsMatchIn(url))return@mapNotNull null
             val year = Regex("\\b(?:19|20)\\d{2}\\b").find(title)?.value?.toIntOrNull() ?: 0
             MovieCatalog.Entry().also { e ->
-                e.provider = "TWO_K"; e.page = url; e.bgAudio = true; e.audioVerified = true; e.year = year
+                e.provider = "TWO_K"; e.page = url; e.bgAudio = bg; e.audioVerified = bg; e.bgCatalog=bg; e.year = year
                 val names = title.replace(Regex("\\s*\\(\\d{4}\\).*"), "").split(" / ")
                 e.original = names.first().trim(); e.title = names.last().trim()
             }
         }
     }
     /** Gradually completes catalogue pages while browsing; cancelled when playback starts. */
-    fun hasMore(type:MediaType?=activeCatalogue.second,query:String=activeCatalogue.first):Boolean =
-        cursors(query,type).any{it.key.substringBefore('@') in enabled() && it.value.isNotBlank()}
+    fun hasMore(type:MediaType?=activeCatalogue.type,query:String=activeCatalogue.query,audioOnly:Boolean=activeCatalogue.audioOnly,source:String?=null):Boolean =
+        cursors(query,type,audioOnly).any{it.key in enabled() && (source==null || it.key==source) && it.value.isNotBlank()}
 
-    suspend fun sweep(maxPages: Int = 7,type:MediaType?=activeCatalogue.second,query:String=activeCatalogue.first) = withContext(Dispatchers.IO) { advanceLock.withLock {
-        val nextPages=cursors(query,type)
+    suspend fun sweep(maxPages: Int = 7,type:MediaType?=activeCatalogue.type,query:String=activeCatalogue.query,audioOnly:Boolean=activeCatalogue.audioOnly,source:String?=null) = withContext(Dispatchers.IO) { advanceLock.withLock {
+        val nextPages=cursors(query,type,audioOnly)
         val visited = HashSet<String>()
         val failed = HashSet<String>()
-        val completed = HashMap<String, Int>()
         var pages = 0
         while (allowNetwork() && pages < maxPages) {
-            val pending = nextPages.entries.filter { it.key.substringBefore('@') in enabled() && it.key !in failed && it.value.isNotBlank() && it.value !in visited }
-                .minByOrNull { pageCounts[historyKey(query,type,it.key)] ?: 0 } ?: break
-            val route=pending.key;val provider = route.substringBefore('@'); val url = pending.value
+            val pending = nextPages.entries.filter { it.key in enabled() && (source==null || it.key==source) && it.key !in failed && it.value.isNotBlank() && it.value !in visited }
+                .minWithOrNull(compareBy<Map.Entry<String,String>>{pageCounts[historyKey(query,type,it.key,audioOnly)]?:0}.thenBy{it.key}) ?: break
+            val route=pending.key;val provider = route; val url = pending.value
             visited.add(url)
             try {
                 val entries: List<MovieCatalog.Entry>
@@ -259,7 +251,7 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
                     // Reuse the tag-checked parser while retaining the current pagination query.
                     val text = withTimeout(8_000) { fetch(url) }
                     val posts = JSONArray(text)
-                    val tag = Regex("[?&]tags=(\\d+)").find(url)?.groupValues?.get(1)?.toInt() ?: break
+                    val tag = Regex("[?&]tags=(\\d+)").find(url)?.groupValues?.get(1)?.toInt() ?: twoKAudioTag
                     entries = parseTwoK(posts, tag)
                     next = if (posts.length()>0) incrementPage(url) else ""
                 } else {
@@ -271,24 +263,23 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
                     } else MovieSources.parse(p,url,body)
                     entries=parsed.entries.toList()
                     next=if (provider=="NINE") parsed.next
-                        else parsed.next.takeIf { p.owns(it) && it != url }.orEmpty()
+                        else parsed.next.takeIf { p.owns(it) && it != url && (!audioOnly || MovieSources.inBgCategory(p,it)) }.orEmpty()
                 }
                 lock.withLock {
                     val now=System.currentTimeMillis()
                     val merged=records.filter { now-it.checkedAt in 0..TTL }.associateBy { it.entry.page }.toMutableMap()
-                    for(e in entries) if(e.bgAudio || e.series) merged[e.page]=Record(e,now) else merged.remove(e.page)
+                    for(e in entries)putEntry(merged,e,now)
                     replaceRecords(merged.values.sortedByDescending { it.checkedAt }.take(3000))
-                    val history=pageEntries.getOrPut(historyKey(query,type,route)){java.util.concurrent.ConcurrentHashMap.newKeySet()}
+                    val history=pageEntries.getOrPut(historyKey(query,type,route,audioOnly)){java.util.concurrent.ConcurrentHashMap.newKeySet()}
                     val fresh=entries.any{it.page !in history}
                     history.addAll(entries.map{it.page})
                     nextPages[route]=if(entries.isEmpty() || fresh)next else ""
-                    val key=historyKey(query,type,route);pageCounts[key]=(pageCounts[key]?:0)+1
+                    val key=historyKey(query,type,route,audioOnly);pageCounts[key]=(pageCounts[key]?:0)+1
                     persist()
                     revision.value++
-                    status.value="Потвърдени записи: ${count()} · проверката продължава…"
+                    status.value="${if(audioOnly)"БГ аудио" else "Уеб"} записи: ${count(type,audioOnly)} · проверката продължава…"
                 }
                 pages++
-                completed[provider] = (completed[provider] ?: 0) + 1
                 delay(250)
             } catch(e: CancellationException) { if(e !is TimeoutCancellationException)throw e else failed.add(route) }
             catch(ex:Exception) {
@@ -296,24 +287,32 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
                 failed.add(route)
             }
         }
-        if (pages > 0) status.value= "Потвърдени записи: ${count()} · " +
-            if(hasMore(type,query)) "проверката е частична; можеш да я продължиш." else "наличните страници са обходени; някои източници може да са непроверени."
+        if (pages > 0) status.value= "${if(audioOnly)"БГ аудио" else "Уеб"} записи: ${count(type,audioOnly)} · " +
+            if(hasMore(type,query,audioOnly,source)) "проверката е частична; можеш да я продължиш." else "наличните страници са обходени; някои източници може да са непроверени."
     } }
 
-    fun audioEntries(type:MediaType?=null):List<MovieCatalog.Entry> {
+    fun audioEntries(type:MediaType?=null):List<MovieCatalog.Entry> = catalogueEntries(type)
+    fun catalogueEntries(type:MediaType?=null,audioOnly:Boolean=true,source:String?=null):List<MovieCatalog.Entry> {
         val providers=enabled();val now=System.currentTimeMillis()
-        return records.filter{it.entry.provider in providers && it.entry.bgAudio && now-it.checkedAt in 0..TTL && (type==null || it.entry.series==(type==MediaType.TV))}
+        return records.filter{it.entry.provider in providers && (source==null || it.entry.provider==source) && (!audioOnly || MovieSources.hasBgAudio(it.entry)) && now-it.checkedAt in 0..TTL && (type==null || it.entry.series==(type==MediaType.TV))}
             .map{it.entry}
     }
-    suspend fun audioCard(e:MovieCatalog.Entry,resolve:suspend(MovieCatalog.Entry)->Media?):Media? {
-        val checked=if(e.audioVerified)e else withTimeout(8_000){
-            MovieSources.detail(e,Jsoup.parse(fetch(e.page),e.page)).also{entry->
-                if(entry.provider=="ZENO" && !entry.audioVerified && ZenoProvider.hasBg(entry.page,fetch(entry.page))){entry.bgAudio=true;entry.audioVerified=true}
-            }
+    suspend fun audioCard(e:MovieCatalog.Entry,resolve:suspend(MovieCatalog.Entry)->Media?):Media? = catalogueCard(e,true,resolve)
+    suspend fun catalogueCard(e:MovieCatalog.Entry,audioOnly:Boolean,resolve:suspend(MovieCatalog.Entry)->Media?):Media? {
+        if(audioOnly && !MovieSources.hasBgAudio(e))return null
+        // Most catalogue cards already contain a title/year or an ID. Resolve those without
+        // loading a full source detail page; only incomplete/ambiguous metadata needs it.
+        val direct=resolve(e)
+        if(direct!=null){
+            e.tmdb=direct.id.toString()
+            if(e.series)e.seriesYear=direct.year.toIntOrNull()?:e.seriesYear
+            return direct
         }
+        val checked=if(e.detailed || e.tmdb.isNotBlank() || e.imdb.isNotBlank())e else withTimeout(8_000){MovieSources.detail(e,Jsoup.parse(fetch(e.page),e.page))}
         e.bgAudio=checked.bgAudio;e.audioVerified=checked.audioVerified;e.title=checked.title;e.original=checked.original
         e.tmdb=checked.tmdb;e.imdb=checked.imdb;e.year=checked.year;e.season=checked.season;e.seriesYear=checked.seriesYear
-        if(!e.bgAudio || !e.audioVerified)return null
+        e.bgCatalog=checked.bgCatalog;e.audioRejected=checked.audioRejected;e.detailed=checked.detailed;e.embed=checked.embed
+        if(audioOnly && !MovieSources.hasBgAudio(e))return null
         val media=resolve(e)?:return null
         e.tmdb=media.id.toString()
         if(e.series)e.seriesYear=media.year.toIntOrNull()?:e.seriesYear
@@ -324,7 +323,7 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
     suspend fun sources(m: Media, imdb: String?, season: Int, episode: Int): List<WebSources.Source> = withContext(Dispatchers.IO) {
         if(m.type==MediaType.TV)return@withContext series(m,imdb,season,episode).sources
         refresh(type = m.type)
-        refresh(m.originalTitle.ifBlank { m.title })
+        refresh(m.originalTitle.ifBlank { m.title },type=m.type,audioOnly=false)
         val checkedEntries=ArrayList<MovieCatalog.Entry>()
         val sources=find(m, imdb, onlyBg=false).mapNotNull { record ->
             val e = decodeEntry(encodeEntry(record.entry))
@@ -332,13 +331,13 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
                 val checked=if(e.audioVerified)e else MovieSources.detail(e,Jsoup.parse(fetch(e.page),e.page))
                 if(!e.audioVerified)checkedEntries.add(checked)
                 if(!matches(m,checked,imdb))return@mapNotNull null
-                if(!checked.bgAudio || !checked.audioVerified)return@mapNotNull null
-                if (e.provider == "ZENO") {
+                val bg=MovieSources.hasBgAudio(checked)
+                if (e.provider == "ZENO" && bg) {
                     // Only a provider explicitly returned in the BG group may be selected.
                     val embed = withTimeoutOrNull(5_000) { ZenoProvider.players(e.page, fetch(e.page)).firstOrNull() }
                         ?: return@mapNotNull null
                     BgPlayerPresentation.source(WebSources.hostOf(e.page), e.page, embed)
-                } else BgPlayerPresentation.source(WebSources.hostOf(e.page), e.page, checked.embed)
+                } else BgPlayerPresentation.source(WebSources.hostOf(e.page), e.page, checked.embed,bgAudio=bg)
             } catch (ex: CancellationException) { throw ex } catch (_: Exception) { null }
         }.distinctBy { it.key }
         rememberDetails(checkedEntries)
@@ -346,7 +345,8 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
     }
     suspend fun series(m:Media,imdb:String?,season:Int,episode:Int):WebSeriesResolver.Result = withContext(Dispatchers.IO) {
         restore()
-        refresh(m.originalTitle.ifBlank{m.title},type=MediaType.TV)
+        refresh(type=MediaType.TV)
+        refresh(m.originalTitle.ifBlank{m.title},type=MediaType.TV,audioOnly=false)
         val providers=enabled();val now=System.currentTimeMillis();val snapshot=lookup
         val candidates=(find(m,imdb,onlyBg=false)+listOf(m.title,m.originalTitle).flatMap{snapshot.series[MovieEpisodes.baseTitle(it)].orEmpty()})
             .distinctBy{it.entry.page}.filter{it.entry.provider in providers && now-it.checkedAt in 0..TTL}
@@ -359,20 +359,35 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
         if(entries.isNotEmpty())lock.withLock {
             val now=System.currentTimeMillis()
             val merged=records.associateBy{it.entry.page}.toMutableMap()
-            for(e in entries)merged[e.page]=Record(e,now)
+            for(e in entries)putEntry(merged,e,now)
             replaceRecords(merged.values.sortedByDescending{it.checkedAt}.take(3000));persist();revision.value++
         }
+    }
+    private fun putEntry(merged:MutableMap<String,Record>,e:MovieCatalog.Entry,now:Long) {
+        val old=merged[e.page]?.entry?.takeIf{it.provider==e.provider}
+        // An ordinary listing cannot add or erase evidence obtained from a BG category.
+        if(old!=null && !e.bgCatalog && !e.audioRejected){
+            e.bgCatalog=old.bgCatalog;e.bgAudio=old.bgAudio;e.audioVerified=old.audioVerified;e.audioRejected=old.audioRejected
+        }
+        if(old!=null){
+            if(e.tmdb.isBlank())e.tmdb=old.tmdb
+            if(e.imdb.isBlank())e.imdb=old.imdb
+            if(e.seriesYear<=0)e.seriesYear=old.seriesYear
+        }
+        merged[e.page]=Record(e,now)
     }
     private fun encodeEntry(e: MovieCatalog.Entry) = JSONObject().put("provider", e.provider).put("page", e.page)
         .put("title", e.title).put("original", e.original).put("year", e.year).put("tmdb", e.tmdb)
         .put("imdb", e.imdb).put("series", e.series).put("bgAudio", e.bgAudio).put("embed", e.embed)
         .put("audioVerified",e.audioVerified).put("season",e.season).put("seriesYear",e.seriesYear)
+        .put("bgCatalog",e.bgCatalog).put("audioRejected",e.audioRejected).put("detailed",e.detailed)
     private fun decodeEntry(j: JSONObject) = MovieCatalog.Entry().also {
         it.provider=j.getString("provider");it.page=j.getString("page");it.title=j.getString("title")
         it.original=j.optString("original");it.year=j.optInt("year");it.tmdb=j.optString("tmdb")
         it.imdb=j.optString("imdb");it.series=j.optBoolean("series");it.bgAudio=j.optBoolean("bgAudio")
         it.embed=j.optString("embed")
         it.audioVerified=j.optBoolean("audioVerified");it.season=j.optInt("season",-1);it.seriesYear=j.optInt("seriesYear")
+        it.bgCatalog=j.optBoolean("bgCatalog");it.audioRejected=j.optBoolean("audioRejected");it.detailed=j.optBoolean("detailed")
         MovieSources.cleanIds(it)
     }
     private fun encode(r: List<Record>) = JSONArray(r.map { JSONObject().put("entry", encodeEntry(it.entry)).put("checkedAt", it.checkedAt) }).toString()

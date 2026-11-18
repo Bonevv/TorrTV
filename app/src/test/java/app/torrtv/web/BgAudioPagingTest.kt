@@ -103,4 +103,22 @@ class BgAudioPagingTest {
         for(page in 2..5){last=source.next(page);if(last.page==last.totalPages)break}
         assertEquals(12,last.items.size)
     }
+    @Test fun laterHigherRankedMoviesAndSeriesAppendWithoutMovingAnyVisibleCard()=runBlocking {
+        for(type in MediaType.entries){
+            val entries=(1..28).map{n->MovieCatalog.Entry().also{it.page="https://example.com/$n";it.tmdb=((n-1)%25+1).toString();it.series=type==MediaType.TV}}
+            val source=BgAudioPager(initial={},entries={entries},expand={},hasMore={false},
+                resolve={media(it).copy(popularity=it.tmdb.toDouble())},order=compareByDescending{it.popularity},batchSize=8)
+            val ui=Paged<Media>(1000,{page->source.next(page)}){it.key}
+            var prefix=emptyList<String>()
+            repeat(4){
+                ui.loadNext()
+                val keys=ui.items.map{it.key}
+                assertEquals(prefix,keys.take(prefix.size))
+                prefix=keys
+            }
+            assertEquals(25,ui.items.size)
+            assertEquals((8 downTo 1).toList(),ui.items.take(8).map{it.id})
+            assertEquals((16 downTo 9).toList(),ui.items.drop(8).take(8).map{it.id})
+        }
+    }
 }

@@ -39,6 +39,7 @@ public final class MovieSources {
         public String seriesStart(){
             return base+(this==ZIP || this==FEN?"/seriali/":this==NINE?"/seriali":this==ZENO?"/tv-shows/":this==ALL?"/series":"/filmi/seriali/27");
         }
+        public boolean hasBgCategory(){return this!=ZIP;}
         public boolean owns(String url) {
             try { String host=new URI(url).getHost(); return host!=null && (host.replaceFirst("^www\\.","").equals(new URI(base).getHost()) || this==NINE && host.equals("cdn.filmi9.com") && new URI(url).getPath().startsWith("/movies")); }
             catch(Exception e) { return false; }
@@ -61,6 +62,7 @@ public final class MovieSources {
             try { collectNames(new JSONTokener(script.data()).nextValue(),names); } catch(Exception ignored) {}
         }
         for (Element node:doc.select(selector)) {
+            if(node.closest("aside,nav,header,footer,.sidebar,#sidebar,.related,.related-movies,.related-posts,.recommendations,[data-recommendations]")!=null)continue;
             Element link=node.tagName().equals("a")?node:node.selectFirst("a[href]");
             if(link==null) continue;
             String page=link.absUrl("href");
@@ -88,7 +90,7 @@ public final class MovieSources {
             if(e.original.equals(e.title) || e.original.startsWith("Гледай филми")) e.original="";
             markLanguage(e,card.text()+" "+card.select("[title]").eachAttr("title"));
             if(!card.select(".icon-subs").isEmpty()) e.bgSubs=true;
-            if(inBgCategory(p,doc.location())) e.bgAudio=true;
+            if(inBgCategory(p,doc.location()) && !e.audioRejected){e.bgCatalog=true;e.bgAudio=true;e.audioVerified=true;}
             String genre=text(card,".item__poster-category"); if(!genre.isEmpty()) e.genres.add(genreName(genre));
             if(p==Provider.NINE) { Element g=card.selectFirst("p:last-child"); if(g!=null) for(String t:g.text().split(" · ")) if(year(t)==0 && !t.matches(".*\\d.*")) e.genres.add(genreName(t)); }
             cleanIds(e);if(!e.title.isEmpty()) result.entries.add(e);
@@ -113,8 +115,8 @@ public final class MovieSources {
         }
         return result;
     }
-    private static boolean inBgCategory(Provider p,String url) {
-        if(p==Provider.ZIP || !p.owns(url))return false;
+    public static boolean inBgCategory(Provider p,String url) {
+        if(!p.hasBgCategory() || !p.owns(url))return false;
         try {
             String category=new URI(p.start("",MovieCatalog.BG_AUDIO)).getPath().replaceAll("/+$","");
             String path=new URI(url).getPath().replaceAll("/+$","");
@@ -131,7 +133,8 @@ public final class MovieSources {
                 String slug=item.optString("slug");if(slug.isEmpty())continue;
                 entry.page=Provider.NINE.base+(entry.series?"/serial/":"/film/")+slug;if(!isTitle(Provider.NINE,entry.page))continue;
                 setNames(entry,item.optString("title"));entry.year=item.optInt("year");entry.poster=item.optString("movieImage");entry.bgAudio=item.optBoolean("isBgAudio");entry.tmdb=item.optString("tmdb_id","");entry.imdb=item.optString("imdb_id","");entry.description=item.optString("description");
-                entry.audioVerified=Boolean.TRUE.equals(item.opt("isBgAudio"));entry.season=MovieEpisodes.season(entry.title+" "+entry.original+" "+entry.page);
+                entry.audioVerified=Boolean.TRUE.equals(item.opt("isBgAudio"));entry.bgCatalog=entry.audioVerified;
+                entry.audioRejected=Boolean.FALSE.equals(item.opt("isBgAudio"));entry.season=MovieEpisodes.season(entry.title+" "+entry.original+" "+entry.page);
                 entry.embed=item.optString("videoUrl");
                 JSONArray players=item.optJSONArray("sources");if(entry.embed.isEmpty() && players!=null && players.optJSONObject(0)!=null)entry.embed=players.optJSONObject(0).optString("url");
                 JSONArray genres=item.optJSONArray("genres");if(genres!=null)for(int g=0;g<genres.length();g++){Object value=genres.opt(g);String name=genreName(value instanceof JSONObject?((JSONObject)value).optString("name"):String.valueOf(value));if(COMMON_GENRES.contains(name))entry.genres.add(name);}
@@ -185,7 +188,7 @@ public final class MovieSources {
         MovieCatalog.Entry e=new MovieCatalog.Entry();
         e.provider=old.provider;e.page=old.page;e.title=old.title;e.original=old.original;e.poster=old.poster;e.description=old.description;
         e.imdb=old.imdb;e.tmdb=old.tmdb;e.embed=old.embed;e.year=old.year;e.bgAudio=old.bgAudio;e.bgSubs=old.bgSubs;e.series=old.series;
-        e.audioVerified=old.audioVerified;e.season=old.season;e.seriesYear=old.seriesYear;
+        e.audioVerified=old.audioVerified;e.bgCatalog=old.bgCatalog;e.audioRejected=old.audioRejected;e.season=old.season;e.seriesYear=old.seriesYear;
         e.episodes.addAll(old.episodes);e.seasons.addAll(old.seasons);e.genres.addAll(old.genres);
         Element main=doc.selectFirst("article.pmovie,article.detail-page,#mv-info"); if(main==null)main=doc.selectFirst("main"); if(main==null) main=doc.body();
         String title=text(main,".movie__bg-title");if(title.isEmpty())title=text(main,"h1,h3[itemprop=name]");
@@ -211,7 +214,7 @@ public final class MovieSources {
         for(Element script:doc.select("script")) {
             Object own=jsonField(publicJson(script.data()),"movie");
             if(own instanceof JSONObject){JSONObject item=(JSONObject)own;
-                if(item.has("isBgAudio")){e.bgAudio=Boolean.TRUE.equals(item.opt("isBgAudio"));e.audioVerified=e.bgAudio;}
+                if(item.has("isBgAudio")){e.bgAudio=Boolean.TRUE.equals(item.opt("isBgAudio"));e.audioVerified=e.bgAudio;e.audioRejected=Boolean.FALSE.equals(item.opt("isBgAudio"));}
                 if(!item.optString("tmdb_id").isEmpty())e.tmdb=item.optString("tmdb_id");
                 if(!item.optString("imdb_id").isEmpty())e.imdb=item.optString("imdb_id");
             }
@@ -344,9 +347,11 @@ public final class MovieSources {
         String s=label.toLowerCase(Locale.ROOT);
         boolean positive=s.matches("(?s).*(бг[ \\-_]*(аудио|дублаж)|bg[ \\-_]*audio|българск[ои] (аудио|озвучаване|дублаж)|bulgarian (audio|dub)).*");
         boolean negative=s.matches("(?s).*(без|няма|no|not)[ :\\-]+(бг[ \\-_]*(аудио|дублаж)|bg[ \\-_]*audio|българск[ои] (аудио|озвучаване|дублаж)).*");
-        if(positive && !negative){e.bgAudio=true;e.audioVerified=true;}
+        if(negative){e.bgAudio=false;e.audioVerified=false;e.audioRejected=true;}
+        else if(positive && !e.audioRejected){e.bgAudio=true;e.audioVerified=true;}
         e.bgSubs|=s.matches("(?s).*(бг[ \\-_]*субтитри|български субтитри|bg[ \\-_]*subs).*" );
     }
+    public static boolean hasBgAudio(MovieCatalog.Entry e){return e.bgCatalog && e.bgAudio && e.audioVerified && !e.audioRejected;}
     static int year(String text) { Matcher m=Pattern.compile("(?<!\\d)(19\\d{2}|20\\d{2})(?!\\d)").matcher(text);return m.find()?Integer.parseInt(m.group()):0; }
     static String text(Element root,String selector) { Element e=root.selectFirst(selector);return e==null?"":e.text().trim(); }
 }
