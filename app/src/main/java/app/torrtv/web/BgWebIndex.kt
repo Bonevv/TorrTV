@@ -23,7 +23,7 @@ import java.util.Locale
 
 /** Catalogue metadata is cached; BG badges require membership of the site's BG audio catalogue. */
 class BgWebIndex(private val directory: File, private val get: suspend (String) -> String = { Http.get(it, siteHeaders(it)) },
-    private val enabled: () -> Set<String> = { setOf("NINE", "TWO_K", "ZENO", "ALL", "FEN", "ZIP") },
+    private val enabled: () -> Set<String> = { setOf("TWO_K", "ZENO", "ALL", "FEN", "ZIP") },
     private val allowNetwork: () -> Boolean = { true },
     private val bgPlayers:suspend(String,String)->List<String> = {page,html->ZenoProvider.players(page,html)},
     private val sitePlayers:suspend(String,List<String>)->List<String> = {page,urls->SitePlayers.resolve(page,urls)}) {
@@ -218,7 +218,7 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
             firstPage(q,type,route,parsed.entries,next,audioOnly)
             return parsed.entries.toList()
         }
-        if(audioOnly && !p.hasBgCategory())return emptyList()
+        // A site without a BG audio category (FilmiZip) still lists its titles in the BG filter, as unconfirmed.
         if(type==MediaType.TV && !p.hasSeries())return emptyList()
         if(audioOnly && type==MediaType.TV)return coroutineScope{
             // ZenoPlay's BG audio genre lists its TV shows with ?type=tv (the link on every BG show's page): those come
@@ -233,14 +233,14 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
             if(results.all{it==null})throw java.io.IOException("Каталогът не отговори")
             results.filterNotNull().flatten().distinctBy{it.page}
         }
-        val url=if(audioOnly)p.start("",MovieCatalog.BG_AUDIO)
+        val url=if(audioOnly && p.hasBgCategory())p.start("",MovieCatalog.BG_AUDIO)
             else if(q.isBlank() && type==MediaType.TV)p.seriesStart() else p.start(q,MovieCatalog.ALL)
         return read(url,p.name)
     }
     private fun validNext(p:MovieSources.Provider,url:String,audioOnly:Boolean,seriesRoute:Boolean):Boolean {
         if(!p.owns(url))return false
         if(!audioOnly)return true
-        if(!seriesRoute)return MovieSources.inBgCategory(p,url)
+        if(!seriesRoute)return !p.hasBgCategory() || MovieSources.inBgCategory(p,url)
         return try{
             val path=java.net.URI(url).path.trimEnd('/')
             val start=java.net.URI(p.seriesStart()).path.trimEnd('/')
@@ -372,13 +372,15 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
     }
     /** Candidates are never used for flags; audioCard verifies their own metadata first. */
     fun catalogueCandidates(type:MediaType?=null,audioOnly:Boolean=true,source:String?=null):List<MovieCatalog.Entry> =
-        catalogueEntries(type,false,source).filter{!audioOnly || MovieSources.hasBgAudio(it) || it.series && !it.audioRejected}
+        catalogueEntries(type,false,source).filter{!audioOnly || MovieSources.hasBgAudio(it) || (it.series || it.provider=="ZIP") && !it.audioRejected}
     suspend fun audioCard(e:MovieCatalog.Entry,resolve:suspend(MovieCatalog.Entry)->Media?):Media? = catalogueCard(e,true,resolve)
     suspend fun catalogueCard(e:MovieCatalog.Entry,audioOnly:Boolean,resolve:suspend(MovieCatalog.Entry)->Media?):Media? {
         val deadline=System.nanoTime()+11_000_000_000L
         fun remaining(max:Long)=minOf(max,(deadline-System.nanoTime())/1_000_000).coerceAtLeast(1)
         if(audioOnly && !MovieSources.hasBgAudio(e)){
             if(e.audioRejected)return null
+            // FilmiZip never marks BG audio (none of 45 series, no category): its page is not read for evidence.
+            if(e.provider=="ZIP")return WebCatalogueMedia.card(e)
             // An unreadable page leaves the record unconfirmed; it is not a reason to hide it.
             val checked=try{withTimeout(8_000){MovieSources.detail(e,Jsoup.parse(fetch(e.page),e.page))}}
                 catch(ex:CancellationException){if(ex is TimeoutCancellationException)null else throw ex}

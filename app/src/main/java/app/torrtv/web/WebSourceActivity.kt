@@ -306,15 +306,10 @@ class WebSourceActivity : AppCompatActivity() {
     private fun isCurrent(r: WebResourceRequest): Boolean =
         AdBlock.baseOf(r.url.host) == AdBlock.baseOf(Uri.parse(sources[idx].key).host)
 
-    /** Video and its playlists are never filtered by the name of their host. */
-    private fun isMedia(r: WebResourceRequest): Boolean =
-        r.requestHeaders.keys.any { it.equals("Range", true) } ||
-            Regex("\\.(?:m3u8|mpd|ts|m4s|mp4|webm|mkv|vtt|srt)(?:$|[?#])", RegexOption.IGNORE_CASE).containsMatchIn(r.url.path.orEmpty())
-
     private val client = object : WebViewClient() {
         override fun shouldInterceptRequest(view: WebView, r: WebResourceRequest): WebResourceResponse? {
             val host = r.url.host
-            if (AdBlock.isBlocked(host) || AdBlock.looksThrowaway(host) && !isMedia(r)) {
+            if (AdBlock.isBlocked(host)) {
                 blockedCount++
                 return WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
             }
@@ -324,15 +319,7 @@ class WebSourceActivity : AppCompatActivity() {
 
         override fun shouldOverrideUrlLoading(view: WebView, r: WebResourceRequest): Boolean {
             if (playerOnly && BgPlayerPresentation.catalogue(r.url.toString())) return true
-            if (!r.isForMainFrame) {
-                // A press inside the player that sends its frame to another site is an ad taking over the player.
-                if (!r.hasGesture()) return false
-                val base = AdBlock.baseOf(r.url.host)
-                val ok = base in ownBases || base == AdBlock.baseOf(Uri.parse(sources[idx].url.ifBlank { sources[idx].key }).host) ||
-                    base == AdBlock.baseOf(Uri.parse(pageUrl ?: "").host)
-                if (!ok) { blockedCount++; AppLog.d("web", "блокирана реклама в плеъра: ${r.url.host}") }
-                return !ok
-            }
+            if (!r.isForMainFrame) return false
             val host = r.url.host ?: return true
             val base = AdBlock.baseOf(host)
             // Главната страница не може да бъде пренасочена към чужд сайт (реклами). Други огледала на източниците са позволени.
