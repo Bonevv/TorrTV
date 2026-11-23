@@ -24,7 +24,8 @@ internal fun bgCatalogue(type:MediaType?,genre:Int?,year:Int?,anime:Boolean,prov
         if(entries().isEmpty() && index.status.value.contains("не отговориха"))throw java.io.IOException(index.status.value)
     }
     val data=BgAudioPager(
-        initial={index.restore();if(entries().isEmpty())prepare()},
+        // A saved index from an earlier run can hold only unconfirmed candidates; read the catalogues first then.
+        initial={index.restore();if(entries().count{!audioOnly || MovieSources.hasBgAudio(it)}<8)prepare()},
         entries={entries()},
         expand={
             if(!catalogueReady)prepare()
@@ -45,5 +46,12 @@ internal fun bgCatalogue(type:MediaType?,genre:Int?,year:Int?,anime:Boolean,prov
             else->compareByDescending<Media>{it.popularity}.thenByDescending{it.votes}
         }.thenBy{it.key}
     )
-    return Paged<Media>(1000,{page->data.next(page)}){it.key}
+    // A batch of candidates that all turn out to lack BG audio adds no card, and the grid only asks for more when its
+    // count grows; read up to three more batches so the list never stops at a single card.
+    var shown=0
+    return Paged<Media>(1000,{page->
+        var result=data.next(page);var extra=0
+        while(extra++<3 && result.totalPages>result.page && result.items.size<=shown)result=data.next(page)
+        shown=result.items.size;result
+    }){it.key}
 }
