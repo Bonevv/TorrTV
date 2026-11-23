@@ -1,5 +1,6 @@
 package app.torrtv.web
 
+import app.torrtv.core.AppLog
 import app.torrtv.core.Http
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withTimeout
@@ -29,7 +30,7 @@ object WebApiClient {
         for (u in urls.filter { isApi(it) }.distinct().take(1)) {
             try { out.addAll(withTimeout(10_000) { parse(Http.get(u, headers)) }) }
             catch (e: CancellationException) { if (e !is kotlinx.coroutines.TimeoutCancellationException) throw e }
-            catch (_: Exception) { }
+            catch (ex: Exception) { AppLog.w("web", "уеб API", ex) }
         }
         return out
     }

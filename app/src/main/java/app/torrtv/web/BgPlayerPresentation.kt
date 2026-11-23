@@ -12,12 +12,14 @@ object BgPlayerPresentation {
             !Regex("^/(?:embed|player|e)(?:/|\\.|$)", RegexOption.IGNORE_CASE).containsMatchIn(u.path.orEmpty())
     } catch (_: Exception) { true }
 
-    fun source(host: String, page: String, embed: String, bgAudio: Boolean = true): WebSources.Source {
+    /** [player] names the player (its host) when a site offers several, so they can be told apart. */
+    fun source(host: String, page: String, embed: String, bgAudio: Boolean = true, player: String = ""): WebSources.Source {
         val playable = WebSubtitleProvider.publicUrl(embed) && !catalogue(embed) && !AdBlock.isBlocked(URI(embed).host)
         val direct = playable && Regex("\\.(?:m3u8|mpd|mp4)(?:[?#]|$)", RegexOption.IGNORE_CASE).containsMatchIn(embed)
         return WebSources.Source(host, if (playable && !direct) embed else "", bgAudio = bgAudio, direct = false,
             headers = mapOf("Referer" to page.substringBefore('#')), playerOnly = true,
-            discoveryPage = if (playable && !direct) "" else page, originalPlayer = true)
+            discoveryPage = if (playable && !direct) "" else page, originalPlayer = true,
+            player = if (playable && !direct) player else "")
     }
 
     fun alternatives(sources: List<WebSources.Source>, selected: WebSources.Source): List<WebSources.Source> =

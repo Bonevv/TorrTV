@@ -9,6 +9,8 @@ public final class MovieCatalog {
     public static final class Entry {
         public String provider = "", page = "", title = "", original = "", poster = "", description = "";
         public String imdb = "", tmdb = "", embed="";
+        /** Every player a movie page offers, in the site's order (trailers excluded). Playback falls back between them. */
+        public final List<String> players=new ArrayList<>();
         public final List<Episode> episodes=new ArrayList<>();
         public final List<SeasonLink> seasons=new ArrayList<>();
         public int episodeSchema;

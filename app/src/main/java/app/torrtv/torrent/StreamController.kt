@@ -404,8 +404,9 @@ class StreamController(
                 subStore.fetch(r, q)?.let { out.add(it) }
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: Exception) {
+            } catch (ex: Exception) {
                 // един лош субтитър не бива да спира филма
+                AppLog.w("subs", "субтитърът не се свали", ex)
             }
             ui = ui.copy(subsDone = ui.subsDone + 1)
         }

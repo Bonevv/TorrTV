@@ -1,8 +1,10 @@
 name: Build APK
 
+# main: тестове, подписан APK и издание (приложението се обновява от него).
+# Всеки друг клон: само компилация и тестове - без подписване и без издание, за да се провери промяна, преди да стигне до потребителите.
 on:
   push:
-    branches: [main]
+    branches: ['**']
     paths-ignore: ['**.md']
   workflow_dispatch:
 
@@ -26,6 +28,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Ключ за подписване
+        if: github.ref == 'refs/heads/main'
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -44,6 +47,7 @@ jobs:
           echo "KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
 
       - name: Компилиране
+        if: github.ref == 'refs/heads/main'
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
@@ -53,7 +57,21 @@ jobs:
             -PappVersionName=1.0.${{ github.run_number }} \
             -PappVersionCode=${{ github.run_number }}
 
+      - name: Компилиране (проверка на клон, без издание)
+        if: github.ref != 'refs/heads/main'
+        # Release е неподписан, но минава през R8 като истинското издание; debug APK е за проба на телевизора.
+        run: bash gradlew --no-daemon testDebugUnitTest assembleRelease assembleDebug
+
+      - name: Тестов APK
+        if: github.ref != 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: TorrTV-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14
+
       - name: Преименуване
+        if: github.ref == 'refs/heads/main'
         run: cp app/build/outputs/apk/release/app-release.apk TorrTV.apk
 
       - name: Резултати от тестовете
@@ -78,6 +96,7 @@ jobs:
           PY
 
       - name: Публикуване на издание
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}

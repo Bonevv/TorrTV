@@ -46,7 +46,7 @@ class WebsiteCatalogueTest {
         assertFalse(index.has(movie))
     }
     @Test fun allHtmlAudioCataloguesLoadSeriesDirectlyFromTheAudioCategory()=runBlocking {
-        for(p in MovieSources.Provider.values().filter{it.hasBgCategory() && it!=MovieSources.Provider.NINE}){
+        for(p in MovieSources.Provider.values().filter{it.hasBgCategory() && it.hasSeries() && it!=MovieSources.Provider.NINE}){
             val file=when(p.name){"ALL"->"all";"ZENO"->"zeno";"ZT"->"zt";else->"fen"}
             val html=javaClass.getResourceAsStream("/web-catalog/$file-series.html")!!.bufferedReader().use{it.readText()}
             val requests=java.util.Collections.synchronizedList(ArrayList<String>())
