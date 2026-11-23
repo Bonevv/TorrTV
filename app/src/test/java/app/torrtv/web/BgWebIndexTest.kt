@@ -65,7 +65,8 @@ class BgWebIndexTest {
         val urls=ArrayList<String>()
         val index=BgWebIndex(temp.root,get={urls.add(it);"""{"data":[{"title":"Spider-Man","slug":"spider-man","year":2002,"isBgAudio":true,"type":"series","videoUrl":"https://player.example.com/embed/series"}]}"""},enabled={setOf("NINE")})
         index.refresh(type=MediaType.TV)
-        assertTrue(urls.single().contains("type=series"))
+        // Filmi9's BG series list is read past its first page, so every request must be for the series catalogue.
+        assertTrue(urls.isNotEmpty() && urls.all{it.contains("type=series")})
         assertTrue(index.has(media(type=MediaType.TV)))
         assertFalse(index.has(media()))
     }
