@@ -52,7 +52,8 @@ class WebsiteCatalogueTest {
             val requests=java.util.Collections.synchronizedList(ArrayList<String>())
             val index=BgWebIndex(temp.newFolder(),get={requests.add(it);html},enabled={setOf(p.name)})
             index.refresh(type=MediaType.TV)
-            assertEquals(p.name,setOf(p.start("",MovieCatalog.BG_AUDIO),p.seriesStart()),requests.toSet())
+            val bgStart=p.start("",MovieCatalog.BG_AUDIO).let{if(p==MovieSources.Provider.ZENO)"$it?type=tv" else it}
+            assertEquals(p.name,setOf(bgStart,p.seriesStart()),requests.toSet())
             val entries=index.audioEntries(MediaType.TV)
             assertFalse(p.name,entries.isEmpty())
             assertTrue(entries.all{it.series && MovieSources.hasBgAudio(it)})
