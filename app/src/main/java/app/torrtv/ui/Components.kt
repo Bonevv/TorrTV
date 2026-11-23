@@ -267,7 +267,12 @@ private fun BgAudioBadge(media: Media, modifier: Modifier) {
     val revision by Graph.bgWeb.revision.collectAsState()
     val available = remember(media.key, media.title, media.originalTitle, media.year, revision) { Graph.bgWeb.has(media) }
     if (available) Box(modifier) { Pill("🇧🇬 БГ аудио · Уеб", Color(0xEE133723), C.green) }
+    // A site's own card whose audio could not be confirmed: say which site it is from and that BG audio is unconfirmed.
+    else media.web?.let { ref -> Box(modifier) { Pill("${siteName(ref.provider)} · БГ аудио: непотвърдено", Color(0xEE2A2A2A), C.dim) } }
 }
+
+private fun siteName(provider: String): String =
+    if (provider == "TWO_K") "Filmi2K" else try { app.torrtv.web.catalog.MovieSources.Provider.valueOf(provider).label } catch (_: Exception) { provider }
 
 fun genreLine(m: Media, max: Int = 3): String =
     m.genreIds.mapNotNull { Genres.name(it) }.take(max).joinToString(" · ")
