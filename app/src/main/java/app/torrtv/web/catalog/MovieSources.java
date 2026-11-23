@@ -40,8 +40,8 @@ public final class MovieSources {
             return base+(this==ZIP || this==FEN?"/seriali/":this==NINE?"/seriali":this==ZENO?"/tv-shows/":this==ALL?"/series":"/filmi/seriali/27");
         }
         public boolean hasBgCategory(){return this!=ZIP;}
-        /** FilmiZT shows its series only to registered users ("На гостите е забранено..."), so they are not offered. */
-        public boolean hasSeries(){return this!=ZT;}
+        /** Every site's series are offered, FilmiZT included (removing them emptied the BG audio series search). */
+        public boolean hasSeries(){return true;}
         public boolean owns(String url) {
             try { String host=new URI(url).getHost(); return host!=null && (host.replaceFirst("^www\\.","").equals(new URI(base).getHost()) || this==NINE && host.equals("cdn.filmi9.com") && new URI(url).getPath().startsWith("/movies")); }
             catch(Exception e) { return false; }
