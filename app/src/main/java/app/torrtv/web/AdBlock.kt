@@ -28,24 +28,8 @@ object AdBlock {
         "bidr.io", "2mdn.net", "scorecardresearch.com", "quantserve.com", "quantcount.com", "hotjar.com",
         "clarity.ms", "histats.com", "statcounter.com", "gemius.pl", "gemius.com", "adocean.pl",
         "adocean-global.com", "yadro.ru", "liveinternet.ru", "mixpanel.com", "facebook.net", "addthis.com",
-        "sharethis.com",
-        // Seen on Filmi9's players (November 2026): bysekoze.com / filemoon.sx and vidsrc.sh.
-        "n1mwq.org", "img-place.com", "stellarconductornexus.com", "cloudflareinsights.com"
+        "sharethis.com"
     )
-
-    /** Cheap domains ad networks register by the thousand; the players and their video never use them. */
-    private val throwawayTlds = setOf("cfd", "rest", "sbs", "bond", "cyou", "autos", "boats", "quest", "icu", "buzz", "click", "lol", "monster")
-
-    /**
-     * Ad scripts on vidsrc rotate machine-made hosts such as m7ou9kh5fp.pe78vqq3bcgtny.cfd: a throwaway domain with a
-     * long label of mixed letters and digits. Never applied to video itself (the caller checks that).
-     */
-    fun looksThrowaway(host: String?): Boolean {
-        if (host.isNullOrEmpty()) return false
-        val labels = host.lowercase().split('.')
-        if (labels.size < 2 || labels.last() !in throwawayTlds) return false
-        return labels.dropLast(1).any { l -> l.length >= 8 && l.count { it.isDigit() } >= 2 && l.any { it.isLetter() } }
-    }
 
     private val cache = ConcurrentHashMap<String, Boolean>()
 

@@ -68,15 +68,21 @@ class WebsiteCatalogueTest {
         val negative=MovieSources.parse(p,p.start("",MovieCatalog.BG_AUDIO),card.replace("БГ аудио","Няма БГ аудио")).entries.single()
         assertFalse(MovieSources.hasBgAudio(negative))
     }
-    @Test fun aSourceWithoutAnAudioCategoryIsExcludedOnlyFromTheAudioFilter()=runBlocking {
+    @Test fun aSourceWithoutAnAudioCategoryIsListedUnconfirmedInTheAudioFilter()=runBlocking {
         var requests=0
         val html=javaClass.getResourceAsStream("/web-catalog/zip-list.html")!!.bufferedReader().use{it.readText()}
         val index=BgWebIndex(temp.root,get={requests++;html},enabled={setOf("ZIP")})
         index.refresh(type=MediaType.MOVIE)
-        assertEquals(0,requests)
-        assertTrue(index.audioEntries().isEmpty())
-        index.refresh(type=MediaType.MOVIE,audioOnly=false)
         assertEquals(1,requests)
+        assertTrue(index.audioEntries().isEmpty()) // never confirmed...
+        val candidates=index.catalogueCandidates(MediaType.MOVIE,true)
+        assertEquals(2,candidates.size) // ...but listed, as unconfirmed site cards, without reading their pages
+        val card=index.catalogueCard(candidates.first(),true){null}!!
+        assertEquals("ZIP",card.web!!.provider)
+        assertFalse(index.has(card))
+        assertEquals(1,requests)
+        index.refresh(type=MediaType.MOVIE,audioOnly=false)
+        assertEquals(2,requests)
         assertEquals(2,index.catalogueEntries(MediaType.MOVIE,false).size)
         assertTrue(index.audioEntries().isEmpty())
     }

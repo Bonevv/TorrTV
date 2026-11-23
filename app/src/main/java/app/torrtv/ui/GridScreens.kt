@@ -133,7 +133,7 @@ fun BrowseScreen(st: BrowseState, onOpen: (Media) -> Unit) {
     LaunchedEffect(Unit) { if (!st.forceAnime) PlatformCatalog.ensure() }
     var yearOpen by remember { mutableStateOf(false) }
     var siteOpen by remember { mutableStateOf(false) }
-    val sites=listOf(PickOption("web:*","Всички уеб сайтове"),PickOption("web:NINE","Filmi9"),
+    val sites=listOf(PickOption("web:*","Всички уеб сайтове"),
         PickOption("web:TWO_K","Filmi2K"),PickOption("web:ZENO","ZenoPlay"),PickOption("web:ALL","Всички филми"),
         PickOption("web:FEN","FilmiFen"),PickOption("web:ZIP","FilmiZip"))
         .filter{(!st.bgOnly || it.key!="web:ZIP") && (st.type!=MediaType.TV || it.key!="web:TWO_K")}
