@@ -32,7 +32,10 @@ class WebSeriesResolver(private val get: suspend (String)->String,
         }
         return gate.withPermit {
             val parsed=if(e.detailSchema>=2 && e.episodes.isNotEmpty())copy(e)
-                else withTimeout(8_000){MovieSources.detail(e,Jsoup.parse(get(e.page.substringBefore('#')),e.page))}
+                else withTimeout(8_000){
+                    val doc=Jsoup.parse(get(e.page.substringBefore('#')),e.page)
+                    MovieSources.detail(e,doc).also{BgWebIndex.twoKSeasonPages(it,doc,get)}
+                }
             if(cache.size>=48)cache.entries.minByOrNull{it.value.at}?.let{cache.remove(it.key)}
             cache[e.page]=Cached(parsed,System.currentTimeMillis())
             parsed
