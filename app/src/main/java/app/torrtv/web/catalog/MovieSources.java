@@ -40,6 +40,8 @@ public final class MovieSources {
             return base+(this==ZIP || this==FEN?"/seriali/":this==NINE?"/seriali":this==ZENO?"/tv-shows/":this==ALL?"/series":"/filmi/seriali/27");
         }
         public boolean hasBgCategory(){return this!=ZIP;}
+        /** FilmiZT shows its series only to registered users ("На гостите е забранено..."), so they are not offered. */
+        public boolean hasSeries(){return this!=ZT;}
         public boolean owns(String url) {
             try { String host=new URI(url).getHost(); return host!=null && (host.replaceFirst("^www\\.","").equals(new URI(base).getHost()) || this==NINE && host.equals("cdn.filmi9.com") && new URI(url).getPath().startsWith("/movies")); }
             catch(Exception e) { return false; }
@@ -67,6 +69,7 @@ public final class MovieSources {
             if(link==null) continue;
             String page=link.absUrl("href");
             if(!isTitle(p,page) || !seen.add(page)) continue;
+            if(!p.hasSeries() && isSeries(p,page)) continue;
             Element card=p==Provider.NINE && node.parent()!=null && node.parent().parent()!=null?node.parent().parent():node;
             if(card.tagName().equals("body") || card.tagName().equals("html") ||
                 (p==Provider.NINE && card.select("a[href*=/film/][title],a[href*=/serial/][title]").size()>1)) card=node;
@@ -76,12 +79,13 @@ public final class MovieSources {
             Element img=card.selectFirst("img");
             if(img!=null) {
                 e.poster=img.absUrl(img.hasAttr("data-original")?"data-original":img.hasAttr("data-src")?"data-src":"src");
-                e.original=img.attr("alt").replaceAll("(?i)\\s*\\(\\d{4}\\).*","").replaceAll("(?i)\\s+онлайн$","").trim();
+                e.original=plain(img.attr("alt")).replaceAll("(?i)\\s*\\(\\d{4}\\).*","").replaceAll("(?i)\\s+онлайн$","").trim();
                 if(e.title.isEmpty()) e.title=e.original;
             }
             if(names.containsKey(page)) setNames(e,names.get(page));
-            else if(p==Provider.ALL && img!=null) setNames(e,img.attr("alt"));
-            else if(p==Provider.ZT) setNames(e,link.attr("oldtitle"));
+            else if(p==Provider.ALL && img!=null) setNames(e,plain(img.attr("alt")));
+            // Search results highlight the query inside the attribute ("<b>Гренландия</b>").
+            else if(p==Provider.ZT) setNames(e,plain(link.attr("oldtitle")));
             e.year=year(text(card,".poster__info,.item-poster__year,.media-year"));
             if(e.year==0) for(Element leaf:card.select("span,time"))if(leaf.ownText().trim().matches("(19|20)[0-9]{2}")){e.year=year(leaf.ownText());break;}
             if(e.year==0) e.year=year(card.text());
@@ -231,7 +235,9 @@ public final class MovieSources {
                 if(!item.optString("imdb_id").isEmpty())e.imdb=item.optString("imdb_id");
             }
         }
-        e.title=e.title.replaceAll("\\s*\\((19|20)[0-9]{2}\\)\\s*$","").trim();
+        // "Матрицата: Възкресения (2021) BG Audio" (Filmi2K headings): the year and the audio label are not the title.
+        Matcher titleYear=Pattern.compile("(?i)\\s*\\(((?:19|20)[0-9]{2})\\)(?:\\s*(?:bg audio|бг аудио))?\\s*$").matcher(e.title);
+        if(titleYear.find()){if(e.year==0)e.year=Integer.parseInt(titleYear.group(1));e.title=e.title.substring(0,titleYear.start()).trim();}
         if(e.series)readEpisodes(e,doc);
         else if(e.provider.equals("NINE") || e.provider.equals("ALL")){
             for(Element script:doc.select("script")){
@@ -242,8 +248,50 @@ public final class MovieSources {
         if(e.embed.isEmpty() && e.provider.equals("ZT")){
             Element frame=doc.selectFirst(".movieplay iframe[src]");if(frame!=null && frame.absUrl("src").startsWith("http"))e.embed=frame.absUrl("src");
         }
-        cleanIds(e);e.detailed=true;e.detailSchema=2; return e;
+        readPlayers(e,doc);
+        cleanIds(e);e.detailed=true;e.detailSchema=DETAIL_SCHEMA; return e;
     }
+    /** Bumped when detail() starts reading something new, so cached records are read again. 3: player lists. */
+    public static final int DETAIL_SCHEMA=3;
+    private static final Pattern FEN_PLAYER=Pattern.compile("\\b([a-z0-9]+)\\s*:\\s*\"(https?:[^\"]+)\"");
+    private static final Pattern SCRIPT_FRAME=Pattern.compile("<iframe[^>]+src=[\"']([^\"']+)[\"']");
+    /**
+     * Every player a movie page offers, in the site's order. Several sites keep later players hidden behind tabs or a
+     * click, and the first one is often dead, so playback needs the whole list. Series pages are left to their episodes.
+     */
+    static void readPlayers(MovieCatalog.Entry e,Document doc){
+        e.players.clear();
+        if(e.series)return;
+        LinkedHashSet<String> found=new LinkedHashSet<>();
+        switch(e.provider){
+            case "ZT": // Плеър 1, Плеър 2... are bootstrap tabs; the first is often the site's own redirect.
+                for(Element frame:doc.select(".movieplay iframe[src]"))found.add(frame.absUrl("src"));
+                break;
+            case "FEN": // The tabs create their iframe on click from an inline map {trailer:"…",vdn:"…",okr:"…"}.
+                for(Element script:doc.select("script")){
+                    String data=script.data();if(!data.contains("video-stage"))continue;
+                    Matcher m=FEN_PLAYER.matcher(data);
+                    while(m.find())if(!m.group(1).matches("trailer|ytb|help"))found.add(m.group(2).replace("\\/","/"));
+                }
+                break;
+            case "TWO_K": // The player is written into #videocontainer on click from `var embedCode='<iframe src="/?rtp=…">'`.
+                for(Element frame:doc.select("#videocontainer iframe[src],.video-player iframe[src]"))found.add(frame.absUrl("src"));
+                for(Element script:doc.select("script")){
+                    String data=script.data();if(!data.contains("embedCode"))continue;
+                    Matcher m=SCRIPT_FRAME.matcher(data);
+                    while(m.find())try{found.add(new URI(doc.location()).resolve(m.group(1).replace("&amp;","&")).toString());}catch(Exception ignored){}
+                }
+                break;
+            default:
+                return;
+        }
+        for(String url:found){
+            String u=url.startsWith("//")?"https:"+url:url;
+            if(u.matches("(?i)https?://.+") && !u.matches("(?i).*(youtube\\.com|youtu\\.be|/trailer).*") && !e.players.contains(u))e.players.add(u);
+        }
+    }
+    /** Attribute text sometimes carries markup (search highlighting); only its words are a title. */
+    static String plain(String s){return s.indexOf('<')<0?s:Jsoup.parse(s).text();}
     private static boolean sameRecord(JSONObject item,MovieCatalog.Entry e){
         String slug=item.optString("slug");
         int season=MovieEpisodes.season(item.optString("title")+" "+slug);
@@ -327,7 +375,8 @@ public final class MovieSources {
             JSONObject ep=episodes.optJSONObject(i);if(ep==null)continue;int number=ep.optInt("episodeNumber",i+1);
             String embed=ep.optString("videoUrl");JSONArray sources=ep.optJSONArray("sources");
             if(!embed.startsWith("http") && sources!=null && sources.optJSONObject(0)!=null)embed=sources.optJSONObject(0).optString("url");
-            Boolean bg=ep.has("isBgAudio")?ep.optBoolean("isBgAudio"):item.has("isBgAudio")?item.optBoolean("isBgAudio"):null;
+            // Boxed on both branches: a mixed boolean/null ternary unboxes null and throws (Filmi9 series without the flag).
+            Boolean bg=ep.has("isBgAudio")?Boolean.valueOf(ep.optBoolean("isBgAudio")):item.has("isBgAudio")?Boolean.valueOf(item.optBoolean("isBgAudio")):null;
             String url=page+"#tvsites-episode="+number;found.put(url,new MovieCatalog.Episode(ep.optString("name","Епизод "+number),url,embed,ep.optInt("seasonNumber",season),number,bg));
         }
     }

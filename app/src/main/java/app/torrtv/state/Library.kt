@@ -1,5 +1,6 @@
 package app.torrtv.state
 
+import app.torrtv.core.AppLog
 import android.content.Context
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -65,18 +66,21 @@ object Library {
         try {
             val f = JSONArray(sp().getString("fav", "[]"))
             for (i in 0 until f.length()) mediaFrom(f.getJSONObject(i))?.let { favorites.add(it) }
-        } catch (_: Exception) {
+        } catch (ex: Exception) {
+            AppLog.w("library", "любимите не се заредиха", ex)
         }
         try {
             val p = JSONArray(sp().getString("prog", "[]"))
             for (i in 0 until p.length()) progressFrom(p.getJSONObject(i))?.let { progress.add(it) }
             // По-старите записи над лимита (най-новите са първи) се отрязват.
             while (progress.size > MAX_PROGRESS) progress.removeAt(progress.size - 1)
-        } catch (_: Exception) {
+        } catch (ex: Exception) {
+            AppLog.w("library", "прогресът не се зареди", ex)
         }
         try {
             watched.putAll(WatchedLog.decode(sp().getString("watched", "") ?: ""))
-        } catch (_: Exception) {
+        } catch (ex: Exception) {
+            AppLog.w("library", "гледаните не се заредиха", ex)
         }
     }
 
@@ -192,14 +196,16 @@ object Library {
             val a = JSONArray()
             favorites.forEach { a.put(mediaTo(it)) }
             sp().edit().putString("fav", a.toString()).apply()
-        } catch (_: Exception) {
+        } catch (ex: Exception) {
+            AppLog.w("library", "любимите не се записаха", ex)
         }
     }
 
     private fun saveWatched() {
         try {
             sp().edit().putString("watched", WatchedLog.encode(watched)).apply()
-        } catch (_: Exception) {
+        } catch (ex: Exception) {
+            AppLog.w("library", "гледаните не се записаха", ex)
         }
     }
 
@@ -208,7 +214,8 @@ object Library {
             val a = JSONArray()
             progress.forEach { a.put(progressTo(it)) }
             sp().edit().putString("prog", a.toString()).apply()
-        } catch (_: Exception) {
+        } catch (ex: Exception) {
+            AppLog.w("library", "прогресът не се записа", ex)
         }
     }
 

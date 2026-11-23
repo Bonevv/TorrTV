@@ -64,7 +64,7 @@ class BgAudioPager(
         it.provider=e.provider;it.page=e.page;it.title=e.title;it.original=e.original;it.year=e.year
         it.tmdb=e.tmdb;it.imdb=e.imdb;it.series=e.series;it.season=e.season;it.seriesYear=e.seriesYear
         it.bgAudio=e.bgAudio;it.audioVerified=e.audioVerified;it.bgCatalog=e.bgCatalog;it.audioRejected=e.audioRejected
-        it.embed=e.embed;it.genres.addAll(e.genres);it.poster=e.poster;it.description=e.description
+        it.embed=e.embed;it.players.addAll(e.players);it.genres.addAll(e.genres);it.poster=e.poster;it.description=e.description
         it.detailSchema=e.detailSchema;it.bgEpisodeSeason=e.bgEpisodeSeason;it.bgEpisodeNumber=e.bgEpisodeNumber
         it.episodes.addAll(e.episodes);it.seasons.addAll(e.seasons)
         it.detailed=e.detailed

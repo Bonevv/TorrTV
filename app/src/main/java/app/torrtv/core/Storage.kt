@@ -23,7 +23,8 @@ object Storage {
                 if (!usable(d)) continue
                 out.add(Place(if (i == 1) "usb" else "usb$i", if (i == 1) "USB / SD карта" else "USB / SD карта $i", d))
             }
-        } catch (_: Exception) {
+        } catch (ex: Exception) {
+            AppLog.w("storage", "външните носители не се прочетоха", ex)
         }
         return out
     }

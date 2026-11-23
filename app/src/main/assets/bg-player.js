@@ -14,6 +14,29 @@
         var url = frame.src || '';
         return /^https?:/i.test(url) && !/youtube|doubleclick|googlesyndication|trailer|\/ads\//i.test(url);
     }
+    // A player inside a hidden tab or a container the site has not opened yet is not a player on screen.
+    function shown(node) {
+        if (!node || !node.getClientRects().length) return false;
+        var r = node.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+    }
+    // Players that exist only after a click on the site's poster. FilmiZT: a.splash-image opens #content-embed.
+    // Filmi2K: #videocontainer receives `embedCode` from a script the site delays until user input, so the markup
+    // is read from that script when the variable does not exist yet.
+    function reveal() {
+        var splash = document.querySelector('a.splash-image'), embed = document.getElementById('content-embed');
+        if (splash && embed && !shown(embed)) click(splash, false);
+        var box = document.getElementById('videocontainer');
+        if (box && !box.querySelector('iframe')) {
+            var code = typeof window.embedCode === 'string' ? window.embedCode : '';
+            var scripts = code ? [] : document.getElementsByTagName('script');
+            for (var s = 0; s < scripts.length && !code; s++) {
+                var m = /embedCode\s*=\s*'([^']*<iframe[^']*)'/.exec(scripts[s].textContent || '');
+                if (m) code = m[1];
+            }
+            if (code) box.innerHTML = code; else click(box, false);
+        }
+    }
     function activate() {
         var wanted = location.hash.match(/tvsites-episode=(\d+)/);
         if (wanted && !episodeReady) {
@@ -36,11 +59,12 @@
             if (!episodeReady) return;
         }
         var tab = document.querySelector('.tab-btn[data-player]:not([data-player="trailer"]):not([data-player="help"]),.tabs-block__select [data-link],.player-picker-menu [data-player],button[data-server],.server-btn');
-        var existing = document.querySelectorAll('.movieplay iframe,#video-stage iframe,.video-responsive iframe,#player-box iframe');
+        var existing = document.querySelectorAll('.movieplay iframe,#video-stage iframe,.video-responsive iframe,#player-box iframe,#videocontainer iframe');
         var activePlayer = false;
-        for (var f = 0; f < existing.length; f++) if (validFrame(existing[f])) activePlayer = true;
+        for (var f = 0; f < existing.length; f++) if (validFrame(existing[f]) && shown(existing[f])) activePlayer = true;
         var activeVideo = document.querySelector('video');
         if (activeVideo && (activeVideo.currentSrc || activeVideo.src) && !/trailer|preroll/i.test(activeVideo.currentSrc || activeVideo.src)) activePlayer = true;
+        if (!activePlayer) reveal();
         if (tab && !activePlayer) {
             click(tab, true);
         }
@@ -85,19 +109,21 @@
         if (document.documentElement.hasAttribute('data-torrtv-player-shell')) { sent = true; emit({ready: true}); return; }
         activate();
         if (!episodeReady) return;
-        var frames = document.querySelectorAll('.pmovie__player iframe,.movieplay iframe,#video-stage iframe,.video-responsive iframe,#player-box iframe,#player iframe,article iframe,.entry-content iframe');
+        var frames = document.querySelectorAll('.pmovie__player iframe,.movieplay iframe,#video-stage iframe,.video-responsive iframe,#player-box iframe,#player iframe,#videocontainer iframe,article iframe,.entry-content iframe');
         for (var i = 0; i < frames.length; i++) if (validFrame(frames[i])) {
             if (episodeSelectionStarted && previousEpisodeMedia.indexOf(frames[i].src) >= 0) continue;
             if (window.__torrtvOriginalPlayer) {
-                var panel = frames[i].closest('.pmovie__player,.movieplay,[data-player-panel],#video-stage,.video-responsive,#player-box,#player');
-                if (isolate(panel || frames[i])) { sent = true; emit({ready: true}); return; }
+                // Only a visible player counts: isolating a hidden one leaves a black screen and stops the fallback.
+                if (!shown(frames[i])) continue;
+                var panel = frames[i].closest('.pmovie__player,.movieplay,[data-player-panel],#video-stage,.video-responsive,#player-box,#player,#videocontainer');
+                if (isolate(panel || frames[i]) && shown(frames[i])) { sent = true; emit({ready: true}); return; }
             } else { sent = true; emit({url: frames[i].src, page: location.href}); return; }
         }
         var video = document.querySelector('.jwplayer,.video-js,.plyr,video');
         var nativeVideo = video && (video.tagName === 'VIDEO' ? video : video.querySelector('video'));
         var mediaUrl = nativeVideo && (nativeVideo.currentSrc || nativeVideo.src || (nativeVideo.querySelector('source') || {}).src);
         if (episodeSelectionStarted && previousEpisodeMedia.indexOf(mediaUrl) >= 0) return;
-        if (mediaUrl && !/trailer|preroll|doubleclick|\/ads\//i.test(mediaUrl) && !nativeVideo.closest('.trailer,[data-player="trailer"]') && isolate(video)) { sent = true; emit({ready: true}); }
+        if (mediaUrl && !/trailer|preroll|doubleclick|\/ads\//i.test(mediaUrl) && !nativeVideo.closest('.trailer,[data-player="trailer"]') && shown(video) && isolate(video)) { sent = true; emit({ready: true}); }
     }
     window.__torrtvFindPlayer = scan;
     new MutationObserver(function () { try { scan(); } catch (e) {} }).observe(document, {childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'aria-selected', 'data-state']});
