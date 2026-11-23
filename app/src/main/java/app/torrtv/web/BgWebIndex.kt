@@ -23,7 +23,7 @@ import java.util.Locale
 
 /** Catalogue metadata is cached; BG badges require membership of the site's BG audio catalogue. */
 class BgWebIndex(private val directory: File, private val get: suspend (String) -> String = { Http.get(it, siteHeaders(it)) },
-    private val enabled: () -> Set<String> = { setOf("NINE", "TWO_K", "ZENO", "ALL", "FEN", "ZIP") },
+    private val enabled: () -> Set<String> = { setOf("TWO_K", "ZENO", "ALL", "FEN", "ZIP") },
     private val allowNetwork: () -> Boolean = { true },
     private val bgPlayers:suspend(String,String)->List<String> = {page,html->ZenoProvider.players(page,html)},
     private val sitePlayers:suspend(String,List<String>)->List<String> = {page,urls->SitePlayers.resolve(page,urls)}) {
