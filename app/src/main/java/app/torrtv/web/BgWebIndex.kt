@@ -61,6 +61,16 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
     companion object {
         const val TTL = 24 * 60 * 60_000L
         /** FilmiZT answers its search with 403 ("Search from the site's pages") unless the request comes from the site. */
+        /** A Filmi2K season with more than one page of episodes (20 per page): read up to four more pages. */
+        suspend fun twoKSeasonPages(e:MovieCatalog.Entry,first:org.jsoup.nodes.Document,get:suspend(String)->String){
+            if(e.provider!="TWO_K" || !e.series)return
+            var next=MovieSources.twoKNext(first);var pages=0
+            while(next.isNotEmpty() && pages++<4){
+                val doc=Jsoup.parse(get(next),next)
+                MovieSources.readTwoKEpisodes(e,doc)
+                next=MovieSources.twoKNext(doc)
+            }
+        }
         fun siteHeaders(url:String):Map<String,String> = try{
             val u=java.net.URI(url)
             if(u.host?.removePrefix("www.")=="filmizt.com" && u.path.startsWith("/search"))mapOf("Referer" to "https://filmizt.com/") else emptyMap()
@@ -253,8 +263,14 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
         return parsed
     }
     private suspend fun loadTwoK(q: String,type:MediaType?,audioOnly:Boolean): List<MovieCatalog.Entry> {
-        if(type==MediaType.TV)return emptyList() // This adapter has no verified series/episode format.
         val base = "https://www.filmi2k.com"
+        if(type==MediaType.TV){
+            // Filmi2K's series are seasons (categories) shown as episode cards; the list and the search share that layout.
+            val url=if(q.isBlank())"$base/onlayn-seriali/" else "$base/?s=${enc(q)}"
+            val parsed=MovieSources.twoKSeries(Jsoup.parse(fetch(url),url))
+            firstPage(q,type,"TWO_K@series",parsed.entries,parsed.next,audioOnly)
+            return parsed.entries.toList()
+        }
         val tags = JSONArray(fetch("$base/wp-json/wp/v2/tags?slug=filmi-bg-audio&per_page=1"))
         val tag = tags.optJSONObject(0)?.optInt("id")?.takeIf{it>0}
         twoKAudioTag=tag
@@ -299,7 +315,12 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
             try {
                 val entries: List<MovieCatalog.Entry>
                 val next: String
-                if (provider == "TWO_K") {
+                if (provider == "TWO_K" && route.endsWith("@series")) {
+                    val body = withTimeout(8_000) { fetch(url) }
+                    val parsed = MovieSources.twoKSeries(Jsoup.parse(body, url))
+                    entries = parsed.entries.toList()
+                    next = parsed.next.takeIf { it != url }.orEmpty()
+                } else if (provider == "TWO_K") {
                     // Reuse the tag-checked parser while retaining the current pagination query.
                     val text = withTimeout(8_000) { fetch(url) }
                     val posts = JSONArray(text)
@@ -456,7 +477,10 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
         sources
     }
     private suspend fun readDetail(e:MovieCatalog.Entry):MovieCatalog.Entry = try{
-        withTimeout(8_000){MovieSources.detail(e,Jsoup.parse(fetch(e.page),e.page))}
+        withTimeout(8_000){
+            val doc=Jsoup.parse(fetch(e.page),e.page)
+            MovieSources.detail(e,doc).also{twoKSeasonPages(it,doc){url->fetch(url)}}
+        }
     }catch(ex:CancellationException){if(ex is TimeoutCancellationException)e else throw ex}catch(_:Exception){e}
     /**
      * One source per player the site offers for a movie, in the site's order, so a dead first player no longer ends

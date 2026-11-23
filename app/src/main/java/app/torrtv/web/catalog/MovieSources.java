@@ -198,6 +198,8 @@ public final class MovieSources {
         Element main=doc.selectFirst("article.pmovie,article.detail-page,#mv-info"); if(main==null)main=doc.selectFirst("main"); if(main==null) main=doc.body();
         String title=text(main,".movie__bg-title");if(title.isEmpty())title=text(main,"h1,h3[itemprop=name]");
         Element heading=main.selectFirst("h1");if(heading!=null && heading.selectFirst(".pmovie__original-title")!=null && !heading.ownText().trim().isEmpty())title=heading.ownText().trim();
+        // A Filmi2K season page is headed "Категория: …"; the names already read from its cards are the real ones.
+        if(e.provider.equals("TWO_K") && e.series) title="";
         if(!title.isEmpty()) { if(e.provider.equals("ZIP") || e.provider.equals("ZT") || title.contains(" / ")) setNames(e,title); else e.title=title.trim(); }
         String original=text(main,".pmovie__original-title,.movie__original-title").replaceAll("\\s*\\((19|20)[0-9]{2}\\)\\s*$","").replaceFirst("^\\s*/\\s*","");
         if(!original.isEmpty()) e.original=original;
@@ -290,6 +292,69 @@ public final class MovieSources {
             if(u.matches("(?i)https?://.+") && !u.matches("(?i).*(youtube\\.com|youtu\\.be|/trailer).*") && !e.players.contains(u))e.players.add(u);
         }
     }
+    private static final Pattern TWO_K_SEASON=Pattern.compile("(?i)(?:^|-)(?:season|seson|sezon)-(\\d{1,3})(?=-|$)");
+    private static final Pattern TWO_K_EPISODE=Pattern.compile("(?i)\\bS(\\d{1,3})E(\\d{1,4})\\b");
+    private static String twoKSeasonSlug(Element article){
+        for(String c:article.classNames())if(c.startsWith("category-") && TWO_K_SEASON.matcher(c.substring(9)).find())return c.substring(9);
+        return null;
+    }
+    /**
+     * Filmi2K keeps each season as a WordPress category (/category/vikings-season-6-vikingi-sezon-6/) whose posts are
+     * its episodes. Its series list, its search and its season pages all show one card per episode post, so every
+     * card names its season through the category-* class. The site tags dubbed episodes "filmi-bg-audio".
+     */
+    public static Page twoKSeries(Document doc){
+        Page page=new Page();LinkedHashMap<String,MovieCatalog.Entry> found=new LinkedHashMap<>();
+        for(Element article:doc.select("article")){
+            String slug=twoKSeasonSlug(article);if(slug==null)continue;
+            String url="https://www.filmi2k.com/category/"+slug+"/";
+            MovieCatalog.Entry e=found.get(url);
+            if(e==null){
+                Element link=article.selectFirst("a[href]"),img=article.selectFirst("img");
+                String label=plain(link!=null && !link.attr("title").isEmpty()?link.attr("title"):img!=null?img.attr("alt"):"");
+                e=new MovieCatalog.Entry();e.provider="TWO_K";e.page=url;e.series=true;
+                Matcher season=TWO_K_SEASON.matcher(slug);e.season=season.find()?Integer.parseInt(season.group(1)):-1;
+                setNames(e,label.replaceAll("(?iu)\\s*\\bS\\d+E\\d+\\b","").replaceAll("(?iu)\\s*(?:bg audio|бг аудио)","")
+                    .replaceAll("(?iu)\\s*[–-]?\\s*(?:season|seson|sezon|сезон)\\s*\\d+","").replaceAll("\\s*\\((?:19|20)\\d{2}\\)","").trim());
+                Matcher year=Pattern.compile("\\(((?:19|20)\\d{2})\\)").matcher(label);if(year.find())e.year=Integer.parseInt(year.group(1));
+                for(String c:article.classNames())if(e.year==0 && c.matches("tag-filmi-ot-(19|20)\\d{2}"))e.year=Integer.parseInt(c.substring(c.length()-4));
+                if(img!=null){String src=img.hasAttr("data-lazy-src")?img.absUrl("data-lazy-src"):img.absUrl("src");if(src.startsWith("http"))e.poster=src;}
+                if(e.title.isEmpty())continue;
+                found.put(url,e);
+            }
+            if(article.hasClass("tag-filmi-bg-audio")){e.bgCatalog=true;e.bgAudio=true;e.audioVerified=true;}
+        }
+        page.entries.addAll(found.values());
+        page.next=twoKNext(doc);
+        return page;
+    }
+    /** The theme's pager: <a class="current">1</a><a href=".../page/2/" class="inactive">2</a>. */
+    public static String twoKNext(Document doc){
+        Element next=doc.selectFirst("link[rel=next],a[rel=next],a.next");
+        if(next==null){Element current=doc.selectFirst(".pagination a.current");
+            Element item=current==null?null:current.parent()!=null && current.parent().tagName().equals("li")?current.parent():current;
+            Element after=item==null?null:item.nextElementSibling();
+            if(after!=null)next=after.tagName().equals("a")?after:after.selectFirst("a[href]");}
+        String url=next==null?"":next.absUrl("href");
+        return url.matches("https://(www\\.)?filmi2k\\.com/.*/page/\\d+/?")?url:"";
+    }
+    /** A Filmi2K season page: its episode posts, each with its own BG audio tag. A tagged episode makes the season BG. */
+    public static void readTwoKEpisodes(MovieCatalog.Entry e,Document doc){
+        TreeMap<Integer,MovieCatalog.Episode> found=new TreeMap<>();
+        for(MovieCatalog.Episode old:e.episodes)found.put(old.number,old);
+        for(Element article:doc.select("article")){
+            Element link=article.selectFirst("a[href]");if(link==null)continue;
+            String url=link.absUrl("href"),name=plain(link.attr("title").isEmpty()?link.text():link.attr("title"));
+            if(!url.matches("https://(www\\.)?filmi2k\\.com/[^/?#]+/?") || url.contains("/category/"))continue;
+            Matcher m=TWO_K_EPISODE.matcher(name+" "+url);if(!m.find())continue;
+            int season=Integer.parseInt(m.group(1)),number=Integer.parseInt(m.group(2));
+            if(e.season>=0 && season!=e.season)continue;
+            boolean bg=article.hasClass("tag-filmi-bg-audio");
+            found.put(number,new MovieCatalog.Episode(name,url,"",season,number,bg?Boolean.TRUE:null));
+            if(bg && !e.audioRejected){e.bgCatalog=true;e.bgAudio=true;e.audioVerified=true;}
+        }
+        e.episodes.clear();e.episodes.addAll(found.values());
+    }
     /** Attribute text sometimes carries markup (search highlighting); only its words are a title. */
     static String plain(String s){return s.indexOf('<')<0?s:Jsoup.parse(s).text();}
     private static boolean sameRecord(JSONObject item,MovieCatalog.Entry e){
@@ -306,6 +371,7 @@ public final class MovieSources {
         if(!e.imdb.matches("tt[0-9]{5,}"))e.imdb="";
     }
     public static void readEpisodes(MovieCatalog.Entry e,Document doc){
+        if(e.provider.equals("TWO_K")){readTwoKEpisodes(e,doc);return;}
         LinkedHashMap<String,MovieCatalog.Episode> found=new LinkedHashMap<>();
         LinkedHashMap<String,MovieCatalog.SeasonLink> seasons=new LinkedHashMap<>();
         int current=e.season>=0?e.season:MovieEpisodes.season(e.title+" "+e.original+" "+e.page);
