@@ -418,17 +418,19 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
         }
         refresh(type = m.type,force=force)
         refresh(m.originalTitle.ifBlank { m.title },type=m.type,audioOnly=false,force=force)
-        val checkedEntries=ArrayList<MovieCatalog.Entry>()
-        val sources=find(m, imdb, onlyBg=false).flatMap<Record,WebSources.Source> { record ->
-            val e = decodeEntry(encodeEntry(record.entry))
-            try {
-                val checked=if(e.detailSchema>=MovieSources.DETAIL_SCHEMA && !force)e else readDetail(e)
-                if(!matches(m,checked,imdb))return@flatMap emptyList<WebSources.Source>()
-                val found=movieSources(checked)
-                checkedEntries.add(checked)
-                found
-            } catch (ex: CancellationException) { throw ex } catch (ex: Exception) { AppLog.w("web", "уеб източник ${e.page}", ex); emptyList<WebSources.Source>() }
-        }.distinctBy { it.key }
+        // Every candidate page is read and checked at the same time: one after another made each extra site add seconds.
+        val gate=Semaphore(4)
+        val checks=coroutineScope{ find(m, imdb, onlyBg=false).map { record -> async {
+            gate.withPermit {
+                val e = decodeEntry(encodeEntry(record.entry))
+                try {
+                    val checked=if(e.detailSchema>=MovieSources.DETAIL_SCHEMA && !force)e else readDetail(e)
+                    if(!matches(m,checked,imdb))null else checked to movieSources(checked)
+                } catch (ex: CancellationException) { throw ex } catch (ex: Exception) { AppLog.w("web", "уеб източник ${e.page}", ex); null }
+            }
+        } }.awaitAll().filterNotNull() }
+        val checkedEntries=checks.map{it.first}
+        val sources=checks.flatMap{it.second}.distinctBy { it.key }
         rememberDetails(checkedEntries)
         sources
     }
