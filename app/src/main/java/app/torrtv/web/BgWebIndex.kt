@@ -211,7 +211,10 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
         if(audioOnly && !p.hasBgCategory())return emptyList()
         if(type==MediaType.TV && !p.hasSeries())return emptyList()
         if(audioOnly && type==MediaType.TV)return coroutineScope{
-            val routes=listOfNotNull(if(p.hasBgCategory())p.start("",MovieCatalog.BG_AUDIO) to p.name else null,
+            // ZenoPlay's BG audio genre lists its TV shows with ?type=tv (the link on every BG show's page): those come
+            // confirmed from the list itself, without reading each show's page.
+            val bgStart=p.start("",MovieCatalog.BG_AUDIO).let{if(p==MovieSources.Provider.ZENO)"$it?type=tv" else it}
+            val routes=listOfNotNull(if(p.hasBgCategory())bgStart to p.name else null,
                 (if(q.isBlank())p.seriesStart() else p.start(q,MovieCatalog.ALL)) to "${p.name}@series")
             val results=routes.map{(url,route)->async{
                 try{withTimeout(6_000){read(url,route,route.endsWith("@series"))}}
