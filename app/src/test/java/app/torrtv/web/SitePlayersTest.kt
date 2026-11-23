@@ -63,15 +63,15 @@ class SitePlayersTest {
         assertNull(e.episodes[0].bgAudio)
     }
 
-    @Test fun filmiZtSearchHighlightsAreNotPartOfTheTitleAndSeriesAreLeftOut() {
+    @Test fun filmiZtSearchHighlightsAreNotPartOfTheTitleAndSeriesStay() {
         val html = """<div class="ml-item"><a href="/filmi/filmizt/greenland_2_migration/29-1-0-10727" class="ml-mask jt" oldtitle="Greenland 2: Migration / <b>Гренландия</b> 2: Миграция (2026)">
             <img data-original="/_sf/1.webp" alt="Greenland 2: Migration / <b>Гренландия</b> 2: Миграция (2026)"><span class="mli-info"><h2>Greenland 2: Migration / <b>Гренландия</b> 2: Миграция (2026)</h2></span></a></div>
             <div class="ml-item"><a href="/filmi/seriali/show/27-1-0-5" class="ml-mask jt" oldtitle="Show / Шоу (2025)"><img alt="Show"></a></div>"""
         val page = MovieSources.parse(MovieSources.Provider.ZT, "https://filmizt.com/search/?q=%D0%93", html)
-        assertEquals(1, page.entries.size)
+        assertEquals(2, page.entries.size)
         assertEquals("Гренландия 2: Миграция", page.entries[0].title)
         assertEquals("Greenland 2: Migration", page.entries[0].original)
-        assertFalse(MovieSources.Provider.ZT.hasSeries())
+        assertTrue(page.entries[1].series)
     }
 
     @Test fun filmiZtSearchIsSentFromTheSite() {
