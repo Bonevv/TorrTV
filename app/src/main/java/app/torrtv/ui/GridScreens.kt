@@ -135,7 +135,7 @@ fun BrowseScreen(st: BrowseState, onOpen: (Media) -> Unit) {
     var siteOpen by remember { mutableStateOf(false) }
     val sites=listOf(PickOption("web:*","Всички уеб сайтове"),PickOption("web:NINE","Filmi9"),
         PickOption("web:TWO_K","Filmi2K"),PickOption("web:ZENO","ZenoPlay"),PickOption("web:ALL","Всички филми"),
-        PickOption("web:FEN","FilmiFen"),PickOption("web:ZT","FilmiZT"),PickOption("web:ZIP","FilmiZip"))
+        PickOption("web:FEN","FilmiFen"),PickOption("web:ZIP","FilmiZip"))
         .filter{(!st.bgOnly || it.key!="web:ZIP") && (st.type!=MediaType.TV || it.key!="web:TWO_K")}
     val webCatalogue=st.provider?.startsWith("web:")==true
     if(siteOpen)PickDialog("Уеб сайтове",sites,st.provider?:"web:*",{st.pickProvider(it);siteOpen=false},{siteOpen=false})

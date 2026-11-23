@@ -311,8 +311,9 @@ class Prefs(ctx: Context) {
 
     val bgWebProviders: Set<String> get() {
         val raw = str("web_bg_providers")
-        if (raw.isBlank()) return setOf("NINE", "TWO_K", "ZENO", "ALL", "FEN", "ZT", "ZIP")
-        return raw.lines().map { it.trim() }.filter { it.isNotEmpty() && it != "-" }.toSet()
+        // FilmiZT is no longer offered (its series need an account); a saved list that still names it ignores it.
+        if (raw.isBlank()) return setOf("NINE", "TWO_K", "ZENO", "ALL", "FEN", "ZIP")
+        return raw.lines().map { it.trim() }.filter { it.isNotEmpty() && it != "-" && it != "ZT" }.toSet()
     }
 
     fun get(name: String): String = when (name) {
