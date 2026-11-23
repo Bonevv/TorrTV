@@ -57,7 +57,8 @@ class BgAudioPagingTest {
         assertTrue(requests.any{it.contains("type=movie") && it.contains("page=2")})
         assertTrue(requests.any{it.contains("type=series") && it.contains("page=2")})
         assertEquals(19,index.audioEntries(MediaType.MOVIE).size)
-        assertEquals(19,index.audioEntries(MediaType.TV).size)
+        // Filmi9's BG series list is read whole on refresh (25 records, one without BG audio); movies stay paged.
+        assertEquals(24,index.audioEntries(MediaType.TV).size)
     }
     @Test fun aFilteredBatchWithoutNewCardsDoesNotExhaustTheList()=runBlocking {
         val index=BgWebIndex(temp.root,get={body(it)},enabled={setOf("NINE")})

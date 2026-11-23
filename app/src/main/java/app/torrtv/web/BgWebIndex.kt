@@ -23,7 +23,7 @@ import java.util.Locale
 
 /** Catalogue metadata is cached; BG badges require membership of the site's BG audio catalogue. */
 class BgWebIndex(private val directory: File, private val get: suspend (String) -> String = { Http.get(it, siteHeaders(it)) },
-    private val enabled: () -> Set<String> = { setOf("NINE", "TWO_K", "ZENO", "ALL", "FEN", "ZT", "ZIP") },
+    private val enabled: () -> Set<String> = { setOf("NINE", "TWO_K", "ZENO", "ALL", "FEN", "ZIP") },
     private val allowNetwork: () -> Boolean = { true },
     private val bgPlayers:suspend(String,String)->List<String> = {page,html->ZenoProvider.players(page,html)},
     private val sitePlayers:suspend(String,List<String>)->List<String> = {page,urls->SitePlayers.resolve(page,urls)}) {
@@ -186,7 +186,19 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
             val parsed = parseNine(url,fetch(url))
             // Servers may cap a requested 30 records at 10. Probe until empty/repeated instead.
             firstPage(q,type,p.name,parsed.entries,parsed.next,audioOnly)
-            return parsed.entries.toList()
+            val found=parsed.entries.toMutableList()
+            // Filmi9's whole BG audio series list is a few pages (50 records in 2 pages): read it all, so a series on
+            // page 2 (Friends, Lucifer, Vikings...) shows its BG audio outside the BG filter too. Movies stay paged.
+            if(q.isBlank() && audioOnly && type==MediaType.TV){
+                var next=parsed.next;var pages=1
+                while(next.isNotBlank() && pages++<5){
+                    val more=parseNine(next,fetch(next))
+                    val fresh=more.entries.filter{e->found.none{it.page==e.page}}
+                    if(fresh.isEmpty())break
+                    found.addAll(fresh);next=more.next
+                }
+            }
+            return found
         }
         // Some BG categories contain only movies. Scan the typed series catalogue too,
         // retaining those records as unverified candidates until their own detail/player proves audio.
@@ -343,18 +355,24 @@ class BgWebIndex(private val directory: File, private val get: suspend (String) 
         fun remaining(max:Long)=minOf(max,(deadline-System.nanoTime())/1_000_000).coerceAtLeast(1)
         if(audioOnly && !MovieSources.hasBgAudio(e)){
             if(e.audioRejected)return null
-            val checked=withTimeout(8_000){MovieSources.detail(e,Jsoup.parse(fetch(e.page),e.page))}
-            copyDetails(e,checked)
+            // An unreadable page leaves the record unconfirmed; it is not a reason to hide it.
+            val checked=try{withTimeout(8_000){MovieSources.detail(e,Jsoup.parse(fetch(e.page),e.page))}}
+                catch(ex:CancellationException){if(ex is TimeoutCancellationException)null else throw ex}
+                catch(ex:Exception){AppLog.w("web","страницата не се прочете: ${e.page}",ex);null}
+            if(checked!=null)copyDetails(e,checked)
             if(!MovieSources.hasBgAudio(e) && e.provider=="ZENO" && !e.audioRejected){
                 val ep=e.episodes.sortedWith(compareBy<MovieCatalog.Episode>{it.season}.thenBy{it.number}).firstOrNull()
                 val page=ep?.page?:e.page
-                val embed=withTimeoutOrNull(3_000){bgPlayers(page,fetch(page.substringBefore('#'))).firstOrNull()}
+                val embed=try{withTimeoutOrNull(3_000){bgPlayers(page,fetch(page.substringBefore('#'))).firstOrNull()}}
+                    catch(ex:CancellationException){throw ex}catch(ex:Exception){AppLog.w("web","ZenoPlay плеъри",ex);null}
                 if(embed!=null && ep?.bgAudio!=false){
                     e.bgCatalog=true;e.bgAudio=true;e.audioVerified=true
                     if(ep!=null){e.bgEpisodeSeason=ep.season;e.bgEpisodeNumber=ep.number}
                 }
             }
-            if(!MovieSources.hasBgAudio(e))return null
+            // A series whose site does not say either way is still offered, as a site card marked "unconfirmed"
+            // (never a TMDB card, which would look like a confirmed one). The site's own "no BG audio" hides it.
+            if(!MovieSources.hasBgAudio(e))return if(e.series && !e.audioRejected)WebCatalogueMedia.card(e) else null
         }
         // Availability belongs to the source, not to the optional metadata match.
         var metadataAvailable=true

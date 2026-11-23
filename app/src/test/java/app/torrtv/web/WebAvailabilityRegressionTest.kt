@@ -136,9 +136,10 @@ class WebAvailabilityRegressionTest {
         repeat(4){ui.loadNext()}
         assertNull(ui.error)
         assertTrue(requests.any{it.contains("/seriali/page/2/")})
-        assertEquals(1,ui.items.size)
-        assertTrue(ui.items.single().web!!.page.contains("two-season-2"))
-        assertTrue(index.has(ui.items.single()))
+        // "Series one" only has BG subtitles: it is still listed, as an unconfirmed site card without the BG badge.
+        assertEquals(2,ui.items.size)
+        assertTrue(ui.items.single{index.has(it)}.web!!.page.contains("two-season-2"))
+        assertTrue(ui.items.single{!index.has(it)}.web!!.page.contains("one-season-1"))
     }
     @Test fun recordCategoryIsAudioEvidenceButNavigationAndRecommendationsAreNot() {
         val e=MovieCatalog.Entry().also{it.provider="FEN";it.page="https://filmifen.com/filmi/example.html";it.title="Example"}
