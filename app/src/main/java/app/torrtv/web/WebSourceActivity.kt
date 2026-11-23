@@ -76,6 +76,7 @@ class WebSourceActivity : AppCompatActivity() {
     private var handedOff = false
     private var asked = false
     private var hinted = false
+    private var switchHinted = false
     private var pending: WebPlay.Pending? = null
     private var ownBases: Set<String> = emptySet()
     private var blockedCount = 0
@@ -258,7 +259,7 @@ class WebSourceActivity : AppCompatActivity() {
         ui.postDelayed(loadTimeout, 25_000)
         if (playerOnly) ui.postDelayed(playerTimeout, 25_000)
         updateBar("зарежда…")
-        AppLog.d("web", "зареждам ${src.host} (${idx + 1}/${sources.size})")
+        AppLog.d("web", "зареждам ${src.label} (${idx + 1}/${sources.size})")
         if (playerOnly && !discoveringCatalog) loadPlayerFrame(src.url, src.headers["Referer"] ?: src.url)
         else w.loadUrl(src.discoveryPage.ifBlank { src.url }, src.headers)
     }
@@ -282,6 +283,7 @@ class WebSourceActivity : AppCompatActivity() {
                 return
             }
             idx = next
+            Toast.makeText(this, (if (why.isNotBlank()) "$why → " else "") + "плеър ${idx + 1}/${sources.size}: ${sources[idx].label}", Toast.LENGTH_SHORT).show()
             load()
             return
         }
@@ -371,10 +373,15 @@ class WebSourceActivity : AppCompatActivity() {
                         playerReady = true
                         playerLoading.visibility = View.GONE
                         ui.removeCallbacks(playerTimeout)
+                        // A frame that loads can still hold a dead video; switching must be obvious on a remote.
+                        if (!switchHinted && sources.count { it.playerOnly } > 1) {
+                            switchHinted = true
+                            showBanner("Ако видеото не тръгне: CH+/CH− или задръж OK → „Следващ плеър“.", 7000)
+                        }
                     } else if (discoveringCatalog && data.has("url")) {
                         loadPlayerFrame(data.getString("url"), data.optString("page", sources[idx].discoveryPage))
                     }
-                } catch (_: Exception) { }
+                } catch (ex: Exception) { AppLog.w("web", "съобщение от плеъра", ex) }
                 return true
             }
             if (text.startsWith("TORRTV_SUB:")) {
@@ -559,7 +566,7 @@ class WebSourceActivity : AppCompatActivity() {
         if (!originalPlayer) items.add(if (captured != null) "Пусни във вградения плеър" else "Вграден плеър (още няма намерено видео)")
         items.add(if (playerOnly) "Следващ плеър" else "Следващ сайт")
         items.add("Презареди")
-        sources.forEachIndexed { i, s -> items.add((if (i == idx) "●  " else "○  ") + s.host) }
+        sources.forEachIndexed { i, s -> items.add((if (i == idx) "●  " else "○  ") + s.label) }
         items.add("Затвори")
         AlertDialog.Builder(this)
             .setTitle(if (playerOnly) "Плеър" else "Уеб сайт")

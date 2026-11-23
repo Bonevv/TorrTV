@@ -65,12 +65,16 @@ object WebSources {
 
     class Source(val host: String, val url: String, val bgAudio: Boolean = false,
         val direct: Boolean = false, val headers: Map<String,String> = emptyMap(), val release: String = "",
-        val playerOnly: Boolean = false, val discoveryPage: String = "", val originalPlayer: Boolean = false) {
+        val playerOnly: Boolean = false, val discoveryPage: String = "", val originalPlayer: Boolean = false,
+        val player: String = "") {
         val key: String get() = url.ifBlank { discoveryPage }
         val summary:String get()=listOf(
             if(bgAudio)"БГ аудио" else "Аудио: непотвърдено",
-            if(originalPlayer)"Плеър на сайта" else if(direct)"Директно видео" else "Уеб плеър"
-        ).joinToString(" · ")
+            if(originalPlayer)"Плеър на сайта" else if(direct)"Директно видео" else "Уеб плеър",
+            player
+        ).filter{it.isNotBlank()}.joinToString(" · ")
+        /** Името в менюто на плеъра: сайтът и, ако сайтът има няколко плеъра, кой е този. */
+        val label:String get()=if(player.isBlank())host else "$host · $player"
     }
 
     /** Готовите адреси; шаблон, който иска {imdb} без да го имаме, се прескача. */

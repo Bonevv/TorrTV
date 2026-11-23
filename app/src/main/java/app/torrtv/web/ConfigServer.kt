@@ -1,5 +1,6 @@
 package app.torrtv.web
 
+import app.torrtv.core.AppLog
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -121,7 +122,8 @@ class ConfigServer(private val prefs: Prefs) {
                     }
                 }
             }
-        } catch (e: Exception) {
+        } catch (ex: Exception) {
+            AppLog.w("config", "мрежовите адреси", ex)
         }
         return out
     }
@@ -187,7 +189,8 @@ class ConfigServer(private val prefs: Prefs) {
             )
             out.write(body)
             out.flush()
-        } catch (e: Exception) {
+        } catch (ex: Exception) {
+            AppLog.w("config", "заявка към страницата", ex)
         } finally {
             try {
                 sock.close()

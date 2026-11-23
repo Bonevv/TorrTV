@@ -1,5 +1,6 @@
 package app.torrtv.data
 
+import app.torrtv.core.AppLog
 import java.io.File
 import java.security.MessageDigest
 
@@ -50,7 +51,8 @@ class TmdbDiskCache(
             }
             // Чистенето не е на всяко записване - листването на папката не е безплатно.
             if (puts++ % PRUNE_EVERY == 0) prune()
-        } catch (_: Exception) {
+        } catch (ex: Exception) {
+            AppLog.w("tmdb", "запис в кеша", ex)
         }
     }
 
@@ -89,7 +91,8 @@ class TmdbDiskCache(
                     f.delete()
                 }
             }
-        } catch (_: Exception) {
+        } catch (ex: Exception) {
+            AppLog.w("tmdb", "чистене на кеша", ex)
         }
     }
 

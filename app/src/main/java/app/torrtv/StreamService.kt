@@ -45,8 +45,9 @@ class StreamService : Service() {
                 this, 1, n,
                 if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0
             )
-        } catch (e: Exception) {
+        } catch (ex: Exception) {
             // ако системът откаже, стриймът пак ще върви, докато приложението е на преден план
+            AppLog.w("stream", "фоновата услуга не мина на преден план", ex)
         }
         if (wake == null) {
             val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -100,14 +101,16 @@ class StreamService : Service() {
         fun start(ctx: Context) {
             try {
                 ContextCompat.startForegroundService(ctx, Intent(ctx, StreamService::class.java))
-            } catch (e: Exception) {
+            } catch (ex: Exception) {
+                AppLog.w("stream", "фоновата услуга не тръгна", ex)
             }
         }
 
         fun stop(ctx: Context) {
             try {
                 ctx.stopService(Intent(ctx, StreamService::class.java))
-            } catch (e: Exception) {
+            } catch (ex: Exception) {
+                AppLog.w("stream", "фоновата услуга не спря", ex)
             }
         }
     }

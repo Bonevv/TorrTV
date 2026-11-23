@@ -72,7 +72,8 @@ object CrashInfo {
         try {
             val parsed = parseTombstone(bytes)
             if (parsed.isNotEmpty()) return parsed
-        } catch (_: Exception) {
+        } catch (ex: Exception) {
+            AppLog.w("crash", "следата на native срива не се разчете", ex)
         }
         return scanStrings(bytes)
     }
@@ -148,7 +149,8 @@ object CrashInfo {
     private fun saveSeen(ctx: Context, ts: Long) {
         try {
             java.io.File(ctx.filesDir, "exit.seen").writeText(ts.toString())
-        } catch (_: Exception) {
+        } catch (ex: Exception) {
+            AppLog.w("crash", "exit.seen не се записа", ex)
         }
     }
 
@@ -191,13 +193,15 @@ object CrashInfo {
                         try {
                             val bytes = x.traceInputStream?.use { it.readBytes() }
                             if (bytes != null) summarize(bytes).forEach { AppLog.crash(it) }
-                        } catch (_: Exception) {
+                        } catch (ex: Exception) {
+                            AppLog.w("crash", "следата на изхода не се разчете", ex)
                         }
                     }
                 }
             }
             if (newest > since) saveSeen(ctx, newest)
-        } catch (_: Exception) {
+        } catch (ex: Exception) {
+            AppLog.w("crash", "причините за изход не се прочетоха", ex)
         }
     }
 }

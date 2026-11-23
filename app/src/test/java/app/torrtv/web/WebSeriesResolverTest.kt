@@ -120,7 +120,8 @@ class WebSeriesResolverTest {
         assertTrue(result.sources.single().bgAudio)
     }
     @Test fun allSixSourceSeriesFormatsRemainAvailable() {
-        for(p in MovieSources.Provider.values()){
+        // FilmiZT now shows series only to registered users, so its series are no longer offered (Provider.hasSeries).
+        for(p in MovieSources.Provider.values().filter{it.hasSeries()}){
             val file=when(p.name){"NINE"->"nine";"ALL"->"all";"ZENO"->"zeno";"ZIP"->"zip";"ZT"->"zt";else->"fen"}
             val html=javaClass.getResourceAsStream("/web-catalog/$file-series.html")!!.bufferedReader().use{it.readText()}
             val parsed=MovieSources.parse(p,p.seriesStart(),html)
