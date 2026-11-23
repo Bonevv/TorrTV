@@ -3,6 +3,7 @@ package app.torrtv.state
 import app.torrtv.data.*
 import app.torrtv.web.BgAudioPager
 import app.torrtv.web.BgWebIndex
+import app.torrtv.web.catalog.MovieSources
 import kotlinx.coroutines.withTimeout
 
 /** Source availability drives this list; TMDB enriches cards when an exact match is available. */
@@ -10,9 +11,11 @@ internal fun bgCatalogue(type:MediaType?,genre:Int?,year:Int?,anime:Boolean,prov
     val index=Graph.bgWeb
     val catalogs:List<MediaType?> = if(type!=null || query.isNotBlank())listOf(type) else listOf(MediaType.MOVIE,MediaType.TV)
     val q=BgWebIndex.normalize(query)
+    // Titles the site already marks as BG audio come first; unconfirmed candidates (each needs its page read) follow.
+    // Otherwise one site's unconfirmed series filled the first batches and the filter showed "no matches".
     fun entries()=index.catalogueCandidates(type,audioOnly,source).filter{e->
         q.isBlank() || listOf(e.title,e.original).any{BgWebIndex.normalize(it).contains(q)}
-    }
+    }.sortedByDescending{audioOnly && MovieSources.hasBgAudio(it)}
     var catalogueReady=false
     var turn=0
     suspend fun prepare(){
