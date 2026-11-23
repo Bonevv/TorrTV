@@ -1,5 +1,6 @@
 package app.torrtv.state
 
+import app.torrtv.core.AppLog
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.runtime.getValue
@@ -158,8 +159,9 @@ class HomeState {
             if (r != null && Graph.updater.isNewer(r.tag)) update = r
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
+        } catch (ex: Exception) {
             // без интернет или без издание - пропускаме тихо
+            AppLog.w("update", "проверката за нова версия", ex)
         }
     }
 }
@@ -186,7 +188,8 @@ object PlatformCatalog {
             }
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Exception) {
+        } catch (ex: Exception) {
+            AppLog.w("platforms", "платформите от TMDB", ex)
         }
     }
 }
@@ -313,7 +316,7 @@ class SearchState {
         job?.cancel()
         job = Graph.scope.launch {
             try { Graph.bgWeb.refresh(force = true); Graph.bgWeb.sweep() }
-            catch (ex: CancellationException) { throw ex } catch (_: Exception) { }
+            catch (ex: CancellationException) { throw ex } catch (ex: Exception) { AppLog.w("web", "обновяването на БГ каталозите", ex) }
             restart(0)
         }
     }

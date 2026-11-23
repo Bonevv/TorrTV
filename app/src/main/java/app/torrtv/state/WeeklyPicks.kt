@@ -1,5 +1,6 @@
 package app.torrtv.state
 
+import app.torrtv.core.AppLog
 import android.content.Context
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.getValue
@@ -152,7 +153,8 @@ class WeeklyRow(val type: MediaType, val title: String) {
             list.forEach { a.put(Library.mediaTo(it)) }
             val o = JSONObject().put("week", week).put("lang", lang).put("items", a)
             sp().edit().putString(type.path, o.toString()).apply()
-        } catch (_: Exception) {
+        } catch (ex: Exception) {
+            AppLog.w("picks", "изборът на седмицата не се записа", ex)
         }
     }
 

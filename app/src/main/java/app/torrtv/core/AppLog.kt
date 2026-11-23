@@ -59,6 +59,21 @@ object AppLog {
         }
     }
 
+    /** Един ред за очаквана, но неуспешна операция (без стека - за места, където грешката се преглъща). */
+    fun w(tag: String, msg: String, t: Throwable) = d(tag, "$msg: ${t.javaClass.simpleName}: ${t.message}")
+
+    private val repeats = HashMap<String, String>()
+
+    /** Като [w], но за цикли: една и съща грешка подред се записва веднъж, а не на всяка обиколка. */
+    fun once(tag: String, msg: String, t: Throwable) {
+        val text = "$msg: ${t.javaClass.simpleName}: ${t.message}"
+        synchronized(repeats) {
+            if (repeats["$tag|$msg"] == text) return
+            repeats["$tag|$msg"] = text
+        }
+        d(tag, text)
+    }
+
     fun e(tag: String, msg: String, t: Throwable) {
         d(tag, "$msg: ${t.javaClass.simpleName}: ${t.message}")
         try {

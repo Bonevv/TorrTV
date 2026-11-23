@@ -67,7 +67,8 @@ object CacheManager {
             try {
                 val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
                 tor = (am.getProcessMemoryInfo(intArrayOf(pid)).firstOrNull()?.totalPss ?: 0) / 1024
-            } catch (_: Exception) {
+            } catch (ex: Exception) {
+                AppLog.w("cache", "паметта на торент процеса", ex)
             }
         }
         return Mem(
@@ -84,7 +85,8 @@ object CacheManager {
             val il = coil.Coil.imageLoader(ctx)
             il.memoryCache?.clear()
             il.diskCache?.clear()
-        } catch (_: Exception) {
+        } catch (ex: Exception) {
+            AppLog.w("cache", "кешът на картинките не се изчисти", ex)
         }
     }
 

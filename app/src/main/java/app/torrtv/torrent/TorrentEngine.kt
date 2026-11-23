@@ -159,7 +159,8 @@ class TorrentEngine(val baseDir: File, val profile: Int = 0) {
                                     AppLog.d("torrent", "чакам метаданни: пиъри ${st.numPeers()}, сийдъри ${st.numSeeds()}, DHT възли ${s.dhtNodes()}")
                                 }
                             }
-                        } catch (e: Exception) {
+                        } catch (ex: Exception) {
+                            AppLog.once("torrent", "проверка за метаданни", ex)
                         }
                         ticks++
                         delay(500)
@@ -315,7 +316,8 @@ class StreamSession internal constructor(
                 h.piecePriority(p, Priority.DEFAULT)
                 allowed[i] = true
             }
-        } catch (_: Exception) {
+        } catch (ex: Exception) {
+            AppLog.w("torrent", "прозорецът за теглене", ex)
         }
     }
 
@@ -386,7 +388,8 @@ class StreamSession internal constructor(
                 // Ако новото място вече е изтеглено (напр. плеърът чете края на файла), нищо не се разбърква.
                 if (jumped && missing.isNotEmpty()) forget(old, p0)
                 for (p in missing) urgent(p, PieceDeadlines.ahead(p - p0, stepMs))
-            } catch (_: Exception) {
+            } catch (ex: Exception) {
+                AppLog.once("torrent", "приоритетите пред плеъра", ex)
             }
             lastWindow = p0
         }
